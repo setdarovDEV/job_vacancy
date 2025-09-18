@@ -435,7 +435,7 @@ class UserSearchView(generics.ListAPIView):
         if len(parts) >= 2:
             a, b = parts[0], parts[1]
             base |= (Q(first_name__icontains=a) & Q(last_name__icontains=b)) | \
-                    (Q(first_name__icontains=b) & Q(last_name__icontains=a))
+                     (Q(first_name__icontains=b) & Q(last_name__icontains=a))
 
         return User.objects.filter(base).order_by("username")
 

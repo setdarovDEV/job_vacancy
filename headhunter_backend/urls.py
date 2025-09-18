@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.http import JsonResponse
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
@@ -16,6 +17,8 @@ router.register(r'skills', SkillViewSet, basename='skills')
 router.register(r'certificates', CertificateViewSet, basename='certificate')
 router.register(r'experiences', WorkExperienceViewSet, basename='experience')
 
+def healthz(request):
+    return JsonResponse({"status": "ok"})
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -32,6 +35,7 @@ urlpatterns = [
     path('skills/', include(router.urls)),
     path('certificate/', include(router.urls)),
     path('experience/', include(router.urls)),
+    path("healthz/", healthz),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
