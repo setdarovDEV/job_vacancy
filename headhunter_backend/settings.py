@@ -13,6 +13,8 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+import dj_database_url
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -21,12 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure--dis3q%@#ako3)y(_72@t94mk@#49#2)*^nghd4wo#7m*88dlh'
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
-
-ALLOWED_HOSTS = ["*"]
+SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
+DEBUG = os.environ.get("DEBUG", "False") == "True"
+ALLOWED_HOSTS = [h for h in os.environ.get("ALLOWED_HOSTS", "*").split(",") if h]
 
 # Application definition
 
@@ -87,16 +86,9 @@ WSGI_APPLICATION = 'headhunter_backend.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-
+db_url = os.environ.get("DATABASE_URL", "sqlite:///db.sqlite3")
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'headhunter_db',        # o‘zing tanlagan nom
-        'USER': 'postgres',             # o‘rnatishda yozgan username
-        'PASSWORD': 'Abbos123',    # o‘rnatishda tanlangan parol
-        'HOST': 'localhost',
-        'PORT': '5432',                 # default PostgreSQL port
-    }
+    "default": dj_database_url.parse(db_url, conn_max_age=600)
 }
 
 # Password validation
@@ -132,14 +124,12 @@ USE_TZ = True
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
-
-STATIC_URL = "/static/"
-STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+STATIC_URL = os.environ.get("STATIC_URL", "/static/")
+STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-MEDIA_URL = "/media/"
-MEDIA_ROOT = os.path.join(BASE_DIR, "media")
-
+MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
+MEDIA_ROOT = BASE_DIR / "media"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -156,7 +146,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
     'DEFAULT_FILTER_BACKENDS': ['django_filters.rest_framework.DjangoFilterBackend'],
-
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
 }
 
 SIMPLE_JWT = {
@@ -201,6 +192,21 @@ else:
     # Dev uchun: Redis shartsiz
     CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
-CORS_ALLOW_ALL_ORIGINS = True
-
 ROOT_URLCONF = "headhunter_backend.urls"
+
+LOCAL_ORIGINS = [
+    "http://localhost:3000",   # React CRA
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",   # Vite
+    "http://127.0.0.1:5173",
+    "http://localhost:4200",   # Angular, agar kerak
+    "http://127.0.0.1:4200",
+    "http://localhost:8081",   # Expo devtools/web
+    "http://127.0.0.1:8081",
+    "http://localhost:19006",  # Expo web
+    "http://127.0.0.1:19006",
+]
+
+CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
+CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()] or LOCAL_ORIGINS
+CSRF_TRUSTED_ORIGINS = [o.replace("http://", "https://") for o in CORS_ALLOWED_ORIGINS]  # Render https bo‘ladi

@@ -17,8 +17,7 @@ router.register(r'skills', SkillViewSet, basename='skills')
 router.register(r'certificates', CertificateViewSet, basename='certificate')
 router.register(r'experiences', WorkExperienceViewSet, basename='experience')
 
-def healthz(request):
-    return JsonResponse({"status": "ok"})
+def health(request): return JsonResponse({"status": "ok"})
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -35,7 +34,7 @@ urlpatterns = [
     path('skills/', include(router.urls)),
     path('certificate/', include(router.urls)),
     path('experience/', include(router.urls)),
-    path("healthz/", healthz),
+    path("healthz/", health),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
