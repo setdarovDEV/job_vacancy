@@ -43,19 +43,22 @@ if RENDER_URL:
 
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+
+    # WhiteNoise dev helper — staticlarni dev serverda boshqaradi
+    'whitenoise.runserver_nostatic',
     'django.contrib.staticfiles',
+
     'rest_framework',
     'rest_framework_simplejwt',
     'django.contrib.sites',
     'accounts',
-    "corsheaders",
+    'corsheaders',
     'rest_framework_simplejwt.token_blacklist',
     'vacancies',
     'companies',
@@ -64,15 +67,14 @@ INSTALLED_APPS = [
     'community',
     'channels',
     # 'chat',
-    'applications'
-    "whitenoise.runserver_nostatic",
-    "django.contrib.staticfiles",
+    'applications',
 ]
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    "corsheaders.middleware.CorsMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # <— shu yerda bo‘lsin
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
