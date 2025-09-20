@@ -24,8 +24,23 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
-DEBUG = os.environ.get("DEBUG", "False") == "True"
-ALLOWED_HOSTS = [h for h in os.environ.get("ALLOWED_HOSTS", "*").split(",") if h]
+DEBUG = os.environ.get("DEBUG", "0") == "1"
+ALLOWED_HOSTS = [
+    "localhost", "127.0.0.1",
+]
+RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
+
+if RENDER_URL:
+    # https://your-app.onrender.com -> host qismini ajratamiz
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(RENDER_URL)
+        if parsed.hostname:
+            ALLOWED_HOSTS.append(parsed.hostname)
+    except Exception:
+        pass
+
 
 # Application definition
 
@@ -50,6 +65,8 @@ INSTALLED_APPS = [
     'channels',
     # 'chat',
     'applications'
+    "whitenoise.runserver_nostatic",
+    "django.contrib.staticfiles",
 ]
 
 MIDDLEWARE = [
@@ -88,7 +105,7 @@ WSGI_APPLICATION = 'headhunter_backend.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 db_url = os.environ.get("DATABASE_URL", "sqlite:///db.sqlite3")
 DATABASES = {
-    "default": dj_database_url.parse(db_url, conn_max_age=600)
+    "default": dj_database_url.parse(db_url, conn_max_age=600, ssl_require=True)
 }
 
 # Password validation
@@ -113,12 +130,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
-
-TIME_ZONE = 'UTC'
-
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = os.environ.get("TIME_ZONE", "Asia/Tashkent")
 USE_I18N = True
-
 USE_TZ = True
 
 
@@ -127,6 +141,7 @@ USE_TZ = True
 STATIC_URL = os.environ.get("STATIC_URL", "/static/")
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+WHITENOISE_MAX_AGE = 60 * 60 * 24 * 7  # 7 days
 
 MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
 MEDIA_ROOT = BASE_DIR / "media"
@@ -159,13 +174,26 @@ SIMPLE_JWT = {
 AUTH_USER_MODEL = 'accounts.CustomUser'
 
 # Email konfiguratsiya (Gmail misol uchun)
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.gmail.com'
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_HOST_USER = 'abbossetdarov3@gmail.com'
+# EMAIL_HOST_PASSWORD = 'dyqrwsqjnuelabcn'  # ← bu yangi app password
+# DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+# === EMAIL (env orqali) ===
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = 'abbossetdarov3@gmail.com'
-EMAIL_HOST_PASSWORD = 'dyqrwsqjnuelabcn'  # ← bu yangi app password
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
 
 SITE_ID = 1
 
@@ -194,18 +222,18 @@ else:
 
 ROOT_URLCONF = "headhunter_backend.urls"
 
+CSRF_TRUSTED_ORIGINS = []
+if RENDER_URL:
+    CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
+if FRONTEND_URL:
+    CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
+
 LOCAL_ORIGINS = [
-    "http://localhost:3000",   # React CRA
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",   # Vite
-    "http://127.0.0.1:5173",
-    "http://localhost:4200",   # Angular, agar kerak
-    "http://127.0.0.1:4200",
-    "http://localhost:8081",   # Expo devtools/web
-    "http://127.0.0.1:8081",
-    "http://localhost:19006",  # Expo web
-    "http://127.0.0.1:19006",
+    "http://localhost:3000", "http://127.0.0.1:3000",
+    "http://localhost:5173", "http://127.0.0.1:5173",
 ]
+CSRF_TRUSTED_ORIGINS += [o.replace("http://", "https://") for o in LOCAL_ORIGINS]
+
 
 CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()] or LOCAL_ORIGINS
