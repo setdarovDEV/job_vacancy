@@ -8,9 +8,13 @@ https://docs.djangoproject.com/en/5.2/howto/deployment/wsgi/
 """
 
 import os
+from pathlib import Path
 
+import dotenv
 from django.core.wsgi import get_wsgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'headhunter_backend.settings')
 
 application = get_wsgi_application()
+
+dotenv.load_dotenv(Path(__file__).resolve().parent.parent / ".env")

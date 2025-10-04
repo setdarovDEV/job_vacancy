@@ -1,10 +1,14 @@
 import os
+from pathlib import Path
+
+import dotenv
 from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'headhunter_backend.settings')
 django_asgi_app = get_asgi_application()
+dotenv.load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import chat.routing
 

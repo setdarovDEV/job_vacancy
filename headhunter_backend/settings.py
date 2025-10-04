@@ -14,10 +14,11 @@ from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
+import dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+dotenv.load_dotenv(os.path.join(Path(__file__).resolve().parent, ".env"))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
@@ -66,7 +67,7 @@ INSTALLED_APPS = [
     'resume',
     'community',
     'channels',
-    # 'chat',
+    'chats',
     'applications',
 ]
 
@@ -105,10 +106,18 @@ WSGI_APPLICATION = 'headhunter_backend.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-db_url = os.environ.get("DATABASE_URL", "sqlite:///db.sqlite3")
+db_url = os.environ.get("DATABASE_URL")
+if not db_url:
+    raise Exception("DATABASE_URL env variable is required!")
+
 DATABASES = {
-    "default": dj_database_url.parse(db_url, conn_max_age=600, ssl_require=True)
+    "default": dj_database_url.config(
+        default=db_url,
+        conn_max_age=600,
+        ssl_require=True
+    )
 }
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

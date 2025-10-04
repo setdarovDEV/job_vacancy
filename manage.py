@@ -2,7 +2,11 @@
 """Django's command-line utility for administrative tasks."""
 import os
 import sys
+from pathlib import Path
+import dotenv   # 👈 qo‘shildi
 
+# .env faylni project root’dan yuklash
+dotenv.load_dotenv(Path(__file__).resolve().parent / ".env")
 
 def main():
     """Run administrative tasks."""

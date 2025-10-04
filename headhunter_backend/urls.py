@@ -26,7 +26,7 @@ urlpatterns = [
     path('api/', include('companies.urls')),
     path('api/', include('resume.urls')),
     path("api/", include("community.urls")),
-    # path("api/", include("chat.urls")),
+    path("api/", include("chats.urls")),
     path("api/applications/", include("applications.urls")),
     path('language/', include(router.urls)),
     path('education/', include(router.urls)),
