@@ -15,18 +15,17 @@ class MessageSerializer(serializers.ModelSerializer):
 class ChatSerializer(serializers.ModelSerializer):
     participants = UserPublicSerializer(many=True, read_only=True)
     last_message = serializers.SerializerMethodField()
-    other_user = serializers.SerializerMethodField()  # 👈 qo‘shimcha maydon
+    other_user = serializers.SerializerMethodField()
 
     class Meta:
         model = Chat
-        fields = ["id", "other_user", "last_message"]  # 👈 faqat keraklilar
+        fields = ["id", "participants", "other_user", "last_message"]
 
     def get_last_message(self, obj):
         msg = obj.messages.order_by("-created_at").first()
         return MessageSerializer(msg).data if msg else None
 
     def get_other_user(self, obj):
-        """Login bo‘lgan userdan tashqari qarshi tomondagi userni qaytaradi"""
         request = self.context.get("request")
         if not request:
             return None

@@ -1,4 +1,6 @@
 from rest_framework import viewsets, permissions
+from rest_framework.response import Response
+
 from .models import Chat, Message
 from .serializers import ChatSerializer, MessageSerializer
 
@@ -8,6 +10,11 @@ class ChatViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Chat.objects.filter(participants=self.request.user)
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = ChatSerializer(queryset, many=True, context={'request': request})
+        return Response(serializer.data)
 
 
 class MessageViewSet(viewsets.ModelViewSet):
