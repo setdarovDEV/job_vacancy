@@ -1,3 +1,4 @@
+# chats/views.py
 from rest_framework import viewsets, permissions, status, serializers
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -5,6 +6,7 @@ from rest_framework.response import Response
 
 from .models import Chat, Message
 from .serializers import ChatSerializer, MessageSerializer
+
 
 class ChatViewSet(viewsets.ModelViewSet):
     serializer_class = ChatSerializer
@@ -30,10 +32,8 @@ class ChatViewSet(viewsets.ModelViewSet):
         except CustomUser.DoesNotExist:
             return Response({"detail": "Bunday foydalanuvchi yo‘q"}, status=status.HTTP_404_NOT_FOUND)
 
-        # mavjud chatni topamiz
+        # mavjud chatni topamiz yoki yaratamiz
         chat = Chat.objects.filter(participants=request.user).filter(participants=other_user).first()
-
-        # yo‘q bo‘lsa, yangisini yaratamiz
         if not chat:
             chat = Chat.objects.create()
             chat.participants.add(request.user, other_user)
@@ -58,9 +58,21 @@ class MessageViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         chat_id = self.kwargs.get("chat_pk")
+
         text = self.request.data.get("text", "").strip()
+        file = self.request.data.get("file")
+        image = self.request.data.get("image")
 
-        if not text:
-            raise serializers.ValidationError({"text": "Xabar matni bo‘sh bo‘lmasligi kerak"})
+        # ❗ kamida bittasi bo‘lishi kerak
+        if not text and not file and not image:
+            raise serializers.ValidationError({
+                "detail": "Kamida bitta maydon (text, file yoki image) bo‘lishi kerak."
+            })
 
-        serializer.save(sender=self.request.user, chat_id=chat_id, text=text)
+        serializer.save(
+            sender=self.request.user,
+            chat_id=chat_id,
+            text=text or None,
+            file=file if file else None,
+            image=image if image else None,
+        )
