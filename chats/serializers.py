@@ -5,14 +5,20 @@ from accounts.serializers import UserPublicSerializer
 
 class MessageSerializer(serializers.ModelSerializer):
     sender = UserPublicSerializer(read_only=True)
+    is_me = serializers.SerializerMethodField()
+    text = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Message
-        fields = ["id", "chat", "sender", "text", "created_at", "is_read"]
+        fields = ["id", "chat", "sender", "text", "created_at", "is_read", "is_me"]  # ✅ is_me qo‘shildi
         read_only_fields = ["id", "chat", "sender", "created_at", "is_read"]
 
-    # ✅ text ni null yoki bo‘sh holatda yuborishni ruxsat beramiz
-    text = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    def get_is_me(self, obj):
+        request = self.context.get("request")
+        if not request:
+            return False
+        return obj.sender == request.user
+
 
 
 class ChatSerializer(serializers.ModelSerializer):

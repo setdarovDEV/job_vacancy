@@ -49,6 +49,11 @@ class MessageViewSet(viewsets.ModelViewSet):
         chat_id = self.kwargs.get("chat_pk")
         return Message.objects.filter(chat_id=chat_id).order_by("created_at")
 
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = MessageSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data)
+
     def perform_create(self, serializer):
         chat_id = self.kwargs.get("chat_pk")
         text = self.request.data.get("text", "").strip()
@@ -57,5 +62,3 @@ class MessageViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError({"text": "Xabar matni bo‘sh bo‘lmasligi kerak"})
 
         serializer.save(sender=self.request.user, chat_id=chat_id, text=text)
-
-
