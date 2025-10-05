@@ -1,29 +1,35 @@
-from django.contrib.auth import get_user_model
+# chats/serializers.py
 from rest_framework import serializers
 from .models import Chat, Message
+from accounts.serializers import UserPublicSerializer
 
-User = get_user_model()
-
-class UserShortSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ["id", "username", "first_name", "last_name", "profile_image"]
 
 class MessageSerializer(serializers.ModelSerializer):
-    sender = UserShortSerializer(read_only=True)
+    sender = UserPublicSerializer(read_only=True)
 
     class Meta:
         model = Message
         fields = ["id", "chat", "sender", "text", "created_at", "is_read"]
 
+
 class ChatSerializer(serializers.ModelSerializer):
+    participants = UserPublicSerializer(many=True, read_only=True)
     last_message = serializers.SerializerMethodField()
-    participants = UserShortSerializer(many=True, read_only=True)  # 🔹 to‘liq user info
+    other_user = serializers.SerializerMethodField()  # 👈 qo‘shimcha maydon
 
     class Meta:
         model = Chat
-        fields = ["id", "participants", "last_message"]
+        fields = ["id", "other_user", "last_message"]  # 👈 faqat keraklilar
 
     def get_last_message(self, obj):
         msg = obj.messages.order_by("-created_at").first()
         return MessageSerializer(msg).data if msg else None
+
+    def get_other_user(self, obj):
+        """Login bo‘lgan userdan tashqari qarshi tomondagi userni qaytaradi"""
+        request = self.context.get("request")
+        if not request:
+            return None
+        user = request.user
+        other = obj.participants.exclude(id=user.id).first()
+        return UserPublicSerializer(other).data if other else None
