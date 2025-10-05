@@ -16,6 +16,8 @@ class Message(models.Model):
     text = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     is_read = models.BooleanField(default=False)
+    file = models.FileField(upload_to="chat/files/", null=True, blank=True)
+    image = models.ImageField(upload_to="chat/images/", null=True, blank=True)
 
     def __str__(self):
         return f"{self.sender.username}: {self.text[:20]}"

@@ -35,6 +35,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
     title = models.CharField(max_length=255, blank=True, null=True)  # ✅ yangi maydon
     about_me = models.TextField(null=True, blank=True)  # 🆕 qo‘shildi
+    last_seen = models.DateTimeField(null=True, blank=True)
+    is_online = models.BooleanField(default=False)
 
     # ✅ YANGI QO‘SHILDI:
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)

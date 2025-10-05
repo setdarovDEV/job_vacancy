@@ -10,7 +10,7 @@ class MessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Message
-        fields = ["id", "chat", "sender", "text", "created_at", "is_read", "is_me"]  # ✅ is_me qo‘shildi
+        fields = ["id", "chat", "sender", "text", "file", "image", "created_at", "is_read", "is_me"]  # ✅ is_me qo‘shildi
         read_only_fields = ["id", "chat", "sender", "created_at", "is_read"]
 
     def get_is_me(self, obj):

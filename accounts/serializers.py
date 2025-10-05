@@ -199,10 +199,12 @@ class WorkExperienceSerializer(serializers.ModelSerializer):
 class UserPublicSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
+    last_seen = serializers.DateTimeField(read_only=True)
+    is_online = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = CustomUser
-        fields = ("id", "username", "first_name", "last_name", "full_name", "avatar_url")
+        fields = ("id", "username", "first_name", "last_name", "full_name", "avatar_url", "last_seen", "is_online")
 
     def get_full_name(self, obj):
         return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
