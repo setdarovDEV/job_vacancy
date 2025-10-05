@@ -3,13 +3,16 @@ from rest_framework import serializers
 from .models import Chat, Message
 from accounts.serializers import UserPublicSerializer
 
-
 class MessageSerializer(serializers.ModelSerializer):
     sender = UserPublicSerializer(read_only=True)
 
     class Meta:
         model = Message
         fields = ["id", "chat", "sender", "text", "created_at", "is_read"]
+        read_only_fields = ["id", "chat", "sender", "created_at", "is_read"]
+
+    # ✅ text ni null yoki bo‘sh holatda yuborishni ruxsat beramiz
+    text = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class ChatSerializer(serializers.ModelSerializer):

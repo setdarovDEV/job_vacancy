@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -51,5 +51,11 @@ class MessageViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         chat_id = self.kwargs.get("chat_pk")
-        serializer.save(sender=self.request.user, chat_id=chat_id)
+        text = self.request.data.get("text", "").strip()
+
+        if not text:
+            raise serializers.ValidationError({"text": "Xabar matni bo‘sh bo‘lmasligi kerak"})
+
+        serializer.save(sender=self.request.user, chat_id=chat_id, text=text)
+
 
