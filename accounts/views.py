@@ -419,7 +419,7 @@ class WorkExperienceViewSet(viewsets.ModelViewSet):
 
 class UserSearchView(generics.ListAPIView):
     serializer_class = UserPublicSerializer
-    permission_classes = [permissions.AllowAny]
+    permission_classes = [permissions.IsAuthenticated]  # ✅ faqat login qilganlar
 
     def get_queryset(self):
         q = (self.request.query_params.get("q") or "").strip()
@@ -437,7 +437,11 @@ class UserSearchView(generics.ListAPIView):
             base |= (Q(first_name__icontains=a) & Q(last_name__icontains=b)) | \
                      (Q(first_name__icontains=b) & Q(last_name__icontains=a))
 
-        return User.objects.filter(base).order_by("username")
+        queryset = User.objects.filter(base).exclude(
+            Q(username="admin") | Q(id=self.request.user.id)   # 🚫 o‘zi va admin chiqmasin
+        ).order_by("username")
+
+        return queryset
 
 class UserProfileDetailView(generics.RetrieveAPIView):
     queryset = CustomUser.objects.all()

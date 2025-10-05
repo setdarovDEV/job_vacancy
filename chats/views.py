@@ -28,3 +28,4 @@ class MessageViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         chat_id = self.kwargs.get("chat_pk")
         serializer.save(sender=self.request.user, chat_id=chat_id)
+
