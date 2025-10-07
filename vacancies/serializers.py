@@ -1,7 +1,8 @@
 from rest_framework import serializers
+from rest_framework.pagination import PageNumberPagination
 
 from companies.serializers import CompanySerializer
-from .models import JobPost, PlanChoices
+from .models import JobPost, PlanChoices, SavedJob
 from django.utils.timesince import timesince
 from companies.models import Company
 from django.utils.functional import cached_property
@@ -71,6 +72,10 @@ class JobPostSerializer(serializers.ModelSerializer):
             for vacancy in other_qs
         ]
 
+
+class TenPerPagePagination(PageNumberPagination):
+    page_size = 10
+
 class JobPostPublicSerializer(serializers.ModelSerializer):
     # Mobil uchun “sodda” maydonlar
     budget = serializers.SerializerMethodField()
@@ -80,13 +85,14 @@ class JobPostPublicSerializer(serializers.ModelSerializer):
     timeAgo = serializers.SerializerMethodField()  # backward compatibility
     ratings_count = serializers.SerializerMethodField()
     company = serializers.SerializerMethodField()
+    is_saved = serializers.SerializerMethodField()
 
     class Meta:
         model = JobPost
         fields = [
             "id", "title", "description", "skills", "location",
             "rating", "payment_verified", "budget", "published_ago", "timeAgo",
-            "ratings_count", "is_remote", "duration", "deadline", "plan", "created_at",
+            "ratings_count", "is_remote", "duration", "deadline", "plan", "created_at", "is_saved", "company"
             # kerak bo‘lsa qo‘sh: "average_stars"
         ]
         read_only_fields = fields
@@ -132,3 +138,9 @@ class JobPostPublicSerializer(serializers.ModelSerializer):
     def get_company(self, obj):
         company = Company.objects.filter(owner=obj.employer).first()
         return CompanySerializer(company, context=self.context).data if company else None
+
+class SavedJobSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SavedJob
+        fields = ["id", "job_post", "saved_at"]
+        read_only_fields = ["id", "saved_at"]

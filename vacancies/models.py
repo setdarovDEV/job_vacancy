@@ -83,3 +83,22 @@ class JobPostRating(models.Model):
         # Bu rating obyektining o'zi emas, balki shu post bo'yicha o'rtacha
         avg = self.job_post.ratings.aggregate(a=Avg("stars"))["a"]
         return round(avg) if avg else 0
+
+class SavedJob(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="saved_jobs"
+    )
+    job_post = models.ForeignKey(
+        "JobPost",
+        on_delete=models.CASCADE,
+        related_name="saved_by"
+    )
+    saved_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "job_post")
+
+    def __str__(self):
+        return f"{self.user} saved {self.job_post}"
