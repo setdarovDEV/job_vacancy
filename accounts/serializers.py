@@ -39,27 +39,29 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
         user = self.context['user']
         email = self.validated_data['email']
 
-        # emailni userga yozamiz
         user.email = email
-        user.save()
+        user.save(update_fields=["email"])
 
-        # random 6 xonali kod yaratamiz
         code = f"{random.randint(100000, 999999)}"
 
-        # kodni saqlaymiz
         EmailVerificationCode.objects.update_or_create(
             user=user,
             defaults={'code': code}
         )
 
-        # ✅ email yuboramiz
-        send_mail(
-            subject="Tasdiqlash kodingiz",
-            message=f"Sizning 2FA tasdiqlash kodingiz: {code}",
-            from_email=DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,  # ❗ BU joyga e'tibor
-        )
+        try:
+            send_mail(
+                subject="Tasdiqlash kodingiz",
+                message=f"Sizning 2FA tasdiqlash kodingiz: {code}",
+                from_email=DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=False,
+            )
+        except Exception as e:
+            raise serializers.ValidationError({"email": f"Email yuborishda xatolik: {e}"})
+
+        return {"detail": "Tasdiqlash kodi yuborildi"}
+
 
 class RegisterStepThreeVerifyCodeSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=6)

@@ -52,7 +52,7 @@ class RegisterStepTwoEmailView(APIView):
         serializer = RegisterStepTwoEmailSerializer(data=request.data, context={"user": user})
         if serializer.is_valid():
             serializer.save()
-            return Response({"message": "Verification code sent to email"}, status=200)
+            return Response({"message": "Tasdiqlash kodi yuborildi"}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=400)
 
 class RegisterStepThreeVerifyCodeView(APIView):
