@@ -32,7 +32,7 @@ urlpatterns = [
     path('profile/update-photo/', ProfileImageUpdateView.as_view()),
     path("profile/", ProfileView.as_view(), name="profile"),
     path('me/', CurrentUserView.as_view(), name='current-user'),
-    path('update-location/', UpdateLocationView.as_vieew(), name='update-location'),
+    path('update-location/', UpdateLocationView.as_view(), name='update-location'),
     path("update-work-hours/", UpdateWorkHoursView.as_view(), name="update-work-hours"),
     path('update-title/', UpdateTitleView.as_view(), name='update-title'),
     path('update-salary/', UpdateSalaryView.as_view(), name='update-salary'),
