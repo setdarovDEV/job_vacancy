@@ -1,9 +1,9 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from django.db.models import Avg, Count, Value, IntegerField
+from django.db.models import Avg, Count, Value
 from django.db.models.functions import Coalesce
-
+from django.db.models import Q
 
 from .models import Company, CompanyReview, CompanyPhoto, InterviewExperience, CompanyFollow
 from .serializers import (
@@ -14,36 +14,47 @@ from .serializers import (
 )
 from .permissions import IsOwnerOrReadOnly
 
+
 class CompanyViewSet(viewsets.ModelViewSet):
-    queryset = Company.objects.all()
     serializer_class = CompanySerializer
-    # GET – public, Create/Update/Delete – owner-only
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['name', 'industry', 'location', 'description']
 
     def get_queryset(self):
-        qs = Company.objects.all().annotate(
+        """
+        Annotatsiyalarni qo‘llab, SearchFilter ham ishlaydigan versiya.
+        """
+        qs = super().get_queryset() if hasattr(super(), 'get_queryset') else Company.objects.all()
+        qs = qs.annotate(
             reviews_count=Count('reviews', distinct=True),
             followers_count=Count('follows', distinct=True),
             vacancies_count=Count('job_posts', distinct=True),
             avg_rating=Coalesce(Avg('reviews__rating'), Value(0.0)),
         )
+
+        # 🔍 Custom fallback — agar SearchFilter ishlamasa, qo‘lda filter
+        search = self.request.query_params.get('search')
+        if search:
+            qs = qs.filter(
+                Q(name__icontains=search)
+                | Q(industry__icontains=search)
+                | Q(location__icontains=search)
+                | Q(description__icontains=search)
+            )
+
+        # 🔹 Faqat ownerning kompaniyalari (mine=1)
         if self.request.user.is_authenticated and self.request.query_params.get('mine') == '1':
             qs = qs.filter(owner=self.request.user)
-        return qs
 
-    def _vacancies_subquery(self):
-        """JobPost bo‘lmasa ham server yiqilmasin."""
-        try:
-            from vacancies.models import JobPost
-            return Count('jobpost', distinct=True)  # related_name bo‘lsa
-        except Exception:
-            return Count('id') * 0  # 0 ga tenglash (fallback)
+        return qs.order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
     # ---- Reviews ----
-    @action(detail=True, methods=['get', 'post'], url_path='reviews', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
+    @action(detail=True, methods=['get', 'post'], url_path='reviews',
+            permission_classes=[permissions.IsAuthenticatedOrReadOnly])
     def reviews(self, request, pk=None):
         company = self.get_object()
         if request.method == 'GET':
@@ -54,17 +65,16 @@ class CompanyViewSet(viewsets.ModelViewSet):
                 return self.get_paginated_response(ser.data)
             return Response(ser.data)
 
-        # POST
         if not request.user.is_authenticated:
             return Response({"detail": "Authentication required."}, status=401)
         serializer = CompanyReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # unique_together tufayli 2-marta yozishga ruxsat yo‘q
         serializer.save(company=company, user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # ---- Photos ----
-    @action(detail=True, methods=['get', 'post'], url_path='photos', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
+    @action(detail=True, methods=['get', 'post'], url_path='photos',
+            permission_classes=[permissions.IsAuthenticatedOrReadOnly])
     def photos(self, request, pk=None):
         company = self.get_object()
         if request.method == 'GET':
@@ -83,7 +93,8 @@ class CompanyViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # ---- Interviews ----
-    @action(detail=True, methods=['get', 'post'], url_path='interviews', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
+    @action(detail=True, methods=['get', 'post'], url_path='interviews',
+            permission_classes=[permissions.IsAuthenticatedOrReadOnly])
     def interviews(self, request, pk=None):
         company = self.get_object()
         if request.method == 'GET':
@@ -123,7 +134,8 @@ class CompanyViewSet(viewsets.ModelViewSet):
             "followers_count": followers_count,
             "is_following": False
         }, status=status.HTTP_200_OK)
-    # ---- Stats (sonlar ko‘rinishida) ----
+
+    # ---- Stats ----
     @action(detail=True, methods=['get'], url_path='stats')
     def stats(self, request, pk=None):
         company = self.get_object()
@@ -138,7 +150,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
             "avg_rating": round(company.reviews.aggregate(a=Avg('rating'))['a'] or 0, 2),
             "interviews_count": company.interviews.count(),
             "photos_count": company.photos.count(),
-            "is_following": is_following,  # <— YANGI
+            "is_following": is_following,
         }
         return Response(data)
 
@@ -155,11 +167,3 @@ class CompanyViewSet(viewsets.ModelViewSet):
               .order_by('-followers_count', 'id')[:limit])
         ser = self.get_serializer(qs, many=True, context={'request': request})
         return Response(ser.data)
-
-    def _safe_vacancies_count(self, company):
-        try:
-            from vacancies.models import JobPost
-            # Agar FK bor bo‘lsa:
-            return JobPost.objects.filter(company=company).count()
-        except Exception:
-            return 0
