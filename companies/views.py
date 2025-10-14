@@ -103,27 +103,25 @@ class CompanyViewSet(viewsets.ModelViewSet):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # ---- Follow / Unfollow ----
-    @action(detail=True, methods=['post'], url_path='follow', permission_classes=[permissions.IsAuthenticated])
-    def follow(self, request, pk=None):
+    @action(detail=True, methods=['post'], url_path='toggle-follow', permission_classes=[permissions.IsAuthenticated])
+    def toggle_follow(self, request, pk=None):
         company = self.get_object()
-        _, created = CompanyFollow.objects.get_or_create(company=company, user=request.user)
-        followers_count = CompanyFollow.objects.filter(company=company).count()
-        return Response({
-            "followed": True,
-            "followers_count": followers_count,
-            "is_following": True
-        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        follow_qs = CompanyFollow.objects.filter(company=company, user=request.user)
+        if follow_qs.exists():
+            # ❌ Unfollow
+            follow_qs.delete()
+            is_following = False
+        else:
+            # ✅ Follow
+            CompanyFollow.objects.create(company=company, user=request.user)
+            is_following = True
 
-    @action(detail=True, methods=['post'], url_path='unfollow', permission_classes=[permissions.IsAuthenticated])
-    def unfollow(self, request, pk=None):
-        company = self.get_object()
-        CompanyFollow.objects.filter(company=company, user=request.user).delete()
         followers_count = CompanyFollow.objects.filter(company=company).count()
         return Response({
-            "followed": False,
-            "followers_count": followers_count,
-            "is_following": False
-        }, status=status.HTTP_200_OK)
+            "is_following": is_following,
+            "followers_count": followers_count
+        })
+
     # ---- Stats (sonlar ko‘rinishida) ----
     @action(detail=True, methods=['get'], url_path='stats')
     def stats(self, request, pk=None):
