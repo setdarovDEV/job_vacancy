@@ -33,12 +33,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(max_length=20, choices=Role.choices, null=True, blank=True)
     is_email_verified = models.BooleanField(default=False)
     profile_image = models.ImageField(upload_to='profile_images/', null=True, blank=True)
-    title = models.CharField(max_length=255, blank=True, null=True)  # ✅ yangi maydon
-    about_me = models.TextField(null=True, blank=True)  # 🆕 qo‘shildi
+    title = models.CharField(max_length=255, blank=True, null=True)
+    about_me = models.TextField(null=True, blank=True)
     last_seen = models.DateTimeField(null=True, blank=True)
     is_online = models.BooleanField(default=False)
 
-    # ✅ YANGI QO‘SHILDI:
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
 
@@ -64,6 +63,15 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.username
 
+    # ✅ Qo‘shildi — bu serializerlarda ishlaydi:
+    def get_full_name(self):
+        """Foydalanuvchining to‘liq ismini qaytaradi (yoki username fallback)."""
+        full = f"{self.first_name or ''} {self.last_name or ''}".strip()
+        return full or self.username
+
+    def get_short_name(self):
+        """Foydalanuvchining qisqa ismini qaytaradi."""
+        return self.first_name or self.username
 
 class EmailVerificationCode(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)

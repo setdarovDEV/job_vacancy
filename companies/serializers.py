@@ -1,20 +1,15 @@
 from rest_framework import serializers
 from .models import Company, CompanyReview, CompanyFollow, CompanyPhoto, InterviewExperience
-
-# ==== Helper avg rating
 from django.db.models import Avg, Count
 
 class CompanySerializer(serializers.ModelSerializer):
-    # Frontend kartalar va “Obzor” uchun statistikalar
     reviews_count = serializers.IntegerField(read_only=True)
     followers_count = serializers.IntegerField(read_only=True)
     vacancies_count = serializers.IntegerField(read_only=True)
     avg_rating = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
     logo = serializers.SerializerMethodField()
-    is_following    = serializers.SerializerMethodField()
+    is_following = serializers.SerializerMethodField()
 
-
-    # Ortiqcha: eski hisob-kitoblar (hire-rate va boshqalar)
     jobpost_count = serializers.SerializerMethodField()
     open_jobpost_count = serializers.SerializerMethodField()
     hire_rate = serializers.SerializerMethodField()
@@ -24,13 +19,11 @@ class CompanySerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['owner', 'created_at']
 
-    # Agar senga JobPost modeli company FK bilan ulangan bo‘lsa — shu branch ishlaydi.
     def get_jobpost_count(self, obj):
         try:
             from vacancies.models import JobPost
             return JobPost.objects.filter(company=obj).count()
         except Exception:
-            # eski kodingda user’ga bog‘langan bo‘lsa — fallback
             return obj.owner.job_posts.count()
 
     def get_open_jobpost_count(self, obj):
@@ -63,17 +56,27 @@ class CompanySerializer(serializers.ModelSerializer):
         if not obj.logo:
             return None
         request = self.context.get("request")
-        url = obj.logo.url  # '/media/company_logos/a.jpg'
+        url = obj.logo.url
         return request.build_absolute_uri(url) if request else url
 
 
+# ✅ Review Serializer with validation & fallback name
 class CompanyReviewSerializer(serializers.ModelSerializer):
-    user_name = serializers.CharField(source='user.get_full_name', read_only=True)
+    user_name = serializers.SerializerMethodField()
 
     class Meta:
         model = CompanyReview
         fields = ['id', 'company', 'user', 'user_name', 'rating', 'text', 'country', 'created_at']
         read_only_fields = ['user', 'company', 'created_at']
+
+    def get_user_name(self, obj):
+        full = obj.user.get_full_name().strip()
+        return full or obj.user.username
+
+    def validate_rating(self, value):
+        if not 1 <= value <= 5:
+            raise serializers.ValidationError("Reyting 1 dan 5 gacha bo‘lishi kerak.")
+        return value
 
 
 class CompanyPhotoSerializer(serializers.ModelSerializer):

@@ -8,11 +8,8 @@ class Company(models.Model):
     website = models.URLField(blank=True)
     location = models.CharField(max_length=255, blank=True)
     logo = models.ImageField(upload_to='company_logos/', blank=True, null=True)
-
-    # ⬇️ Yangi maydonlar
     banner = models.ImageField(upload_to='company_banners/', blank=True, null=True)
     description = models.TextField(blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -25,7 +22,7 @@ class CompanyReview(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="company_reviews")
     rating = models.PositiveSmallIntegerField()  # 1..5
     text = models.TextField(blank=True)
-    country = models.CharField(max_length=120, blank=True)  # “Узбекистан”
+    country = models.CharField(max_length=120, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -50,9 +47,7 @@ class CompanyFollow(models.Model):
         ]
 
 
-
 class CompanyPhoto(models.Model):
-    """Фотографии (galereya)."""
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="photos")
     image = models.ImageField(upload_to='company_photos/')
     caption = models.CharField(max_length=255, blank=True)
@@ -60,10 +55,9 @@ class CompanyPhoto(models.Model):
 
 
 class InterviewExperience(models.Model):
-    """Интервью tajribalari."""
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="interviews")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="interview_experiences")
-    title = models.CharField(max_length=255)           # masalan: Frontend Developer
-    difficulty = models.PositiveSmallIntegerField(default=3)  # 1..5
+    title = models.CharField(max_length=255)
+    difficulty = models.PositiveSmallIntegerField(default=3)
     text = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)

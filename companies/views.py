@@ -1,4 +1,4 @@
-from rest_framework import viewsets, permissions, status, filters
+from rest_framework import viewsets, permissions, status, filters, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import Avg, Count, Value, IntegerField
@@ -47,6 +47,8 @@ class CompanyViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['get', 'post'], url_path='reviews', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
     def reviews(self, request, pk=None):
         company = self.get_object()
+
+        # GET → sharhlar ro‘yxati
         if request.method == 'GET':
             qs = company.reviews.order_by('-created_at')
             page = self.paginate_queryset(qs)
@@ -55,12 +57,16 @@ class CompanyViewSet(viewsets.ModelViewSet):
                 return self.get_paginated_response(ser.data)
             return Response(ser.data)
 
-        # POST
+        # POST → yangi sharh
         if not request.user.is_authenticated:
-            return Response({"detail": "Authentication required."}, status=401)
+            return Response({"detail": "Avtorizatsiya talab qilinadi."}, status=401)
+
+        # 🔒 foydalanuvchi 2 marta yozmasin
+        if CompanyReview.objects.filter(company=company, user=request.user).exists():
+            return Response({"detail": "Siz allaqachon bu kompaniya uchun sharh qoldirgansiz."}, status=400)
+
         serializer = CompanyReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        # unique_together tufayli 2-marta yozishga ruxsat yo‘q
         serializer.save(company=company, user=request.user)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
