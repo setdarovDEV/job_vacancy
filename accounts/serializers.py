@@ -113,11 +113,19 @@ class LoginSerializer(serializers.Serializer):
         if not user:
             raise serializers.ValidationError("Login yoki parol noto‘g‘ri!")
 
+        # ❗️email tasdiqlanmaganini tekshirish
+        if not user.is_email_verified:
+            raise serializers.ValidationError("Email tasdiqlanmagan.")
+
         refresh = RefreshToken.for_user(user)
+
         return {
-            'access': str(refresh.access_token),
-            'refresh': str(refresh),
+            "access": str(refresh.access_token),
+            "refresh": str(refresh),
+            "role": user.role or "JOB_SEEKER",  # ✅ rolni qo‘shdik
+            "username": user.username,          # ✅ username ham qo‘shdik
         }
+
 
 class ProfileImageSerializer(serializers.ModelSerializer):
     class Meta:
