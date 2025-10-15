@@ -92,3 +92,25 @@ class JobPostViewSet(viewsets.ModelViewSet):
         SavedJob.objects.filter(user=user, job_post=job_post).delete()
         return Response({"message": "Vacancy unsaved ❌", "is_saved": False}, status=200)
 
+    # 🔹 Kompaniyaga tegishli vakansiyalarni olish
+    @action(detail=False, methods=['get'], url_path='by-company/(?P<company_id>[^/.]+)',
+            permission_classes=[permissions.AllowAny])
+    def by_company(self, request, company_id=None):
+        """
+        Berilgan company_id asosida shu kompaniyaga tegishli vakansiyalarni qaytaradi.
+        Faqat to‘ldirilmagan (is_filled=False) vakansiyalar.
+        """
+        qs = JobPost.objects.filter(
+            company_id=company_id,
+            is_filled=False
+        ).select_related('company', 'employer').order_by('-created_at')
+
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            ser = JobPostPublicSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(ser.data)
+
+        ser = JobPostPublicSerializer(qs, many=True, context={'request': request})
+        return Response(ser.data, status=200)
+
+
