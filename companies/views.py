@@ -1,10 +1,13 @@
+from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status, filters, serializers
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from django.db.models import Avg, Count, Value, IntegerField
 from django.db.models.functions import Coalesce
+from rest_framework import filters as drf_filters
 
-
+from .filters import CompanyFilter
 from .models import Company, CompanyReview, CompanyPhoto, InterviewExperience, CompanyFollow
 from .serializers import (
     CompanySerializer,
@@ -14,20 +17,30 @@ from .serializers import (
 )
 from .permissions import IsOwnerOrReadOnly
 
+class TenPerPage(PageNumberPagination):
+    page_size = 10
+
 class CompanyViewSet(viewsets.ModelViewSet):
     queryset = Company.objects.all()
     serializer_class = CompanySerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [DjangoFilterBackend, drf_filters.SearchFilter, drf_filters.OrderingFilter]
     search_fields = ['name', 'industry', 'location', 'description']
 
+    filterset_class = CompanyFilter
+    ordering_fields = ['avg_rating', 'followers_count', 'vacancies_count', 'created_at', 'name']
+    ordering = ['-followers_count', 'id']
+    pagination_class = TenPerPage
+
     def get_queryset(self):
-        qs = Company.objects.all().annotate(
-            reviews_count=Count('reviews', distinct=True),
-            followers_count=Count('follows', distinct=True),
-            vacancies_count=Count('job_posts', distinct=True),
-            avg_rating=Coalesce(Avg('reviews__rating'), Value(0.0)),
-        )
+        qs = (Company.objects
+              .all()
+              .annotate(
+                  reviews_count=Count('reviews', distinct=True),
+                  followers_count=Count('follows', distinct=True),
+                  vacancies_count=Count('job_posts', distinct=True),
+                  avg_rating=Coalesce(Avg('reviews__rating'), Value(0.0)),
+              ))
         if self.request.user.is_authenticated and self.request.query_params.get('mine') == '1':
             qs = qs.filter(owner=self.request.user)
         return qs
@@ -168,3 +181,4 @@ class CompanyViewSet(viewsets.ModelViewSet):
             return JobPost.objects.filter(company=company).count()
         except Exception:
             return 0
+
