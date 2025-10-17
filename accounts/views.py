@@ -4,6 +4,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from jwt.utils import force_bytes
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
@@ -450,3 +451,23 @@ class UserProfileDetailView(generics.RetrieveAPIView):
     serializer_class = UserProfileSerializer
     lookup_field = "id"  # /api/users/<id>/
     permission_classes = [IsAuthenticatedOrReadOnly]
+
+
+class UpdateOnlineStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        is_online = request.data.get("is_online", True)
+        user = request.user
+
+        if is_online:
+            user.is_online = True
+        else:
+            user.is_online = False
+            user.last_seen = timezone.now()
+
+        user.save(update_fields=["is_online", "last_seen"])
+        return Response({
+            "is_online": user.is_online,
+            "last_seen": user.last_seen,
+        })
