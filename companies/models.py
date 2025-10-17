@@ -31,7 +31,6 @@ class CompanyReview(models.Model):
     def __str__(self):
         return f"{self.company.name} • {self.user} • {self.rating}"
 
-
 class CompanyFollow(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name="follows")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="company_follows")

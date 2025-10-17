@@ -227,8 +227,10 @@ class CurrentUserView(APIView):
             "longitude": user.longitude,
             "work_hours_per_week": user.work_hours_per_week,
             "title": user.title,
-
+            "last_seen": user.last_seen,
+            "is_online": user.is_online,
         })
+
 
 
 class UpdateLocationView(APIView):
