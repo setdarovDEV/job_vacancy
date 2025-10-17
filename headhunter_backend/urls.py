@@ -34,6 +34,7 @@ urlpatterns = [
     path('skills/', include(router.urls)),
     path('certificate/', include(router.urls)),
     path('experience/', include(router.urls)),
+    path('api/', include(router.urls)),
     path("healthz/", health),
 
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
