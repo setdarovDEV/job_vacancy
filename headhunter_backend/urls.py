@@ -28,12 +28,6 @@ urlpatterns = [
     path("api/", include("community.urls")),
     path("api/", include("chats.urls")),
     path("api/applications/", include("applications.urls")),
-    path('language/', include(router.urls)),
-    path('education/', include(router.urls)),
-    path('portfolio/', include(router.urls)),
-    path('skills/', include(router.urls)),
-    path('certificate/', include(router.urls)),
-    path('experience/', include(router.urls)),
     path('api/', include(router.urls)),
     path("healthz/", health),
 
