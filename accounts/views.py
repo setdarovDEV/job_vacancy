@@ -228,11 +228,11 @@ class CurrentUserView(APIView):
             "longitude": user.longitude,
             "work_hours_per_week": user.work_hours_per_week,
             "title": user.title,
+            "about_me": user.about_me,               # ✅ qo‘shildi
+            "salary_usd": user.salary_usd,           # ✅ qo‘shildi
             "last_seen": user.last_seen,
             "is_online": user.is_online,
         })
-
-
 
 class UpdateLocationView(APIView):
     permission_classes = [IsAuthenticated]
