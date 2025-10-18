@@ -1,5 +1,8 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from headhunter_backend.settings import DEFAULT_FROM_EMAIL
@@ -126,6 +129,59 @@ class LoginSerializer(serializers.Serializer):
             "username": user.username,          # ✅ username ham qo‘shdik
         }
 
+class UpdateSalaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        salary = request.data.get('salary_usd')
+
+        if salary is None:
+            return Response({'error': 'Salary is required'}, status=400)
+
+        try:
+            salary = float(salary)  # 👈 floatga aylantiramiz
+        except (TypeError, ValueError):
+            return Response({'error': 'Invalid salary format'}, status=400)
+
+        request.user.salary_usd = salary
+        request.user.save(update_fields=["salary_usd"])  # 🔹 aniq update_fields
+
+        return Response({
+            'message': 'Salary updated successfully ✅',
+            'salary_usd': request.user.salary_usd  # 🔹 qayta yuboriladi
+        }, status=200)
+
+class UpdateAboutMeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        about = request.data.get("about_me")
+        if about is None:
+            return Response({"error": "About me is required"}, status=400)
+
+        request.user.about_me = about.strip()
+        request.user.save(update_fields=["about_me"])
+
+        return Response({
+            "message": "About me updated successfully ✅",
+            "about_me": request.user.about_me
+        }, status=200)
+
+class UpdateTitleView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        title = request.data.get('title')
+        if not title:
+            return Response({'error': 'Title is required'}, status=400)
+
+        request.user.title = title.strip()
+        request.user.save(update_fields=["title"])
+
+        return Response({
+            'message': 'Title updated successfully ✅',
+            'title': request.user.title
+        }, status=200)
 
 class ProfileImageSerializer(serializers.ModelSerializer):
     class Meta:
