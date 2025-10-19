@@ -216,24 +216,30 @@ class CustomUserSerializer(serializers.ModelSerializer):
         ]
 
 class PortfolioMediaSerializer(serializers.ModelSerializer):
+    file = serializers.SerializerMethodField()
+
     class Meta:
         model = PortfolioMedia
-        fields = ['id', 'file', 'file_type', 'project']
+        fields = ['id', 'project', 'file', 'file_type']
 
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
+    def get_file(self, obj):
         request = self.context.get('request')
-        if request:
-            data['file'] = request.build_absolute_uri(instance.file.url)
-        return data
+        if request is not None:
+            return request.build_absolute_uri(obj.file.url)
+        return obj.file.url
 
 class PortfolioProjectSerializer(serializers.ModelSerializer):
-    media_files = PortfolioMediaSerializer(many=True, read_only=True)
+    media_files = PortfolioMediaSerializer(many=True, read_only=True, context={'request': None})
 
     class Meta:
         model = PortfolioProject
         fields = ['id', 'user', 'title', 'description', 'skills', 'media_files', 'created_at']
-        read_only_fields = ['user']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'context' in kwargs:
+            self.fields['media_files'].context.update(self.context)
+
 
 class SkillSerializer(serializers.ModelSerializer):
     class Meta:
@@ -251,10 +257,19 @@ class BulkSkillSerializer(serializers.Serializer):
     skills = serializers.ListField(child=serializers.CharField(max_length=100))
 
 class CertificateSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = Certificate
-        fields = '__all__'
+        fields = ['id', 'name', 'organization', 'issue_date', 'file', 'file_url']
         read_only_fields = ['user']
+
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if obj.file and hasattr(obj.file, 'url'):
+            return request.build_absolute_uri(obj.file.url)
+        return None
+
 
 class WorkExperienceSerializer(serializers.ModelSerializer):
     class Meta:
