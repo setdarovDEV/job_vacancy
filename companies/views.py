@@ -1,14 +1,19 @@
+from django.db import transaction
+from django.db.models import Avg, Count, Value
+from django.db.models.functions import Coalesce
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import cache_page
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import viewsets, permissions, status, filters, serializers
+from rest_framework import viewsets, permissions, status, filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
-from django.db.models import Avg, Count, Value, IntegerField
-from django.db.models.functions import Coalesce
-from rest_framework import filters as drf_filters
 
 from .filters import CompanyFilter
-from .models import Company, CompanyReview, CompanyPhoto, InterviewExperience, CompanyFollow
+from .models import (
+    Company, CompanyReview, CompanyPhoto,
+    InterviewExperience, CompanyFollow
+)
 from .serializers import (
     CompanySerializer,
     CompanyReviewSerializer,
@@ -17,168 +22,166 @@ from .serializers import (
 )
 from .permissions import IsOwnerOrReadOnly
 
+
 class TenPerPage(PageNumberPagination):
     page_size = 10
 
+
+@method_decorator(cache_page(15), name="list")
 class CompanyViewSet(viewsets.ModelViewSet):
-    queryset = Company.objects.all()
+    """
+    Kompaniyalar uchun CRUD, filter, follow, review, photo, interview, va stats endpointlari.
+    """
     serializer_class = CompanySerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
     filter_backends = [DjangoFilterBackend, drf_filters.SearchFilter, drf_filters.OrderingFilter]
-    search_fields = ['name', 'industry', 'location', 'description']
-
+    search_fields = ["name", "industry", "location", "description"]
     filterset_class = CompanyFilter
-    ordering_fields = ['avg_rating', 'followers_count', 'vacancies_count', 'created_at', 'name']
-    ordering = ['-followers_count', 'id']
+    ordering_fields = ["avg_rating", "followers_count", "vacancies_count", "created_at", "name"]
+    ordering = ["-followers_count", "id"]
     pagination_class = TenPerPage
 
     def get_queryset(self):
-        qs = (Company.objects
-              .all()
-              .annotate(
-                  reviews_count=Count('reviews', distinct=True),
-                  followers_count=Count('follows', distinct=True),
-                  vacancies_count=Count('job_posts', distinct=True),
-                  avg_rating=Coalesce(Avg('reviews__rating'), Value(0.0)),
-              ))
-        if self.request.user.is_authenticated and self.request.query_params.get('mine') == '1':
+        """
+        Annotatsiya va join’lar bilan yengil, tezroq queryset.
+        """
+        qs = (
+            Company.objects
+            .select_related("owner")
+            .only("id", "name", "industry", "location", "logo", "banner", "created_at")
+            .annotate(
+                reviews_count=Count("reviews", distinct=True),
+                followers_count=Count("follows", distinct=True),
+                vacancies_count=Count("job_posts", distinct=True),
+                avg_rating=Coalesce(Avg("reviews__rating"), Value(0.0)),
+            )
+            .order_by("-followers_count", "id")
+        )
+        if self.request.user.is_authenticated and self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
         return qs
-
-    def _vacancies_subquery(self):
-        """JobPost bo‘lmasa ham server yiqilmasin."""
-        try:
-            from vacancies.models import JobPost
-            return Count('jobpost', distinct=True)  # related_name bo‘lsa
-        except Exception:
-            return Count('id') * 0  # 0 ga tenglash (fallback)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
-    # ---- Reviews ----
-    @action(detail=True, methods=['get', 'post'], url_path='reviews', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
+    # === REVIEWS ===
+    @action(detail=True, methods=["get", "post"], url_path="reviews")
     def reviews(self, request, pk=None):
         company = self.get_object()
 
-        # GET → sharhlar ro‘yxati
-        if request.method == 'GET':
-            qs = company.reviews.order_by('-created_at')
+        if request.method == "GET":
+            qs = company.reviews.select_related("user").only(
+                "id", "rating", "text", "country", "created_at",
+                "user__id", "user__first_name", "user__last_name"
+            ).order_by("-created_at")
             page = self.paginate_queryset(qs)
             ser = CompanyReviewSerializer(page or qs, many=True)
-            if page is not None:
-                return self.get_paginated_response(ser.data)
-            return Response(ser.data)
+            return self.get_paginated_response(ser.data) if page else Response(ser.data)
 
-        # POST → yangi sharh
         if not request.user.is_authenticated:
             return Response({"detail": "Avtorizatsiya talab qilinadi."}, status=401)
 
-        # 🔒 foydalanuvchi 2 marta yozmasin
         if CompanyReview.objects.filter(company=company, user=request.user).exists():
-            return Response({"detail": "Siz allaqachon bu kompaniya uchun sharh qoldirgansiz."}, status=400)
+            return Response({"detail": "Siz allaqachon sharh qoldirgansiz."}, status=400)
 
         serializer = CompanyReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(company=company, user=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        with transaction.atomic():
+            serializer.save(company=company, user=request.user)
+        return Response(serializer.data, status=201)
 
-    # ---- Photos ----
-    @action(detail=True, methods=['get', 'post'], url_path='photos', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
+    # === PHOTOS ===
+    @action(detail=True, methods=["get", "post"], url_path="photos")
     def photos(self, request, pk=None):
         company = self.get_object()
-        if request.method == 'GET':
-            qs = company.photos.order_by('-created_at')
+
+        if request.method == "GET":
+            qs = company.photos.only("id", "image", "caption", "created_at").order_by("-created_at")
             page = self.paginate_queryset(qs)
-            ser = CompanyPhotoSerializer(page or qs, many=True)
-            if page is not None:
-                return self.get_paginated_response(ser.data)
-            return Response(ser.data)
+            ser = CompanyPhotoSerializer(page or qs, many=True, context={"request": request})
+            return self.get_paginated_response(ser.data) if page else Response(ser.data)
 
         if not request.user.is_authenticated:
             return Response({"detail": "Authentication required."}, status=401)
+
         serializer = CompanyPhotoSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(company=company)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        with transaction.atomic():
+            serializer.save(company=company)
+        return Response(serializer.data, status=201)
 
-    # ---- Interviews ----
-    @action(detail=True, methods=['get', 'post'], url_path='interviews', permission_classes=[permissions.IsAuthenticatedOrReadOnly])
+    # === INTERVIEWS ===
+    @action(detail=True, methods=["get", "post"], url_path="interviews")
     def interviews(self, request, pk=None):
         company = self.get_object()
-        if request.method == 'GET':
-            qs = company.interviews.order_by('-created_at')
+
+        if request.method == "GET":
+            qs = company.interviews.select_related("user").only(
+                "id", "title", "difficulty", "text", "created_at",
+                "user__id", "user__first_name", "user__last_name"
+            ).order_by("-created_at")
             page = self.paginate_queryset(qs)
             ser = InterviewExperienceSerializer(page or qs, many=True)
-            if page is not None:
-                return self.get_paginated_response(ser.data)
-            return Response(ser.data)
+            return self.get_paginated_response(ser.data) if page else Response(ser.data)
 
         if not request.user.is_authenticated:
             return Response({"detail": "Authentication required."}, status=401)
+
         serializer = InterviewExperienceSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        serializer.save(company=company, user=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        with transaction.atomic():
+            serializer.save(company=company, user=request.user)
+        return Response(serializer.data, status=201)
 
-    # ---- Follow / Unfollow ----
-    @action(detail=True, methods=['post'], url_path='toggle-follow', permission_classes=[permissions.IsAuthenticated])
+    # === FOLLOW / UNFOLLOW ===
+    @action(detail=True, methods=["post"], url_path="toggle-follow", permission_classes=[permissions.IsAuthenticated])
     def toggle_follow(self, request, pk=None):
         company = self.get_object()
-        follow_qs = CompanyFollow.objects.filter(company=company, user=request.user)
-        if follow_qs.exists():
-            # ❌ Unfollow
-            follow_qs.delete()
-            is_following = False
-        else:
-            # ✅ Follow
-            CompanyFollow.objects.create(company=company, user=request.user)
-            is_following = True
+        with transaction.atomic():
+            follow_qs = CompanyFollow.objects.filter(company=company, user=request.user)
+            if follow_qs.exists():
+                follow_qs.delete()
+                is_following = False
+            else:
+                CompanyFollow.objects.create(company=company, user=request.user)
+                is_following = True
 
-        followers_count = CompanyFollow.objects.filter(company=company).count()
-        return Response({
-            "is_following": is_following,
-            "followers_count": followers_count
-        })
+        count = CompanyFollow.objects.filter(company=company).count()
+        return Response({"is_following": is_following, "followers_count": count}, status=200)
 
-    # ---- Stats (sonlar ko‘rinishida) ----
-    @action(detail=True, methods=['get'], url_path='stats')
+    # === STATS ===
+    @action(detail=True, methods=["get"], url_path="stats")
     def stats(self, request, pk=None):
         company = self.get_object()
-        is_following = False
-        if request.user.is_authenticated:
-            is_following = CompanyFollow.objects.filter(company=company, user=request.user).exists()
-
+        is_following = (
+            request.user.is_authenticated
+            and CompanyFollow.objects.filter(company=company, user=request.user).exists()
+        )
         data = {
             "reviews_count": company.reviews.count(),
             "followers_count": company.follows.count(),
             "vacancies_count": company.job_posts.count(),
-            "avg_rating": round(company.reviews.aggregate(a=Avg('rating'))['a'] or 0, 2),
+            "avg_rating": round(company.reviews.aggregate(a=Avg("rating"))["a"] or 0, 2),
             "interviews_count": company.interviews.count(),
             "photos_count": company.photos.count(),
-            "is_following": is_following,  # <— YANGI
+            "is_following": is_following,
         }
-        return Response(data)
+        return Response(data, status=200)
 
-    @action(detail=False, methods=['get'], url_path='top')
+    # === TOP COMPANIES ===
+    @action(detail=False, methods=["get"], url_path="top")
     def top(self, request):
-        limit = int(request.query_params.get('limit', 5))
-        qs = (Company.objects
-              .annotate(
-                  reviews_count=Count('reviews', distinct=True),
-                  followers_count=Count('follows', distinct=True),
-                  vacancies_count=Count('job_posts', distinct=True),
-                  avg_rating=Coalesce(Avg('reviews__rating'), Value(0.0)),
-              )
-              .order_by('-followers_count', 'id')[:limit])
-        ser = self.get_serializer(qs, many=True, context={'request': request})
-        return Response(ser.data)
-
-    def _safe_vacancies_count(self, company):
-        try:
-            from vacancies.models import JobPost
-            # Agar FK bor bo‘lsa:
-            return JobPost.objects.filter(company=company).count()
-        except Exception:
-            return 0
-
+        limit = int(request.query_params.get("limit", 5))
+        qs = (
+            Company.objects
+            .annotate(
+                reviews_count=Count("reviews", distinct=True),
+                followers_count=Count("follows", distinct=True),
+                vacancies_count=Count("job_posts", distinct=True),
+                avg_rating=Coalesce(Avg("reviews__rating"), Value(0.0)),
+            )
+            .only("id", "name", "industry", "location", "logo")
+            .order_by("-followers_count", "id")[:limit]
+        )
+        ser = self.get_serializer(qs, many=True, context={"request": request})
+        return Response(ser.data, status=200)

@@ -73,6 +73,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         """Foydalanuvchining qisqa ismini qaytaradi."""
         return self.first_name or self.username
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['username']),
+            models.Index(fields=['email']),
+            models.Index(fields=['role']),
+        ]
+
 class EmailVerificationCode(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
     code = models.CharField(max_length=6)
@@ -148,6 +155,12 @@ class Certificate(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.user.username}"
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user']),
+            models.Index(fields=['issue_date']),
+        ]
 
 class WorkExperience(models.Model):
     user = models.ForeignKey(AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="experiences")

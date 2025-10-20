@@ -1,4 +1,4 @@
-#!/media/maclap-uz/d/job_vacancy_backend/venv/bin/python3
+#!/home/maclap-uz/Projects/job_vacancy_backend/venv/bin/python3
 # -*- coding: utf-8 -*-
 import re
 import sys

@@ -1,3 +1,6 @@
+import asyncio
+from asgiref.sync import sync_to_async
+import httpx
 from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
@@ -33,18 +36,12 @@ class RegisterStepOneSerializer(serializers.ModelSerializer):
 class RegisterStepTwoEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
-    def validate_email(self, email):
-        if CustomUser.objects.filter(email=email).exists():
-            raise serializers.ValidationError("Bu email allaqachon ishlatilgan")
-        return email
-
     def save(self, **kwargs):
         user = self.context['user']
         email = self.validated_data['email']
 
         user.email = email
         user.save(update_fields=["email"])
-
         code = f"{random.randint(100000, 999999)}"
 
         EmailVerificationCode.objects.update_or_create(
@@ -52,16 +49,21 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
             defaults={'code': code}
         )
 
+        # 🔹 Email yuborishni background task sifatida ishga tushiramiz:
         try:
-            send_mail(
-                subject="Tasdiqlash kodingiz",
-                message=f"Sizning 2FA tasdiqlash kodingiz: {code}",
-                from_email=DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=False,
-            )
-        except Exception as e:
-            raise serializers.ValidationError({"email": f"Email yuborishda xatolik: {e}"})
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # async kontekstda
+                loop.create_task(send_verification_email(email, code))
+            else:
+                # sync kontekstda
+                asyncio.run(send_verification_email(email, code))
+        except RuntimeError:
+            # Django runserver kontekstida fallback
+            import threading
+            threading.Thread(
+                target=lambda: asyncio.run(send_verification_email(email, code))
+            ).start()
 
         return {"detail": "Tasdiqlash kodi yuborildi"}
 
@@ -216,24 +218,31 @@ class CustomUserSerializer(serializers.ModelSerializer):
         ]
 
 class PortfolioMediaSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
     file = serializers.SerializerMethodField()
 
     class Meta:
         model = PortfolioMedia
-        fields = ['id', 'project', 'file', 'file_type']
+        fields = ['id', 'project', 'image', 'file', 'caption', 'uploaded_at']
+        read_only_fields = ['id', 'uploaded_at', 'project']
+
+    def get_image(self, obj):
+        request = self.context.get('request')
+        if obj.image:
+            return request.build_absolute_uri(obj.image.url) if request else obj.image.url
+        return None
 
     def get_file(self, obj):
         request = self.context.get('request')
-        if request is not None:
-            return request.build_absolute_uri(obj.file.url)
-        return obj.file.url
+        if obj.file:
+            return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+        return None
 
 class PortfolioProjectSerializer(serializers.ModelSerializer):
-    media_files = PortfolioMediaSerializer(many=True, read_only=True, context={'request': None})
-
     class Meta:
         model = PortfolioProject
-        fields = ['id', 'user', 'title', 'description', 'skills', 'media_files', 'created_at']
+        fields = ['id', 'user', 'title', 'description', 'skills', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at']
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -396,3 +405,12 @@ class UserProfileSerializer(serializers.ModelSerializer):
             if isinstance(psk, list):
                 return psk
         return []
+
+async def send_verification_email(email, code):
+    async with httpx.AsyncClient() as client:
+        # bu misol uchun, haqiqiy mail API bo‘lishi mumkin
+        await client.post(
+            "https://api.brevo.com/send",
+            json={"to": email, "text": f"Sizning 2FA kodingiz: {code}"},
+            timeout=10
+        )
