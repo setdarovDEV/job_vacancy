@@ -327,27 +327,27 @@ class UpdateAboutMeView(APIView):
 # ---------------- MODEL VIEWSETS ----------------
 class LanguageSkillViewSet(viewsets.ModelViewSet):
     serializer_class = LanguageSkillSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
-            return self.queryset.none()
-        return self.queryset.filter(user=user)
+            return LanguageSkill.objects.none()
+        return LanguageSkill.objects.filter(user=user).order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
 
 class EducationViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated]
     serializer_class = EducationSerializer
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
-            return self.queryset.none()
-        return self.queryset.filter(user=user)
+            return Education.objects.none()
+        return Education.objects.filter(user=user).order_by('-start_year')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -393,13 +393,13 @@ class SkillAnswerViewSet(viewsets.ModelViewSet):
 
 class CertificateViewSet(viewsets.ModelViewSet):
     serializer_class = CertificateSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
-            return self.queryset.none()
-        return self.queryset.filter(user=user)
+            return Certificate.objects.none()
+        return Certificate.objects.filter(user=user).order_by('-issue_date')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -407,13 +407,13 @@ class CertificateViewSet(viewsets.ModelViewSet):
 
 class WorkExperienceViewSet(viewsets.ModelViewSet):
     serializer_class = WorkExperienceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         user = self.request.user
         if not user.is_authenticated:
-            return self.queryset.none()
-        return self.queryset.filter(user=user)
+            return WorkExperience.objects.none()
+        return WorkExperience.objects.filter(user=user).order_by('-start_date')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
