@@ -240,3 +240,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30  # 30 kun
+
+if not DEBUG:
+    from django.conf.urls.static import static
+    from django.views.static import serve
+    from django.urls import re_path
+
+    urlpatterns += [
+        re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+    ]
