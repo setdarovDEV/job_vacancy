@@ -330,7 +330,10 @@ class LanguageSkillViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return LanguageSkill.objects.select_related("user").only("id", "language", "level").filter(user=self.request.user)
+        user = self.request.user
+        if not user.is_authenticated:
+            return self.queryset.none()
+        return self.queryset.filter(user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -341,7 +344,10 @@ class EducationViewSet(viewsets.ModelViewSet):
     serializer_class = EducationSerializer
 
     def get_queryset(self):
-        return Education.objects.select_related("user").only("id", "academy_name", "degree", "start_year", "end_year").filter(user=self.request.user)
+        user = self.request.user
+        if not user.is_authenticated:
+            return self.queryset.none()
+        return self.queryset.filter(user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -372,7 +378,10 @@ class SkillAnswerViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return SkillAnswer.objects.select_related("user", "skill").filter(user=self.request.user)
+        user = self.request.user
+        if not user.is_authenticated:
+            return self.queryset.none()
+        return self.queryset.filter(user=user)
 
     def perform_create(self, serializer):
         skill = serializer.validated_data["skill"]
@@ -387,7 +396,10 @@ class CertificateViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return Certificate.objects.select_related("user").only("id", "name", "organization", "issue_date", "file").filter(user=self.request.user)
+        user = self.request.user
+        if not user.is_authenticated:
+            return self.queryset.none()
+        return self.queryset.filter(user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -398,7 +410,10 @@ class WorkExperienceViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return WorkExperience.objects.select_related("user").only("id", "company_name", "position", "start_date", "end_date", "description", "city", "country").filter(user=self.request.user)
+        user = self.request.user
+        if not user.is_authenticated:
+            return self.queryset.none()
+        return self.queryset.filter(user=user)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -517,8 +532,8 @@ class PortfolioMediaViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        project_id = self.request.data.get("project")
-        if not project_id:
-            raise serializers.ValidationError({"detail": "project maydoni majburiy"})
+        try:
+            project_id = int(self.request.data.get("project"))
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({"detail": "project_id noto‘g‘ri formatda"})
         serializer.save(project_id=project_id)
-

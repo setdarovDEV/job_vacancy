@@ -218,13 +218,18 @@ class CustomUserSerializer(serializers.ModelSerializer):
         ]
 
 class PortfolioMediaSerializer(serializers.ModelSerializer):
-    image = serializers.SerializerMethodField()
     file = serializers.SerializerMethodField()
 
     class Meta:
         model = PortfolioMedia
-        fields = ['id', 'project', 'image', 'file', 'caption', 'uploaded_at']
-        read_only_fields = ['id', 'uploaded_at', 'project']
+        fields = ['id', 'project', 'file', 'file_type']  # ✅ faqat mavjud maydonlar
+        read_only_fields = ['id', 'project']
+
+    def get_file(self, obj):
+        request = self.context.get('request')
+        if obj.file and hasattr(obj.file, 'url'):
+            return request.build_absolute_uri(obj.file.url)
+        return None
 
     def get_image(self, obj):
         request = self.context.get('request')
@@ -232,17 +237,14 @@ class PortfolioMediaSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.image.url) if request else obj.image.url
         return None
 
-    def get_file(self, obj):
-        request = self.context.get('request')
-        if obj.file:
-            return request.build_absolute_uri(obj.file.url) if request else obj.file.url
-        return None
-
 class PortfolioProjectSerializer(serializers.ModelSerializer):
+    media_files = PortfolioMediaSerializer(many=True, read_only=True)  # ✅ qo‘shildi
+
     class Meta:
         model = PortfolioProject
-        fields = ['id', 'user', 'title', 'description', 'skills', 'created_at']
+        fields = ['id', 'user', 'title', 'description', 'skills', 'created_at', 'media_files']
         read_only_fields = ['id', 'user', 'created_at']
+
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
