@@ -516,24 +516,26 @@ class PortfolioProjectViewSet(viewsets.ModelViewSet):
             qs = qs.filter(user=user)
         return qs
 
+
 class PortfolioMediaViewSet(viewsets.ModelViewSet):
     serializer_class = PortfolioMediaSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
     parser_classes = [MultiPartParser, FormParser]
 
     def get_queryset(self):
-        """
-        /portfolio-projects/<id>/media/ yoki umumiy GET uchun
-        """
         project_id = self.request.query_params.get("project")
-        qs = PortfolioMedia.objects.all().select_related("project", "project__user").order_by("-uploaded_at")
+        qs = PortfolioMedia.objects.all().select_related("project", "project__user").order_by("-id")
         if project_id:
             qs = qs.filter(project_id=project_id)
         return qs
 
     def perform_create(self, serializer):
-        try:
-            project_id = int(self.request.data.get("project"))
-        except (TypeError, ValueError):
-            raise serializers.ValidationError({"detail": "project_id noto‘g‘ri formatda"})
-        serializer.save(project_id=project_id)
+        project_id = self.request.data.get("project")
+        if not project_id:
+            raise serializers.ValidationError({"detail": "project maydoni majburiy"})
+
+        file_obj = self.request.FILES.get("file")
+        if not file_obj:
+            raise serializers.ValidationError({"detail": "Fayl yuborilmadi"})
+
+        serializer.save(project_id=project_id, file=file_obj)

@@ -197,6 +197,19 @@ class ProfileImageSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
+class PortfolioMediaSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = PortfolioMedia
+        fields = ['id', 'project', 'file', 'file_url', 'file_type']
+        read_only_fields = ['id', 'file_url']
+
+    def get_file_url(self, obj):
+        request = self.context.get('request')
+        if obj.file and hasattr(obj.file, 'url'):
+            return request.build_absolute_uri(obj.file.url)
+        return None
 
 class LanguageSkillSerializer(serializers.ModelSerializer):
     class Meta:
