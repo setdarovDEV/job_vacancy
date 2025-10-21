@@ -5,8 +5,10 @@ from django.conf import settings
 from django.conf.urls.static import static
 from rest_framework.routers import DefaultRouter
 
-from accounts.views import LanguageSkillViewSet, EducationViewSet, PortfolioProjectViewSet, PortfolioMediaViewSet, \
-    SkillViewSet, CertificateViewSet, WorkExperienceViewSet
+from accounts.views import (
+    LanguageSkillViewSet, EducationViewSet, PortfolioProjectViewSet,
+    PortfolioMediaViewSet, SkillViewSet, CertificateViewSet, WorkExperienceViewSet
+)
 
 router = DefaultRouter()
 router.register(r'languages', LanguageSkillViewSet, basename='language-skill')
@@ -17,7 +19,10 @@ router.register(r'skills', SkillViewSet, basename='skills')
 router.register(r'certificates', CertificateViewSet, basename='certificate')
 router.register(r'experiences', WorkExperienceViewSet, basename='experience')
 
-def health(request): return JsonResponse({"status": "ok"})
+
+def health(request):
+    return JsonResponse({"status": "ok"})
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -25,15 +30,14 @@ urlpatterns = [
     path('api/vacancies/', include('vacancies.urls')),
     path('api/', include('companies.urls')),
     path('api/', include('resume.urls')),
-    path("api/", include("community.urls")),
-    path("api/", include("chats.urls")),
-    path("api/applications/", include("applications.urls")),
+    path('api/', include('community.urls')),
+    path('api/', include('chats.urls')),
+    path('api/applications/', include('applications.urls')),
     path('api/', include(router.urls)),
-    path("healthz/", health),
+    path('healthz/', health),
+    path('silk/', include('silk.urls', namespace='silk')),
+]
 
-] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
+# ✅ Faqat local dev paytida media serve qilish
 if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL,    document_root=settings.MEDIA_ROOT)
-
-urlpatterns += [path('silk/', include('silk.urls', namespace='silk'))]
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
