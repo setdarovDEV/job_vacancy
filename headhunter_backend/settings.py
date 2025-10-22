@@ -240,3 +240,6 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30  # 30 kun
+
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

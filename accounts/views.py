@@ -241,7 +241,7 @@ class CurrentUserView(APIView):
             "email": u.email,
             "username": u.username,
             "role": u.role,
-            "profile_image": u.profile_image.url if u.profile_image else None,
+            "profile_image": request.build_absolute_uri(u.profile_image.url) if u.profile_image else None,
             "latitude": u.latitude,
             "longitude": u.longitude,
             "work_hours_per_week": u.work_hours_per_week,

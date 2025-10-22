@@ -1,4 +1,6 @@
 import asyncio
+import os
+
 from asgiref.sync import sync_to_async
 import httpx
 from django.contrib.auth import authenticate
@@ -197,19 +199,40 @@ class ProfileImageSerializer(serializers.ModelSerializer):
 
         return super().update(instance, validated_data)
 
+# serializers.py
 class PortfolioMediaSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PortfolioMedia
-        fields = ['id', 'project', 'file', 'file_url', 'file_type']
+        fields = ['id', 'file', 'file_type', 'file_url']
         read_only_fields = ['id', 'file_url']
 
     def get_file_url(self, obj):
         request = self.context.get('request')
         if obj.file and hasattr(obj.file, 'url'):
-            return request.build_absolute_uri(obj.file.url)
+            if request:
+                return request.build_absolute_uri(obj.file.url)
+            # fallback: agar request yo‘q bo‘lsa ham nisbiy yo‘lni qaytarmaymiz
+            from django.conf import settings
+            base = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
+            return f"{base}{obj.file.url}" if base else obj.file.url
         return None
+
+
+class PortfolioProjectSerializer(serializers.ModelSerializer):
+    media_files = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PortfolioProject
+        fields = ['id', 'user', 'title', 'description', 'skills', 'created_at', 'media_files']
+        read_only_fields = ['id', 'user', 'created_at']
+
+    def get_media_files(self, obj):
+        # 👇 MUHIM: context=self.context bilan ichki serializerga requestni beramiz
+        qs = obj.media_files.all().order_by('-id')
+        return PortfolioMediaSerializer(qs, many=True, context=self.context).data
+
 
 class LanguageSkillSerializer(serializers.ModelSerializer):
     class Meta:
@@ -249,21 +272,6 @@ class PortfolioMediaSerializer(serializers.ModelSerializer):
         if obj.image:
             return request.build_absolute_uri(obj.image.url) if request else obj.image.url
         return None
-
-class PortfolioProjectSerializer(serializers.ModelSerializer):
-    media_files = PortfolioMediaSerializer(many=True, read_only=True)  # ✅ qo‘shildi
-
-    class Meta:
-        model = PortfolioProject
-        fields = ['id', 'user', 'title', 'description', 'skills', 'created_at', 'media_files']
-        read_only_fields = ['id', 'user', 'created_at']
-
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        if 'context' in kwargs:
-            self.fields['media_files'].context.update(self.context)
-
 
 class SkillSerializer(serializers.ModelSerializer):
     class Meta:
