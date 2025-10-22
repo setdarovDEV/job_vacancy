@@ -393,13 +393,10 @@ class SkillAnswerViewSet(viewsets.ModelViewSet):
 
 class CertificateViewSet(viewsets.ModelViewSet):
     serializer_class = CertificateSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
-        if not user.is_authenticated:
-            return Certificate.objects.none()
-        return Certificate.objects.filter(user=user).order_by('-issue_date')
+        return Certificate.objects.filter(user=self.request.user).order_by('-issue_date')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)

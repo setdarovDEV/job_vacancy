@@ -294,14 +294,13 @@ class CertificateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Certificate
         fields = ['id', 'name', 'organization', 'issue_date', 'file', 'file_url']
-        read_only_fields = ['user']
+        read_only_fields = ['id', 'user', 'file_url']
 
     def get_file_url(self, obj):
         request = self.context.get('request')
         if obj.file and hasattr(obj.file, 'url'):
-            return request.build_absolute_uri(obj.file.url)
+            return request.build_absolute_uri(obj.file.url) if request else obj.file.url
         return None
-
 
 class WorkExperienceSerializer(serializers.ModelSerializer):
     class Meta:
