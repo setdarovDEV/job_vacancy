@@ -390,17 +390,16 @@ class SkillAnswerViewSet(viewsets.ModelViewSet):
             user=self.request.user, skill=skill, defaults={"answer": answer}
         )
 
-
 class CertificateViewSet(viewsets.ModelViewSet):
     serializer_class = CertificateSerializer
     permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]  # 🟩 FAYLLARNI QABUL QILISH UCHUN
 
     def get_queryset(self):
         return Certificate.objects.filter(user=self.request.user).order_by('-issue_date')
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
-
 
 class WorkExperienceViewSet(viewsets.ModelViewSet):
     serializer_class = WorkExperienceSerializer
