@@ -168,8 +168,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30  # ⚡ 30 days cache
 
-MEDIA_URL = os.environ.get("MEDIA_URL", "/media/")
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = '/opt/render/project/src/media'
+MEDIA_URL = '/media/'
 
 # --------------------------------------------------
 # ✅ Email
