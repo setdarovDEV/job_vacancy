@@ -3,7 +3,7 @@ from .views import (
     ApplyView, JobApplicationsForEmployerView,
     JobApplicationDetailView, CancelMyApplicationView,
     EmployerAllApplicationsView,
-    ApplicationApplicantView,   # <-- qo‘shish
+    ApplicationApplicantView, MyApplicationsView,  # <-- qo‘shish
 )
 
 urlpatterns = [
@@ -14,4 +14,5 @@ urlpatterns = [
     path("<int:pk>/applicant/", ApplicationApplicantView.as_view(), name="application-applicant"),  # NEW
     path("jobs/<int:job_id>/mine/", CancelMyApplicationView.as_view(), name="cancel-my-application"),
     path("my/applications/", EmployerAllApplicationsView.as_view(), name="employer-all-applications"),
+    path("my/", MyApplicationsView.as_view(), name="my-applications"),
 ]

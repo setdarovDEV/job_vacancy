@@ -169,3 +169,22 @@ class ApplicationApplicantView(APIView):
 
         data = ApplicantFullSerializer(app.applicant, context={"request": request}).data
         return Response(data, status=200)
+
+# ==============================
+# 7️⃣ JOB SEEKER: o‘zining barcha arizalari
+# ==============================
+class MyApplicationsView(generics.ListAPIView):
+    serializer_class = JobApplicationSerializer
+    permission_classes = [IsAuthenticated, IsJobSeeker]
+
+    def get_queryset(self):
+        return (
+            JobApplication.objects
+            .select_related("job_post", "applicant")
+            .only(
+                "id", "cover_letter", "status", "created_at",
+                "job_post__id", "job_post__title", "job_post__company", "job_post__location"
+            )
+            .filter(applicant=self.request.user)
+            .order_by("-created_at")
+        )
