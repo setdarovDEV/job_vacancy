@@ -555,3 +555,53 @@ class ChangePasswordView(APIView):
         request.user.set_password(new)
         request.user.save()
         return Response({"message": "Password changed successfully ✅"})
+
+class UpdateEmailSendView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        new_email = request.data.get("new_email")
+        if not new_email:
+            return Response({"error": "Email is required"}, status=400)
+
+        code = f"{random.randint(100000, 999999)}"
+        EmailVerificationCode.objects.update_or_create(
+            user=request.user,
+            defaults={"code": code}
+        )
+
+        send_mail(
+            subject="Код для смены E-mail",
+            message=f"Ваш код подтверждения: {code}",
+            from_email=DEFAULT_FROM_EMAIL,
+            recipient_list=[new_email],
+            fail_silently=True,
+        )
+
+        cache.set(f"email_change:{request.user.id}", new_email, timeout=300)
+        return Response({"message": "Код отправлен на новый E-mail"})
+
+class UpdateEmailVerifyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        code = request.data.get("code")
+        if not code:
+            return Response({"error": "Код обязателен"}, status=400)
+
+        try:
+            rec = EmailVerificationCode.objects.get(user=request.user, code=code)
+        except EmailVerificationCode.DoesNotExist:
+            return Response({"error": "Неверный код"}, status=400)
+
+        new_email = cache.get(f"email_change:{request.user.id}")
+        if not new_email:
+            return Response({"error": "Код истёк или не найден"}, status=400)
+
+        request.user.email = new_email
+        request.user.is_email_verified = True
+        request.user.save()
+        rec.delete()
+        cache.delete(f"email_change:{request.user.id}")
+
+        return Response({"message": "E-mail успешно изменен ✅"})
