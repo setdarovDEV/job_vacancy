@@ -19,9 +19,6 @@ class TenPerPagePagination(PageNumberPagination):
 
 @method_decorator(cache_page(10), name="list")
 class JobPostViewSet(viewsets.ModelViewSet):
-    """
-    Vakansiyalar uchun CRUD, filter, rating, save va company bo‘yicha qidiruv.
-    """
     serializer_class = JobPostSerializer
     permission_classes = [permissions.AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -29,25 +26,26 @@ class JobPostViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "description", "location", "company__name"]
     pagination_class = TenPerPagePagination
 
-    def get_queryset(self):
-        """
-        Optimal queryset:
-        - only() va select_related() ishlatilgan
-        - faqat aktiv vakansiyalar (budget_min/budget_max mavjud)
-        """
-        qs = (
+    def base_queryset(self):
+        return (
             JobPost.objects
             .select_related("employer", "company")
             .only(
                 "id", "title", "employer__id", "employer__username",
                 "company__id", "company__name", "location", "skills",
-                "budget_min", "budget_max", "plan", "is_remote", "created_at", "description",
-                "is_filled", "deadline", "duration"
+                "budget_min", "budget_max", "plan", "is_remote", "created_at",
+                "description", "is_filled", "deadline", "duration"
             )
-            .filter(budget_min__isnull=False, budget_max__isnull=False)
-            .order_by("-created_at")
         )
-        return qs
+
+    def get_queryset(self):
+        # ⚠️ List/featured/recent/by_company uchungina filtrlash
+        if getattr(self, "action", None) in ("list", "recent", "featured", "by_company"):
+            return self.base_queryset().filter(
+                budget_min__isnull=False, budget_max__isnull=False
+            ).order_by("-created_at")
+        # Detail/patch/update/delete/retrieve/create uchun to‘liq queryset
+        return self.base_queryset().order_by("-created_at")
 
     def get_serializer_class(self):
         if self.action in ("list", "recent", "featured", "by_company"):
@@ -55,7 +53,8 @@ class JobPostViewSet(viewsets.ModelViewSet):
         return JobPostSerializer
 
     def get_permissions(self):
-        if self.action in ("create", "rate", "save_vacancy"):
+        # Update/partial_update ham auth talab qiladi
+        if self.action in ("create", "update", "partial_update", "destroy", "rate", "save_vacancy"):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
