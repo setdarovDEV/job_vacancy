@@ -535,3 +535,23 @@ class PortfolioMediaViewSet(viewsets.ModelViewSet):
             raise serializers.ValidationError({"detail": "Fayl yuborilmadi"})
 
         serializer.save(project_id=project_id, file=file_obj)
+
+# accounts/views.py
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        current = request.data.get("current_password")
+        new = request.data.get("new_password")
+        confirm = request.data.get("confirm_password")
+
+        if not all([current, new, confirm]):
+            return Response({"error": "All fields required"}, status=400)
+        if new != confirm:
+            return Response({"error": "Passwords do not match"}, status=400)
+        if not request.user.check_password(current):
+            return Response({"error": "Current password incorrect"}, status=400)
+
+        request.user.set_password(new)
+        request.user.save()
+        return Response({"message": "Password changed successfully ✅"})

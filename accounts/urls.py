@@ -11,7 +11,7 @@ from .views import (
     RegisterStepFourRoleView, ResendVerificationCodeView, LoginView, PasswordResetRequestView, PasswordResetConfirmView,
     LogoutView, ProfileImageUpdateView, ProfileView, CurrentUserView, UpdateLocationView, UpdateWorkHoursView,
     UpdateTitleView, UpdateSalaryView, UpdateAboutMeView, SkillViewSet, SkillAnswerViewSet, UserSearchView,
-    UserProfileDetailView, UpdateOnlineStatusView
+    UserProfileDetailView, UpdateOnlineStatusView, ChangePasswordView
 )
 
 router = DefaultRouter()
@@ -42,5 +42,6 @@ urlpatterns = [
     path("users/search/", UserSearchView.as_view(), name="user-search"),
     path("<uuid:id>/", UserProfileDetailView.as_view(), name="user-profile"),
     path('update-online/', UpdateOnlineStatusView.as_view(), name='update-online'),
+    path("change-password/", ChangePasswordView.as_view(), name="change-password"),
 
 ]
