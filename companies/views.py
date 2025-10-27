@@ -42,13 +42,14 @@ class CompanyViewSet(viewsets.ModelViewSet):
     pagination_class = TenPerPage
 
     def get_queryset(self):
-        """
-        Annotatsiya va join’lar bilan yengil, tezroq queryset.
-        """
         qs = (
             Company.objects
             .select_related("owner")
-            .only("id", "name", "industry", "location", "logo", "banner", "created_at")
+            .only(
+                "id", "name", "industry", "location",
+                "logo", "banner", "created_at",
+                "owner_id"  # ✅ shu qo‘shiladi
+            )
             .annotate(
                 reviews_count=Count("reviews", distinct=True),
                 followers_count=Count("follows", distinct=True),
@@ -57,6 +58,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
             )
             .order_by("-followers_count", "id")
         )
+
         if self.request.user.is_authenticated and self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
         return qs
