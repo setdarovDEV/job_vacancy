@@ -39,13 +39,15 @@ class JobPostViewSet(viewsets.ModelViewSet):
         )
 
     def get_queryset(self):
-        # ⚠️ List/featured/recent/by_company uchungina filtrlash
-        if getattr(self, "action", None) in ("list", "recent", "featured", "by_company"):
-            return self.base_queryset().filter(
-                budget_min__isnull=False, budget_max__isnull=False
+        base_qs = JobPost.objects.select_related("employer", "company")
+
+        if self.action in ("list", "recent", "featured", "by_company"):
+            return base_qs.filter(
+                budget_min__isnull=False,
+                budget_max__isnull=False
             ).order_by("-created_at")
-        # Detail/patch/update/delete/retrieve/create uchun to‘liq queryset
-        return self.base_queryset().order_by("-created_at")
+
+        return base_qs.order_by("-created_at")
 
     def get_serializer_class(self):
         if self.action in ("list", "recent", "featured", "by_company"):
@@ -53,7 +55,6 @@ class JobPostViewSet(viewsets.ModelViewSet):
         return JobPostSerializer
 
     def get_permissions(self):
-        # Update/partial_update ham auth talab qiladi
         if self.action in ("create", "update", "partial_update", "destroy", "rate", "save_vacancy"):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
