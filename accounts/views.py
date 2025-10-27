@@ -605,3 +605,21 @@ class UpdateEmailVerifyView(APIView):
         cache.delete(f"email_change:{request.user.id}")
 
         return Response({"message": "E-mail успешно изменен ✅"})
+
+class UpdateUsernameView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        current_username = request.data.get("current_username")
+        new_username = request.data.get("new_username")
+
+        if not all([current_username, new_username]):
+            return Response({"error": "Оба поля обязательны"}, status=400)
+        if request.user.username != current_username:
+            return Response({"error": "Текущий логин неверен"}, status=400)
+        if CustomUser.objects.filter(username=new_username).exclude(id=request.user.id).exists():
+            return Response({"error": "Имя пользователя уже занято"}, status=400)
+
+        request.user.username = new_username
+        request.user.save(update_fields=["username"])
+        return Response({"message": "Имя пользователя обновлено ✅"})

@@ -11,7 +11,8 @@ from .views import (
     RegisterStepFourRoleView, ResendVerificationCodeView, LoginView, PasswordResetRequestView, PasswordResetConfirmView,
     LogoutView, ProfileImageUpdateView, ProfileView, CurrentUserView, UpdateLocationView, UpdateWorkHoursView,
     UpdateTitleView, UpdateSalaryView, UpdateAboutMeView, SkillViewSet, SkillAnswerViewSet, UserSearchView,
-    UserProfileDetailView, UpdateOnlineStatusView, ChangePasswordView, UpdateEmailSendView, UpdateEmailVerifyView
+    UserProfileDetailView, UpdateOnlineStatusView, ChangePasswordView, UpdateEmailSendView, UpdateEmailVerifyView,
+    UpdateUsernameView
 )
 
 router = DefaultRouter()
@@ -45,5 +46,5 @@ urlpatterns = [
     path("change-password/", ChangePasswordView.as_view(), name="change-password"),
     path('update-email-send/', UpdateEmailSendView.as_view(), name='update-email-send'),
     path('update-email-verify/', UpdateEmailVerifyView.as_view(), name='update-email-verify'),
-
+    path('update-username/', UpdateUsernameView.as_view(), name='update-username'),
 ]
