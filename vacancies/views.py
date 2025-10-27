@@ -1,5 +1,6 @@
+# vacancies/views.py
 from django.db import transaction
-from django.db.models import Q, Count, Avg
+from django.db.models import Avg
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from rest_framework import viewsets, permissions, status, filters
@@ -19,35 +20,27 @@ class TenPerPagePagination(PageNumberPagination):
 
 @method_decorator(cache_page(10), name="list")
 class JobPostViewSet(viewsets.ModelViewSet):
+    """
+    Vakansiyalar uchun CRUD, filter, rating, save va company bo‘yicha qidiruv.
+    """
     serializer_class = JobPostSerializer
-    permission_classes = [permissions.AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
     filterset_class = JobPostFilter
     search_fields = ["title", "description", "location", "company__name"]
     pagination_class = TenPerPagePagination
 
-    def base_queryset(self):
-        return (
-            JobPost.objects
-            .select_related("employer", "company")
-            .only(
-                "id", "title", "employer__id", "employer__username",
-                "company__id", "company__name", "location", "skills",
-                "budget_min", "budget_max", "plan", "is_remote", "created_at",
-                "description", "is_filled", "deadline", "duration"
-            )
-        )
-
     def get_queryset(self):
-        base_qs = JobPost.objects.select_related("employer", "company")
+        """
+        404 chiqmasligi uchun: 
+        - PATCH, PUT, POST, RETRIEVE paytida hech qanday filter qo‘llanmaydi.
+        - Faqat list, recent, featured, by_company uchun filter ishlaydi.
+        """
+        qs = JobPost.objects.select_related("employer", "company").order_by("-created_at")
 
-        if self.action in ("list", "recent", "featured", "by_company"):
-            return base_qs.filter(
-                budget_min__isnull=False,
-                budget_max__isnull=False
-            ).order_by("-created_at")
+        if getattr(self, "action", None) in ("list", "recent", "featured", "by_company"):
+            qs = qs.filter(budget_min__isnull=False, budget_max__isnull=False)
 
-        return base_qs.order_by("-created_at")
+        return qs
 
     def get_serializer_class(self):
         if self.action in ("list", "recent", "featured", "by_company"):
@@ -55,7 +48,8 @@ class JobPostViewSet(viewsets.ModelViewSet):
         return JobPostSerializer
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy", "rate", "save_vacancy"):
+        # faqat create, rate, save uchun login kerak
+        if self.action in ("create", "rate", "save_vacancy"):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
@@ -65,23 +59,19 @@ class JobPostViewSet(viewsets.ModelViewSet):
     # === FEATURED ===
     @action(detail=False, methods=["get"], url_path="featured")
     def featured(self, request):
-        qs = (
-            self.get_queryset()
-            .filter(plan__in=[PlanChoices.PRO, PlanChoices.PREMIUM])
-            .order_by("-created_at")[:20]
-        )
+        qs = JobPost.objects.filter(plan__in=[PlanChoices.PRO, PlanChoices.PREMIUM]).order_by("-created_at")[:20]
         ser = JobPostPublicSerializer(qs, many=True, context={"request": request})
         return Response(ser.data, status=200)
 
     # === RECENT ===
     @action(detail=False, methods=["get"], url_path="recent")
     def recent(self, request):
-        qs = self.get_queryset().order_by("-created_at")[:30]
+        qs = JobPost.objects.order_by("-created_at")[:30]
         page = self.paginate_queryset(qs)
         ser = JobPostPublicSerializer(page or qs, many=True, context={"request": request})
         return self.get_paginated_response(ser.data) if page else Response(ser.data, status=200)
 
-    # === RATE (baholash) ===
+    # === RATE ===
     @action(detail=True, methods=["post"], url_path="rate", permission_classes=[permissions.IsAuthenticated])
     def rate(self, request, pk=None):
         job_post = self.get_object()
@@ -95,9 +85,7 @@ class JobPostViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             JobPostRating.objects.update_or_create(
-                job_post=job_post,
-                user=request.user,
-                defaults={"stars": stars},
+                job_post=job_post, user=request.user, defaults={"stars": stars}
             )
         avg = job_post.ratings.aggregate(a=Avg("stars"))["a"] or 0
         return Response({"detail": "Baholangandi ✅", "average_stars": round(avg, 2)}, status=200)
@@ -117,17 +105,14 @@ class JobPostViewSet(viewsets.ModelViewSet):
     # === BY COMPANY ===
     @action(detail=False, methods=["get"], url_path="by-company/(?P<company_id>[^/.]+)")
     def by_company(self, request, company_id=None):
-        """
-        Berilgan company_id asosida shu kompaniyaga tegishli vakansiyalarni qaytaradi.
-        Faqat is_filled=False bo‘lganlari.
-        """
         qs = (
             JobPost.objects
             .filter(company_id=company_id, is_filled=False)
             .select_related("company", "employer")
             .only(
                 "id", "title", "location", "plan", "is_remote",
-                "budget_min", "budget_max", "created_at", "employer__id", "company__id", "company__name"
+                "budget_min", "budget_max", "created_at", "employer__id",
+                "company__id", "company__name"
             )
             .order_by("-created_at")
         )

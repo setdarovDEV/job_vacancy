@@ -12,10 +12,16 @@ class JobPostFilter(django_filters.FilterSet):
         model = JobPost
         fields = ['location', 'salary_min', 'salary_max', 'plan']
 
-
     def filter_queryset(self, queryset):
-        queryset = super().filter_queryset(queryset)
-        return queryset.filter(budget_min__isnull=False, budget_max__isnull=False)
+        """
+        Faqat GET so‘rovlarida ishlasin, PATCH/POST uchun emas.
+        Aks holda 404 chiqadi.
+        """
+        request = getattr(self, 'request', None)
+        if request and request.method == 'GET':
+            queryset = super().filter_queryset(queryset)
+            return queryset.filter(budget_min__isnull=False, budget_max__isnull=False)
+        return queryset
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
