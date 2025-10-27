@@ -57,7 +57,10 @@ class CompanySerializer(serializers.ModelSerializer):
             return None
         request = self.context.get("request")
         url = obj.logo.url
-        return request.build_absolute_uri(url) if request else url
+
+        # 🔹 HTTPS majburiy
+        abs_url = request.build_absolute_uri(url) if request else url
+        return abs_url.replace("http://", "https://")
 
 
 # ✅ Review Serializer with validation & fallback name
