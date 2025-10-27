@@ -1,6 +1,6 @@
 # vacancies/views.py
 from django.db import transaction
-from django.db.models import Avg
+from django.db.models import Avg, Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
 from rest_framework import viewsets, permissions, status, filters
@@ -30,16 +30,12 @@ class JobPostViewSet(viewsets.ModelViewSet):
     pagination_class = TenPerPagePagination
 
     def get_queryset(self):
-        """
-        404 chiqmasligi uchun: 
-        - PATCH, PUT, POST, RETRIEVE paytida hech qanday filter qo‘llanmaydi.
-        - Faqat list, recent, featured, by_company uchun filter ishlaydi.
-        """
         qs = JobPost.objects.select_related("employer", "company").order_by("-created_at")
 
         if getattr(self, "action", None) in ("list", "recent", "featured", "by_company"):
-            qs = qs.filter(budget_min__isnull=False, budget_max__isnull=False)
-
+            qs = qs.filter(
+                Q(budget_min__isnull=False) & Q(budget_max__isnull=False)
+            )
         return qs
 
     def get_serializer_class(self):
@@ -55,6 +51,12 @@ class JobPostViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save(employer=self.request.user)
+
+    def get_is_saved(self, obj):
+        request = self.context.get("request")
+        if not request or request.user.is_anonymous:
+            return False
+        return obj.saved_by.filter(user=request.user).exists()
 
     # === FEATURED ===
     @action(detail=False, methods=["get"], url_path="featured")

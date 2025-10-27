@@ -139,6 +139,12 @@ class JobPostPublicSerializer(serializers.ModelSerializer):
         company = Company.objects.filter(owner=obj.employer).first()
         return CompanySerializer(company, context=self.context).data if company else None
 
+    def get_is_saved(self, obj):
+        request = self.context.get("request")
+        if not request or request.user.is_anonymous:
+            return False
+        return obj.saved_by.filter(user=request.user).exists()
+
 class SavedJobSerializer(serializers.ModelSerializer):
     class Meta:
         model = SavedJob
