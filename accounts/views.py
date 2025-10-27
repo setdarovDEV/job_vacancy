@@ -623,3 +623,21 @@ class UpdateUsernameView(APIView):
         request.user.username = new_username
         request.user.save(update_fields=["username"])
         return Response({"message": "Имя пользователя обновлено ✅"})
+
+class UpdateNameView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        first = request.data.get("first_name")
+        last = request.data.get("last_name")
+
+        if not first and not last:
+            return Response({"error": "Имя или фамилия обязательны"}, status=400)
+
+        user = request.user
+        if first:
+            user.first_name = first.strip()
+        if last:
+            user.last_name = last.strip()
+        user.save(update_fields=["first_name", "last_name"])
+        return Response({"message": "Имя и фамилия успешно обновлены ✅"})
