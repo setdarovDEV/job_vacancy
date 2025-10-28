@@ -428,11 +428,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
                 return psk
         return []
 
-async def send_verification_email(email, code):
-    async with httpx.AsyncClient() as client:
-        # bu misol uchun, haqiqiy mail API bo‘lishi mumkin
-        await client.post(
-            "https://api.brevo.com/send",
-            json={"to": email, "text": f"Sizning 2FA kodingiz: {code}"},
-            timeout=10
-        )
+def send_verification_email(email, code):
+    """
+    Oddiy, sinxron email yuborish (SMTP orqali).
+    """
+    send_mail(
+        subject="Tasdiqlash kodi",
+        message=f"Sizning tasdiqlash kodingiz: {code}",
+        from_email=DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+        fail_silently=False,  # xatolikni ko‘rsatadi
+    )
