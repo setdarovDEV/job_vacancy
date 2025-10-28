@@ -12,7 +12,7 @@ from .views import (
     LogoutView, ProfileImageUpdateView, ProfileView, CurrentUserView, UpdateLocationView, UpdateWorkHoursView,
     UpdateTitleView, UpdateSalaryView, UpdateAboutMeView, SkillViewSet, SkillAnswerViewSet, UserSearchView,
     UserProfileDetailView, UpdateOnlineStatusView, ChangePasswordView, UpdateEmailSendView, UpdateEmailVerifyView,
-    UpdateUsernameView, UpdateNameView
+    UpdateUsernameView, UpdateNameView, DeleteUserByUsernameView
 )
 
 router = DefaultRouter()
@@ -48,4 +48,5 @@ urlpatterns = [
     path('update-email-verify/', UpdateEmailVerifyView.as_view(), name='update-email-verify'),
     path('update-username/', UpdateUsernameView.as_view(), name='update-username'),
     path('update-name/', UpdateNameView.as_view(), name='update-name'),
+    # path('delete-user/', DeleteUserByUsernameView.as_view(), name='delete-user'),
 ]

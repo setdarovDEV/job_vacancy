@@ -111,10 +111,12 @@ if not db_url:
 DATABASES = {
     "default": dj_database_url.config(
         default=db_url,
-        conn_max_age=600,    # ⚡ DB ulanishni qayta ishlatadi
-        ssl_require=True,
+        conn_max_age=600,
+        ssl_require=True,   # Render’da SSL kerak
     )
 }
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
+
 
 # --------------------------------------------------
 # ✅ Redis Cache

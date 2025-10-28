@@ -641,3 +641,23 @@ class UpdateNameView(APIView):
             user.last_name = last.strip()
         user.save(update_fields=["first_name", "last_name"])
         return Response({"message": "Имя и фамилия успешно обновлены ✅"})
+
+class DeleteUserByUsernameView(APIView):
+    """
+    Admin foydalanuvchi username orqali istalgan userni o‘chiradi.
+    Body: { "username": "test_user" }
+    """
+    permission_classes = [permissions.IsAdminUser]
+
+    def delete(self, request):
+        username = request.data.get("username")
+        if not username:
+            return Response({"error": "Username kerak"}, status=400)
+
+        try:
+            user = CustomUser.objects.get(username=username)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "Foydalanuvchi topilmadi"}, status=404)
+
+        user.delete()
+        return Response({"message": f"Foydalanuvchi '{username}' muvaffaqiyatli o‘chirildi ✅"})
