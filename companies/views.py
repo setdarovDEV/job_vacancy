@@ -7,6 +7,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status, filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.response import Response
 
 from .filters import CompanyFilter
@@ -40,6 +41,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
     ordering_fields = ["avg_rating", "followers_count", "vacancies_count", "created_at", "name"]
     ordering = ["-followers_count", "id"]
     pagination_class = TenPerPage
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
         qs = (
