@@ -2,27 +2,37 @@
 import django_filters
 from .models import JobPost
 
-class JobPostFilter(django_filters.FilterSet):
-    location = django_filters.CharFilter(field_name="location", lookup_expr="iexact")
-    salary_min = django_filters.NumberFilter(field_name="budget_min", lookup_expr="gte")
-    salary_max = django_filters.NumberFilter(field_name="budget_max", lookup_expr="lte")
-    plan = django_filters.CharFilter(field_name="plan", lookup_expr="iexact")
+class JobPostFilter(filters.FilterSet):
+    # 🔹 Custom search — title yoki description ichida
+    search = filters.CharFilter(method='filter_search')
+
+    # 🔹 Oddiy field filterlar
+    location = filters.CharFilter(field_name="location", lookup_expr="icontains")
+    salary_min = filters.NumberFilter(field_name="budget_min", lookup_expr="gte")
+    salary_max = filters.NumberFilter(field_name="budget_max", lookup_expr="lte")
+    plan = filters.CharFilter(field_name="plan", lookup_expr="iexact")
 
     class Meta:
         model = JobPost
-        fields = ['location', 'salary_min', 'salary_max', 'plan']
+        fields = ['search', 'location', 'salary_min', 'salary_max', 'plan']
+
+    def filter_search(self, queryset, name, value):
+        """🔍 'search' parametri bo‘yicha qidiruv (title, description, company)"""
+        return queryset.filter(
+            Q(title__icontains=value) |
+            Q(description__icontains=value) |
+            Q(company__name__icontains=value)
+        )
 
     def filter_queryset(self, queryset):
-        """
-        Faqat GET so‘rovlarida ishlasin, PATCH/POST uchun emas.
-        Aks holda 404 chiqadi.
-        """
+        """Faqat GET so‘rovlar uchun ishlasin"""
         request = getattr(self, 'request', None)
         if request and request.method == 'GET':
             queryset = super().filter_queryset(queryset)
+            # faqat to‘ldirilgan (bo‘sh bo‘lmagan) vakansiyalarni qaytaramiz
             return queryset.filter(budget_min__isnull=False, budget_max__isnull=False)
         return queryset
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        print("Filter params:", self.data)
+        print("🧩 Vacancy filter params:", dict(self.data))
