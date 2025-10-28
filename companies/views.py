@@ -65,6 +65,12 @@ class CompanyViewSet(viewsets.ModelViewSet):
             qs = qs.filter(owner=self.request.user)
         return qs
 
+    def get_serializer_context(self):
+        """Serializerga request uzatamiz, rasm URL to‘liq bo‘lishi uchun"""
+        context = super().get_serializer_context()
+        context["request"] = self.request
+        return context
+
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 

@@ -7,9 +7,14 @@ class CompanySerializer(serializers.ModelSerializer):
     followers_count = serializers.IntegerField(read_only=True)
     vacancies_count = serializers.IntegerField(read_only=True)
     avg_rating = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
-    logo = serializers.SerializerMethodField()
-    is_following = serializers.SerializerMethodField()
 
+    # 🟢 Asl fayl maydon (fayl saqlanadi)
+    logo = serializers.ImageField(required=False, allow_null=True, use_url=False)
+
+    # 🟢 Faqat o‘qish uchun to‘liq URL
+    logo_url = serializers.SerializerMethodField(read_only=True)
+
+    is_following = serializers.SerializerMethodField()
     jobpost_count = serializers.SerializerMethodField()
     open_jobpost_count = serializers.SerializerMethodField()
     hire_rate = serializers.SerializerMethodField()
@@ -19,6 +24,24 @@ class CompanySerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['owner', 'created_at']
 
+    # 🔹 Rasm uchun to‘liq URL
+    def get_logo_url(self, obj):
+        if not obj.logo:
+            return None
+        request = self.context.get('request')
+        url = obj.logo.url
+        abs_url = request.build_absolute_uri(url) if request else url
+        return abs_url.replace("http://", "https://")
+
+    # 🔹 User follow holati
+    def get_is_following(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        return CompanyFollow.objects.filter(company=obj, user=user).exists()
+
+    # 🔹 Statistika helperlar
     def get_jobpost_count(self, obj):
         try:
             from vacancies.models import JobPost
@@ -44,23 +67,6 @@ class CompanySerializer(serializers.ModelSerializer):
         if total == 0:
             return "0%"
         return f"{round((filled / total) * 100)}%"
-
-    def get_is_following(self, obj):
-        request = self.context.get("request")
-        user = getattr(request, "user", None)
-        if not user or not user.is_authenticated:
-            return False
-        return CompanyFollow.objects.filter(company=obj, user=user).exists()
-
-    def get_logo(self, obj):
-        if not obj.logo:
-            return None
-        request = self.context.get("request")
-        url = obj.logo.url
-
-        # 🔹 HTTPS majburiy
-        abs_url = request.build_absolute_uri(url) if request else url
-        return abs_url.replace("http://", "https://")
 
 
 # ✅ Review Serializer with validation & fallback name
