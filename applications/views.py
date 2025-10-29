@@ -31,20 +31,22 @@ class ApplyView(APIView):
         cover_letter = request.data.get("cover_letter", "")
         print("🔸 job_id =", job_id, "| type:", type(job_id))
 
+        # 1️⃣ job_id ni tekshiramiz
         try:
             job_id = int(job_id)
         except (TypeError, ValueError):
             print("❌ job_id conversion failed")
             return Response({"detail": "job_post noto‘g‘ri formatda."}, status=400)
 
-        try:
-            job = get_object_or_404(JobPost.objects.only("id", "employer_id"), pk=job_id)
-        except Exception as e:
-            print("❌ Job fetch failed:", e)
-            raise
+        # 2️⃣ JobPost mavjudligini tekshirish
+        job = JobPost.objects.filter(pk=job_id).only("id", "employer_id").first()
+        if not job:
+            print("❌ Job not found")
+            return Response({"detail": "Vakansiya topilmadi."}, status=404)
 
         print("🔸 job =", job.id, "| employer_id =", job.employer_id)
 
+        # 3️⃣ O‘zi yaratgan vakansiyaga apply qilmasin
         if job.employer_id == request.user.id:
             print("❌ Applicant is employer of this job")
             return Response({"detail": "O‘zingiz yaratgan vakansiyaga ariza berib bo‘lmaydi."}, status=400)
@@ -53,6 +55,7 @@ class ApplyView(APIView):
             print("❌ Job inactive")
             return Response({"detail": "Vakansiya faol emas."}, status=400)
 
+        # 4️⃣ get_or_create
         try:
             with transaction.atomic():
                 obj, created = JobApplication.objects.get_or_create(
@@ -60,9 +63,12 @@ class ApplyView(APIView):
                     applicant=request.user,
                     defaults={"cover_letter": cover_letter},
                 )
+        except IntegrityError as e:
+            print("❌ DB integrity error:", e)
+            return Response({"detail": "Bazaga yozishda xatolik yuz berdi."}, status=400)
         except Exception as e:
-            print("❌ DB get_or_create error:", e)
-            raise
+            print("❌ Unexpected DB error:", e)
+            return Response({"detail": str(e)}, status=500)
 
         print("🔸 created =", created)
         print("🟢 APPLY DEBUG END =====================")
