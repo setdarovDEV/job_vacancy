@@ -1,14 +1,13 @@
 from rest_framework import serializers
 from rest_framework.pagination import PageNumberPagination
 
+from applications.models import JobApplication
 from companies.serializers import CompanySerializer
 from .models import JobPost, PlanChoices, SavedJob
 from django.utils.timesince import timesince
 from companies.models import Company
 from django.utils.functional import cached_property
 from django.utils import timezone
-
-
 
 class JobPostSerializer(serializers.ModelSerializer):
     average_stars = serializers.SerializerMethodField()
@@ -19,12 +18,34 @@ class JobPostSerializer(serializers.ModelSerializer):
     company = serializers.SerializerMethodField()
     otherVacancies = serializers.SerializerMethodField()
 
-    # deadline ni keyin qo‘shamiz
+    # 🔥 Yangi maydonlar:
+    is_applied = serializers.SerializerMethodField()
+    is_saved = serializers.SerializerMethodField()
 
     class Meta:
         model = JobPost
-        fields = '__all__'  # yoki field list bo‘lsa, 'budget' ni ham qo‘sh
+        fields = '__all__'
         read_only_fields = ['employer', 'created_at']
+
+    # ----- Yangi funksiya: foydalanuvchi allaqachon apply qilganmi? -----
+    def get_is_applied(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        # related_name mavjud bo‘lsa (applications)
+        return JobApplication.objects.filter(job_post=obj, applicant=user).exists()
+
+    # ----- Yangi funksiya: foydalanuvchi saqlaganmi (bookmark)? -----
+    def get_is_saved(self, obj):
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return False
+        try:
+            return SavedJob.objects.filter(job_post=obj, user=user).exists()
+        except Exception:
+            return False
 
     def get_average_stars(self, obj):
         return obj.average_stars
@@ -52,26 +73,18 @@ class JobPostSerializer(serializers.ModelSerializer):
         return obj.ratings.count()
 
     def get_company(self, obj):
-        # employer = obj.employer (foydalanuvchi)
         company = Company.objects.filter(owner=obj.employer).first()
         if company:
             return CompanySerializer(company, context=self.context).data
         return None
 
     def get_otherVacancies(self, obj):
-        other_qs = JobPost.objects.filter(
-            employer=obj.employer,
-            is_filled=False  # faqat ochiq (active)
-        ).exclude(id=obj.id)[:5]  # bu vakansiyadan tashqari
-
-        return [
-            {
-                "id": vacancy.id,
-                "title": vacancy.title
-            }
-            for vacancy in other_qs
-        ]
-
+        other_qs = (
+            obj.__class__.objects
+            .filter(employer=obj.employer, is_filled=False)
+            .exclude(id=obj.id)[:5]
+        )
+        return [{"id": v.id, "title": v.title} for v in other_qs]
 
 class TenPerPagePagination(PageNumberPagination):
     page_size = 10
