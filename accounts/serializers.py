@@ -360,6 +360,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
     skills = serializers.SerializerMethodField()
+    languages = serializers.SerializerMethodField()
+    education = serializers.SerializerMethodField()
+    certificates = serializers.SerializerMethodField()
+    portfolio = serializers.SerializerMethodField()
+    experience = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
@@ -377,9 +382,17 @@ class UserProfileSerializer(serializers.ModelSerializer):
             "last_seen",
             "latitude",
             "longitude",
+
+            # 🔹 qo‘shimcha bo‘limlar
             "skills",
+            "languages",
+            "education",
+            "certificates",
+            "portfolio",
+            "experience",
         ]
 
+    # --- BASIC ---
     def get_full_name(self, obj):
         name = f"{obj.first_name or ''} {obj.last_name or ''}".strip()
         return name if name else obj.username
@@ -391,13 +404,30 @@ class UserProfileSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url) if request else url
         return None
 
+    # --- RELATED ---
     def get_skills(self, obj):
-        # Job Seeker uchun Skill modeldan olamiz
-        skills_qs = getattr(obj, "skills", None)
-        if hasattr(skills_qs, "all"):
-            return list(skills_qs.values_list("name", flat=True))
-        return []
+        skills = Skill.objects.filter(user=obj).values_list("name", flat=True)
+        return list(skills)
 
+    def get_languages(self, obj):
+        qs = LanguageSkill.objects.filter(user=obj)
+        return LanguageSkillSerializer(qs, many=True).data
+
+    def get_education(self, obj):
+        qs = Education.objects.filter(user=obj)
+        return EducationSerializer(qs, many=True).data
+
+    def get_certificates(self, obj):
+        qs = Certificate.objects.filter(user=obj)
+        return CertificateSerializer(qs, many=True, context=self.context).data
+
+    def get_portfolio(self, obj):
+        qs = PortfolioProject.objects.filter(user=obj).order_by("-created_at")
+        return PortfolioProjectSerializer(qs, many=True, context=self.context).data
+
+    def get_experience(self, obj):
+        qs = WorkExperience.objects.filter(user=obj)
+        return WorkExperienceSerializer(qs, many=True).data
 
 def send_verification_email(email, code):
     """
