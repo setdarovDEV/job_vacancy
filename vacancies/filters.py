@@ -1,16 +1,19 @@
 # vacancies/filters.py
-import django_filters
+from django.db.models import Q
+from django_filters import FilterSet, CharFilter, NumberFilter
+
 from .models import JobPost
 
-class JobPostFilter(filters.FilterSet):
+
+class JobPostFilter(FilterSet):
     # 🔹 Custom search — title yoki description ichida
-    search = filters.CharFilter(method='filter_search')
+    search = CharFilter(method='filter_search')
 
     # 🔹 Oddiy field filterlar
-    location = filters.CharFilter(field_name="location", lookup_expr="icontains")
-    salary_min = filters.NumberFilter(field_name="budget_min", lookup_expr="gte")
-    salary_max = filters.NumberFilter(field_name="budget_max", lookup_expr="lte")
-    plan = filters.CharFilter(field_name="plan", lookup_expr="iexact")
+    location = CharFilter(field_name="location", lookup_expr="icontains")
+    salary_min = NumberFilter(field_name="budget_min", lookup_expr="gte")
+    salary_max = NumberFilter(field_name="budget_max", lookup_expr="lte")
+    plan = CharFilter(field_name="plan", lookup_expr="iexact")
 
     class Meta:
         model = JobPost
