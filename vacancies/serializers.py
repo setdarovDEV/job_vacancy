@@ -87,7 +87,7 @@ class JobPostSerializer(serializers.ModelSerializer):
         return [{"id": v.id, "title": v.title} for v in other_qs]
 
 class TenPerPagePagination(PageNumberPagination):
-    page_size = 10
+    page_size = 50
 
 class JobPostPublicSerializer(serializers.ModelSerializer):
     # Mobil uchun “sodda” maydonlar
