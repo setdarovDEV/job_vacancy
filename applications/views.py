@@ -21,38 +21,38 @@ from .permissions import IsJobSeeker, IsEmployerOfJob, CanDeleteApplication, IsE
 # 1️⃣ APPLY — JOB SEEKER apply qiladi
 # ==============================
 class ApplyView(APIView):
-    """
-    POST /api/applications/apply/
-    body: { "job_post": <id>, "cover_letter": "" }
-    """
     permission_classes = [IsAuthenticated, IsJobSeeker]
 
     def post(self, request):
+        print("🟢 APPLY DEBUG START ====================")
+        print("🔸 RAW DATA:", request.data)
+
         job_id = request.data.get("job_post")
         cover_letter = request.data.get("cover_letter", "")
+        print("🔸 job_id =", job_id, "| type:", type(job_id))
 
-        # 🔹 job_post mavjudligini tekshir
-        if not job_id:
-            return Response({"detail": "job_post kiritilmadi."}, status=400)
-
-        # 🔹 Raqamga aylantirib olamiz (string kelsa ham)
         try:
             job_id = int(job_id)
         except (TypeError, ValueError):
+            print("❌ job_id conversion failed")
             return Response({"detail": "job_post noto‘g‘ri formatda."}, status=400)
 
-        # 🔹 JobPost ni topamiz (is_active ni olib tashladik)
-        job = get_object_or_404(JobPost.objects.only("id", "employer_id"), pk=job_id)
+        try:
+            job = get_object_or_404(JobPost.objects.only("id", "employer_id"), pk=job_id)
+        except Exception as e:
+            print("❌ Job fetch failed:", e)
+            raise
 
-        # 🔹 O‘z vakansiyasiga apply qilishni bloklaymiz
+        print("🔸 job =", job.id, "| employer_id =", job.employer_id)
+
         if job.employer_id == request.user.id:
+            print("❌ Applicant is employer of this job")
             return Response({"detail": "O‘zingiz yaratgan vakansiyaga ariza berib bo‘lmaydi."}, status=400)
 
-        # 🔹 Agar modelda is_active mavjud bo‘lsa — tekshiramiz, yo‘q bo‘lsa o‘tkazamiz
         if getattr(job, "is_active", True) is False:
+            print("❌ Job inactive")
             return Response({"detail": "Vakansiya faol emas."}, status=400)
 
-        # 🔹 Atomic transaction bilan yaratish
         try:
             with transaction.atomic():
                 obj, created = JobApplication.objects.get_or_create(
@@ -60,17 +60,15 @@ class ApplyView(APIView):
                     applicant=request.user,
                     defaults={"cover_letter": cover_letter},
                 )
-        except IntegrityError:
-            return Response(
-                {"detail": "Siz allaqachon bu vakansiyaga ariza qoldirgansiz."},
-                status=400,
-            )
+        except Exception as e:
+            print("❌ DB get_or_create error:", e)
+            raise
+
+        print("🔸 created =", created)
+        print("🟢 APPLY DEBUG END =====================")
 
         if not created:
-            return Response(
-                {"detail": "Siz allaqachon bu vakansiyaga ariza qoldirgansiz."},
-                status=400,
-            )
+            return Response({"detail": "Siz allaqachon bu vakansiyaga ariza qoldirgansiz."}, status=400)
 
         serializer = JobApplicationSerializer(obj, context={"request": request})
         return Response(serializer.data, status=201)
