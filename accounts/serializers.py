@@ -355,44 +355,28 @@ def abs_url(request, raw):
     base = request.build_absolute_uri("/")[:-1]
     return f"{base}{raw}"
 
-
+# accounts/serializers.py
 class UserProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
     skills = serializers.SerializerMethodField()
     languages = serializers.SerializerMethodField()
-    education = serializers.SerializerMethodField()
+    educations = serializers.SerializerMethodField()
     certificates = serializers.SerializerMethodField()
     portfolio = serializers.SerializerMethodField()
-    experience = serializers.SerializerMethodField()
+    experiences = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
         fields = [
-            "id",
-            "username",
-            "role",
-            "full_name",
-            "avatar",
-            "title",
-            "about_me",
-            "salary_usd",
-            "work_hours_per_week",
-            "is_online",
-            "last_seen",
-            "latitude",
-            "longitude",
-
-            # 🔹 qo‘shimcha bo‘limlar
-            "skills",
-            "languages",
-            "education",
-            "certificates",
-            "portfolio",
-            "experience",
+            "id", "username", "role", "full_name", "avatar",
+            "title", "about_me", "salary_usd", "work_hours_per_week",
+            "is_online", "last_seen", "latitude", "longitude",
+            "skills", "languages", "educations", "certificates",
+            "portfolio", "experiences",
         ]
 
-    # --- BASIC ---
+    # ========== BASIC ==========
     def get_full_name(self, obj):
         name = f"{obj.first_name or ''} {obj.last_name or ''}".strip()
         return name if name else obj.username
@@ -404,30 +388,56 @@ class UserProfileSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(url) if request else url
         return None
 
-    # --- RELATED ---
+    # ========== RELATION FIELDS ==========
     def get_skills(self, obj):
-        skills = Skill.objects.filter(user=obj).values_list("name", flat=True)
-        return list(skills)
+        skills = getattr(obj, "pref_skills", None)
+        if skills is not None:
+            return [s.name for s in skills]
+        from .models import Skill
+        return list(Skill.objects.filter(user=obj).values_list("name", flat=True))
 
     def get_languages(self, obj):
-        qs = LanguageSkill.objects.filter(user=obj)
-        return LanguageSkillSerializer(qs, many=True).data
+        from .serializers import LanguageSkillSerializer
+        langs = getattr(obj, "pref_languages", None)
+        if langs is not None:
+            return LanguageSkillSerializer(langs, many=True).data
+        from .models import LanguageSkill
+        return LanguageSkillSerializer(LanguageSkill.objects.filter(user=obj), many=True).data
 
-    def get_education(self, obj):
-        qs = Education.objects.filter(user=obj)
-        return EducationSerializer(qs, many=True).data
+    def get_educations(self, obj):
+        from .serializers import EducationSerializer
+        edus = getattr(obj, "pref_educations", None)
+        if edus is not None:
+            return EducationSerializer(edus, many=True).data
+        from .models import Education
+        return EducationSerializer(Education.objects.filter(user=obj), many=True).data
 
     def get_certificates(self, obj):
-        qs = Certificate.objects.filter(user=obj)
-        return CertificateSerializer(qs, many=True, context=self.context).data
+        from .serializers import CertificateSerializer
+        certs = getattr(obj, "pref_certificates", None)
+        if certs is not None:
+            return CertificateSerializer(certs, many=True, context=self.context).data
+        from .models import Certificate
+        return CertificateSerializer(Certificate.objects.filter(user=obj), many=True, context=self.context).data
 
     def get_portfolio(self, obj):
-        qs = PortfolioProject.objects.filter(user=obj).order_by("-created_at")
-        return PortfolioProjectSerializer(qs, many=True, context=self.context).data
+        from .serializers import PortfolioProjectSerializer
+        portfolio = getattr(obj, "pref_portfolio", None)
+        if portfolio is not None:
+            return PortfolioProjectSerializer(portfolio, many=True, context=self.context).data
+        from .models import PortfolioProject
+        return PortfolioProjectSerializer(
+            PortfolioProject.objects.filter(user=obj).prefetch_related("media_files").order_by("-created_at"),
+            many=True, context=self.context
+        ).data
 
-    def get_experience(self, obj):
-        qs = WorkExperience.objects.filter(user=obj)
-        return WorkExperienceSerializer(qs, many=True).data
+    def get_experiences(self, obj):
+        from .serializers import WorkExperienceSerializer
+        exp = getattr(obj, "pref_experiences", None)
+        if exp is not None:
+            return WorkExperienceSerializer(exp, many=True).data
+        from .models import WorkExperience
+        return WorkExperienceSerializer(WorkExperience.objects.filter(user=obj), many=True).data
 
 def send_verification_email(email, code):
     """

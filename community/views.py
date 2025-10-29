@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
+from accounts.models import WorkExperience, Skill, PortfolioProject, Certificate, Education, LanguageSkill, CustomUser
 from accounts.serializers import UserProfileSerializer
 from .models import Post, Comment
 from .serializers import PostSerializer, CommentSerializer
@@ -113,40 +114,61 @@ class PostLikeView(APIView):
         return Response({"liked": liked, "likes_count": count}, status=status.HTTP_200_OK)
 
 class AnyUserProfileView(generics.RetrieveAPIView):
+    """
+    Har qanday foydalanuvchi (EMPLOYER yoki JOB_SEEKER) profilini qaytaradi.
+    ⚡️ Prefetch bilan optimallashtirilgan.
+    """
     serializer_class = UserProfileSerializer
     lookup_field = "id"
     permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
-        from accounts.models import (
-            CustomUser, LanguageSkill, Education,
-            Certificate, PortfolioProject, WorkExperience
-        )
-
+        # ⚙️ Minimal asosiy fieldlar
         user_qs = CustomUser.objects.only(
-            "id","username","role","first_name","last_name",
-            "title","about_me","salary_usd","work_hours_per_week",
-            "is_online","last_seen","latitude","longitude","profile_image"
+            "id", "username", "role", "first_name", "last_name",
+            "profile_image", "title", "about_me", "salary_usd",
+            "work_hours_per_week", "is_online", "last_seen",
+            "latitude", "longitude"
         )
 
-        # Default related_name lar (agar custom bo‘lmasa)
-        return (
-            user_qs
-            .prefetch_related(
-                Prefetch("languageskill_set",
-                         queryset=LanguageSkill.objects.only("id","language","level","created_at").order_by("-created_at"),
-                         to_attr="pref_langs"),
-                Prefetch("education_set",
-                         queryset=Education.objects.only("id","academy_name","degree","start_year","end_year").order_by("-start_year"),
-                         to_attr="pref_edu"),
-                Prefetch("certificate_set",
-                         queryset=Certificate.objects.only("id","name","organization","issue_date","file").order_by("-issue_date"),
-                         to_attr="pref_certs"),
-                Prefetch("portfolioproject_set",
-                         queryset=PortfolioProject.objects.only("id","title","description","skills","created_at").order_by("-created_at"),
-                         to_attr="pref_portfolio"),
-                Prefetch("workexperience_set",
-                         queryset=WorkExperience.objects.only("id","company_name","position","start_date","end_date","description","city","country").order_by("-start_date"),
-                         to_attr="pref_exps"),
+        # 🔹 Prefetch optimization (hammasi related_name asosida)
+        return user_qs.prefetch_related(
+            Prefetch(
+                "languages",
+                queryset=LanguageSkill.objects.only("id", "language", "level", "created_at")
+                    .order_by("-created_at"),
+                to_attr="pref_languages"
+            ),
+            Prefetch(
+                "educations",
+                queryset=Education.objects.only("id", "academy_name", "degree", "start_year", "end_year")
+                    .order_by("-start_year"),
+                to_attr="pref_educations"
+            ),
+            Prefetch(
+                "certificates",
+                queryset=Certificate.objects.only("id", "name", "organization", "issue_date", "file")
+                    .order_by("-issue_date"),
+                to_attr="pref_certificates"
+            ),
+            Prefetch(
+                "portfolio_projects",
+                queryset=PortfolioProject.objects.only("id", "title", "description", "skills", "created_at")
+                    .prefetch_related("media_files")
+                    .order_by("-created_at"),
+                to_attr="pref_portfolio"
+            ),
+            Prefetch(
+                "experiences",
+                queryset=WorkExperience.objects.only(
+                    "id", "company_name", "position", "start_date", "end_date",
+                    "description", "city", "country"
+                ).order_by("-start_date"),
+                to_attr="pref_experiences"
+            ),
+            Prefetch(
+                "skills",
+                queryset=Skill.objects.only("id", "name").order_by("name"),
+                to_attr="pref_skills"
             )
         )
