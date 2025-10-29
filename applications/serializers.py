@@ -123,19 +123,19 @@ class ApplicantMiniSerializer(serializers.ModelSerializer):
             if isinstance(psv, str):
                 return [s for s in psv.replace(",", " ").split() if s]
         return []
+
 class JobApplicationSerializer(serializers.ModelSerializer):
-    # Nested ko‘rinish agar kerak bo‘lsa:
+    id = serializers.CharField(read_only=True)  # ✅ UUID xavfsiz
     applicant = ApplicantMiniSerializer(read_only=True)
 
     # 🔥 FRONT uchun FLAT maydonlar:
-    userId   = serializers.IntegerField(source="applicant.id", read_only=True)
+    userId   = serializers.CharField(source="applicant.id", read_only=True)
     name     = serializers.SerializerMethodField()
-    avatar = serializers.SerializerMethodField()
-    bio = serializers.SerializerMethodField()
+    avatar   = serializers.SerializerMethodField()
+    bio      = serializers.SerializerMethodField()
     position = serializers.SerializerMethodField()
     skills   = serializers.SerializerMethodField()
-
-    job = serializers.SerializerMethodField()
+    job      = serializers.SerializerMethodField()
 
     class Meta:
         model = JobApplication
@@ -144,7 +144,6 @@ class JobApplicationSerializer(serializers.ModelSerializer):
             "job_post",
             "job",
             "applicant",
-            # FLAT
             "userId", "name", "avatar", "bio", "position", "skills",
             "cover_letter", "status", "created_at",
         ]
@@ -157,7 +156,8 @@ class JobApplicationSerializer(serializers.ModelSerializer):
         if callable(fn):
             try:
                 v = fn()
-                if v: return v
+                if v:
+                    return v
             except Exception:
                 pass
         if isinstance(fn, str) and fn:
@@ -165,7 +165,7 @@ class JobApplicationSerializer(serializers.ModelSerializer):
         return f"{getattr(user, 'first_name', '')} {getattr(user, 'last_name', '')}".strip() or "—"
 
     def get_avatar(self, obj):
-        request = self.context.get("request")  # ← MUHIM: request ni oling
+        request = self.context.get("request")
         user = obj.applicant
         prof = getattr(user, "profile", None)
         candidates = [
@@ -181,28 +181,26 @@ class JobApplicationSerializer(serializers.ModelSerializer):
         for c in candidates:
             if not c:
                 continue
-            return abs_url(request, str(getattr(c, "url", c)))  # endi request bor
+            return abs_url(request, str(getattr(c, "url", c)))
         return ""
 
-    # serializers.py ichida JobApplicationSerializer
     def get_bio(self, obj):
         user = obj.applicant
         prof = getattr(user, "profile", None)
         for src in (
-                getattr(user, "about_me", None),  # ✅ TO‘G‘RILANDI
-                getattr(user, "bio", None),
-                getattr(user, "about", None),
-                getattr(user, "summary", None),
-                getattr(prof, "about_me", None) if prof else None,
-                getattr(prof, "bio", None) if prof else None,
-                getattr(prof, "about", None) if prof else None,
-                getattr(prof, "description", None) if prof else None,
-                getattr(prof, "headline", None) if prof else None,
-                getattr(prof, "summary", None) if prof else None,
+            getattr(user, "about_me", None),
+            getattr(user, "bio", None),
+            getattr(user, "about", None),
+            getattr(user, "summary", None),
+            getattr(prof, "about_me", None) if prof else None,
+            getattr(prof, "bio", None) if prof else None,
+            getattr(prof, "about", None) if prof else None,
+            getattr(prof, "description", None) if prof else None,
+            getattr(prof, "headline", None) if prof else None,
+            getattr(prof, "summary", None) if prof else None,
         ):
             if src:
                 return src
-
         return obj.cover_letter or "—"
 
     def get_position(self, obj):
@@ -217,11 +215,9 @@ class JobApplicationSerializer(serializers.ModelSerializer):
 
     def get_skills(self, obj):
         user = obj.applicant
-        # user.skills M2M
         sk = getattr(user, "skills", None)
         if hasattr(sk, "all"):
             return list(sk.values_list("name", flat=True))
-        # profile.skills
         prof = getattr(user, "profile", None)
         if prof:
             psk = getattr(prof, "skills", None)
@@ -236,7 +232,9 @@ class JobApplicationSerializer(serializers.ModelSerializer):
 
     def get_job(self, obj):
         jp = obj.job_post
-        return {"id": jp.id, "title": getattr(jp, "title", None)}
+        # ✅ UUID id ni stringga o‘tkazamiz
+        job_id = str(jp.id) if jp and getattr(jp, "id", None) else None
+        return {"id": job_id, "title": getattr(jp, "title", None)}
 
 class ApplicationSerializer(serializers.ModelSerializer):
     applicant = ApplicantMiniSerializer(read_only=True)
