@@ -1,4 +1,8 @@
-from rest_framework import serializers
+from amqp import NotFound
+from rest_framework import serializers, generics, permissions
+
+from accounts.models import CustomUser
+from accounts.serializers import UserProfileSerializer
 from .models import Post, Comment
 
 class CommentSerializer(serializers.ModelSerializer):
@@ -87,3 +91,40 @@ class PostSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         validated_data["author"] = request.user
         return super().create(validated_data)
+
+class JobSeekerProfileView(generics.RetrieveAPIView):
+    """
+    JOB_SEEKER roldagi foydalanuvchining profilini qaytaradi.
+    """
+    serializer_class = UserProfileSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = "id"
+
+    def get_queryset(self):
+        # Faqat job seeker foydalanuvchilar
+        return CustomUser.objects.filter(role="JOB_SEEKER")
+
+    def get_object(self):
+        user = super().get_object()
+        if user.role != "JOB_SEEKER":
+            raise NotFound("Bu foydalanuvchi ish qidiruvchi emas.")
+        return user
+
+
+class EmployerProfileView(generics.RetrieveAPIView):
+    """
+    EMPLOYER roldagi foydalanuvchining profilini qaytaradi.
+    """
+    serializer_class = UserProfileSerializer
+    permission_classes = [permissions.AllowAny]
+    lookup_field = "id"
+
+    def get_queryset(self):
+        # Faqat employer foydalanuvchilar
+        return CustomUser.objects.filter(role="EMPLOYER")
+
+    def get_object(self):
+        user = super().get_object()
+        if user.role != "EMPLOYER":
+            raise NotFound("Bu foydalanuvchi ish beruvchi emas.")
+        return user
