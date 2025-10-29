@@ -311,8 +311,6 @@ class WorkExperienceSerializer(serializers.ModelSerializer):
 class UserPublicSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
-    last_seen = serializers.DateTimeField(read_only=True)
-    is_online = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = CustomUser
@@ -323,21 +321,28 @@ class UserPublicSerializer(serializers.ModelSerializer):
             "last_name",
             "full_name",
             "avatar_url",
-            "last_seen",
+            "role",          # ✅ muhim: roleni qaytaramiz
             "is_online",
-            "role",  # 🆕 Qo‘shildi
+            "last_seen",
         )
 
     def get_full_name(self, obj):
-        return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
+        return f"{obj.first_name or ''} {obj.last_name or ''}".strip() or obj.username
 
     def get_avatar_url(self, obj):
+        """
+        Profil rasmi uchun to‘liq URL qaytaradi (agar mavjud bo‘lsa)
+        """
         request = self.context.get("request")
-        avatar = getattr(obj, "avatar", None)
-        if not avatar:
-            return None
-        url = avatar.url
-        return request.build_absolute_uri(url) if request else url
+
+        # 🔹 To‘g‘ri maydon — bizda avatar emas, profile_image
+        if obj.profile_image:
+            try:
+                url = obj.profile_image.url
+                return request.build_absolute_uri(url) if request else url
+            except Exception:
+                return None
+        return None
 
 def abs_url(request, raw):
     if not raw:

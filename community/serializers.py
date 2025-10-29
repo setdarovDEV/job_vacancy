@@ -44,22 +44,25 @@ class PostSerializer(serializers.ModelSerializer):
 
     def get_author(self, obj):
         u = obj.author
-        # full name fallback: first+last or username
+        request = self.context.get("request")
+
+        # full name fallback
         try:
             full_name = (u.get_full_name() or "").strip()
-        except:
+        except Exception:
             full_name = ""
         if not full_name:
             fn = getattr(u, "first_name", "") or ""
             ln = getattr(u, "last_name", "") or ""
             full_name = (f"{fn} {ln}".strip() or getattr(u, "username", ""))
 
-        # avatar: user.avatar yoki user.profile.avatar bo‘lishi mumkin
+        # avatarni topish
         avatar = None
-        for attr in ["avatar", "photo", "image"]:
+        for attr in ["profile_image", "avatar", "photo", "image"]:
             if hasattr(u, attr) and getattr(u, attr):
                 try:
-                    avatar = getattr(u, attr).url
+                    url = getattr(u, attr).url
+                    avatar = request.build_absolute_uri(url) if request else url
                     break
                 except Exception:
                     pass
@@ -68,12 +71,19 @@ class PostSerializer(serializers.ModelSerializer):
             for attr in ["avatar", "photo", "image"]:
                 if hasattr(prof, attr) and getattr(prof, attr):
                     try:
-                        avatar = getattr(prof, attr).url
+                        url = getattr(prof, attr).url
+                        avatar = request.build_absolute_uri(url) if request else url
                         break
                     except Exception:
                         pass
 
-        return {"id": u.id, "full_name": full_name, "avatar": avatar}
+        # ✅ role ni ham qo‘shamiz
+        return {
+            "id": str(u.id),
+            "full_name": full_name,
+            "avatar": avatar,
+            "role": getattr(u, "role", None),  # <— aynan shu yetishmayotgan edi
+        }
 
     def get_is_liked(self, obj):
         request = self.context.get("request")
