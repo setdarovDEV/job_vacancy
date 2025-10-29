@@ -1,5 +1,5 @@
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import transaction, IntegrityError
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
@@ -31,32 +31,49 @@ class ApplyView(APIView):
         job_id = request.data.get("job_post")
         cover_letter = request.data.get("cover_letter", "")
 
+        # 🔹 job_post mavjudligini tekshir
         if not job_id:
             return Response({"detail": "job_post kiritilmadi."}, status=400)
 
-        job = get_object_or_404(JobPost.objects.only("id", "employer_id", "is_active"), pk=job_id)
+        # 🔹 Raqamga aylantirib olamiz (string kelsa ham)
+        try:
+            job_id = int(job_id)
+        except (TypeError, ValueError):
+            return Response({"detail": "job_post noto‘g‘ri formatda."}, status=400)
 
-        # ✅ O‘z job’iga apply blok
+        # 🔹 JobPost ni topamiz (is_active ni olib tashladik)
+        job = get_object_or_404(JobPost.objects.only("id", "employer_id"), pk=job_id)
+
+        # 🔹 O‘z vakansiyasiga apply qilishni bloklaymiz
         if job.employer_id == request.user.id:
-            return Response({"detail": "O‘zingiz yaratgan vakansiyaga apply qilib bo‘lmaydi."}, status=400)
+            return Response({"detail": "O‘zingiz yaratgan vakansiyaga ariza berib bo‘lmaydi."}, status=400)
 
-        # ✅ Faol emasligini tekshir
-        if hasattr(job, "is_active") and not job.is_active:
+        # 🔹 Agar modelda is_active mavjud bo‘lsa — tekshiramiz, yo‘q bo‘lsa o‘tkazamiz
+        if getattr(job, "is_active", True) is False:
             return Response({"detail": "Vakansiya faol emas."}, status=400)
 
-        # ✅ Atomic transaction bilan xavfsiz yaratish
-        with transaction.atomic():
-            obj, created = JobApplication.objects.get_or_create(
-                job_post=job,
-                applicant=request.user,
-                defaults={"cover_letter": cover_letter},
+        # 🔹 Atomic transaction bilan yaratish
+        try:
+            with transaction.atomic():
+                obj, created = JobApplication.objects.get_or_create(
+                    job_post=job,
+                    applicant=request.user,
+                    defaults={"cover_letter": cover_letter},
+                )
+        except IntegrityError:
+            return Response(
+                {"detail": "Siz allaqachon bu vakansiyaga ariza qoldirgansiz."},
+                status=400,
             )
 
         if not created:
-            return Response({"detail": "Siz allaqachon bu vakansiyaga ariza qoldirgansiz."}, status=400)
+            return Response(
+                {"detail": "Siz allaqachon bu vakansiyaga ariza qoldirgansiz."},
+                status=400,
+            )
 
-        return Response(JobApplicationSerializer(obj, context={"request": request}).data, status=201)
-
+        serializer = JobApplicationSerializer(obj, context={"request": request})
+        return Response(serializer.data, status=201)
 
 # ==============================
 # 2️⃣ EMPLOYER uchun shu JOBdagi barcha arizalar
