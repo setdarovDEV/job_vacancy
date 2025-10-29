@@ -138,12 +138,3 @@ class EmployerProfileView(generics.RetrieveAPIView):
         if user.role != "EMPLOYER":
             raise NotFound("Bu foydalanuvchi ish beruvchi emas.")
         return user
-
-class AnyUserProfileView(generics.RetrieveAPIView):
-    """
-    Har qanday foydalanuvchi (EMPLOYER yoki JOB_SEEKER) profilini qaytaradi.
-    """
-    queryset = CustomUser.objects.all()
-    serializer_class = UserProfileSerializer
-    lookup_field = "id"
-    permission_classes = [permissions.AllowAny]

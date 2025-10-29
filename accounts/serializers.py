@@ -359,89 +359,45 @@ def abs_url(request, raw):
 class UserProfileSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
     avatar = serializers.SerializerMethodField()
-    bio = serializers.SerializerMethodField()
-    position = serializers.SerializerMethodField()
     skills = serializers.SerializerMethodField()
 
     class Meta:
         model = CustomUser
-        fields = ["id", "full_name", "avatar", "bio", "position", "skills"]
-
-    # --- helpers ---
-    def _first(self, *vals):
-        for v in vals:
-            if v:
-                return v
-        return None
+        fields = [
+            "id",
+            "username",
+            "role",
+            "full_name",
+            "avatar",
+            "title",
+            "about_me",
+            "salary_usd",
+            "work_hours_per_week",
+            "is_online",
+            "last_seen",
+            "latitude",
+            "longitude",
+            "skills",
+        ]
 
     def get_full_name(self, obj):
-        fn = getattr(obj, "full_name", None)
-        if callable(fn):
-            try:
-                v = fn()
-                if v:
-                    return v
-            except Exception:
-                pass
-        if isinstance(fn, str) and fn:
-            return fn
-        return f"{getattr(obj,'first_name','')} {getattr(obj,'last_name','')}".strip() or "—"
+        name = f"{obj.first_name or ''} {obj.last_name or ''}".strip()
+        return name if name else obj.username
 
     def get_avatar(self, obj):
         request = self.context.get("request")
-        prof = getattr(obj, "profile", None)
-        candidates = [
-            getattr(obj, "avatar", None),
-            getattr(obj, "photo", None),
-            getattr(obj, "image", None),
-            getattr(obj, "profile_image", None),
-            getattr(prof, "avatar", None) if prof else None,
-            getattr(prof, "photo", None) if prof else None,
-            getattr(prof, "image", None) if prof else None,
-            getattr(prof, "profile_image", None) if prof else None,
-        ]
-        for c in candidates:
-            if c:
-                return abs_url(request, getattr(c, "url", c))
-        return ""
-
-    def get_bio(self, obj):
-        prof = getattr(obj, "profile", None)
-        return self._first(
-            getattr(obj, "bio", None),
-            getattr(obj, "about", None),
-            getattr(obj, "summary", None),
-            getattr(prof, "about_me", None) if prof else None,
-            getattr(prof, "bio", None) if prof else None,
-            getattr(prof, "about", None) if prof else None,
-            getattr(prof, "description", None) if prof else None,
-            getattr(prof, "headline", None) if prof else None,
-            getattr(prof, "summary", None) if prof else None,
-        ) or "—"
-
-    def get_position(self, obj):
-        prof = getattr(obj, "profile", None)
-        return (
-            getattr(prof, "position", None)
-            or getattr(prof, "title", None)
-            or getattr(obj, "title", None)
-            or "—"
-        )
+        if obj.profile_image:
+            url = obj.profile_image.url
+            return request.build_absolute_uri(url) if request else url
+        return None
 
     def get_skills(self, obj):
-        prof = getattr(obj, "profile", None)
-        sk = getattr(obj, "skills", None)
-        if hasattr(sk, "all"):
-            return list(sk.values_list("name", flat=True))
-        if prof:
-            psk = getattr(prof, "skills", None)
-            if hasattr(psk, "all"):
-                return list(psk.values_list("name", flat=True))
-            if isinstance(psk, str):
-                return [s for s in psk.replace(",", " ").split() if s]
-            if isinstance(psk, list):
-                return psk
+        # Job Seeker uchun Skill modeldan olamiz
+        skills_qs = getattr(obj, "skills", None)
+        if hasattr(skills_qs, "all"):
+            return list(skills_qs.values_list("name", flat=True))
         return []
+
 
 def send_verification_email(email, code):
     """

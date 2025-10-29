@@ -3,13 +3,15 @@ from django.db.models import F
 from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions, status, generics
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django_filters.rest_framework import DjangoFilterBackend
 
+from accounts.models import CustomUser
+from accounts.serializers import UserProfileSerializer
 from .models import Post, Comment
 from .serializers import PostSerializer, CommentSerializer
 from .permissions import IsAuthorOrReadOnly
@@ -111,3 +113,12 @@ class PostLikeView(APIView):
         # likes_count tez qaytishi uchun signal kutmasdan hisoblaymiz
         count = post.likes.count()
         return Response({"liked": liked, "likes_count": count}, status=status.HTTP_200_OK)
+
+class AnyUserProfileView(generics.RetrieveAPIView):
+    """
+    Har qanday foydalanuvchi (EMPLOYER yoki JOB_SEEKER) profilini qaytaradi.
+    """
+    queryset = CustomUser.objects.all()
+    serializer_class = UserProfileSerializer
+    lookup_field = "id"
+    permission_classes = [permissions.AllowAny]

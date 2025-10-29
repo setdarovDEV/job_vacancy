@@ -1,8 +1,8 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .serializers import JobSeekerProfileView, EmployerProfileView, AnyUserProfileView
-from .views import PostViewSet, CommentViewSet, PostLikeView
+from .serializers import JobSeekerProfileView, EmployerProfileView
+from .views import PostViewSet, CommentViewSet, PostLikeView, AnyUserProfileView
 
 router = DefaultRouter()
 router.register(r"posts", PostViewSet, basename="post")
