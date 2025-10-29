@@ -316,7 +316,17 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CustomUser
-        fields = ("id", "username", "first_name", "last_name", "full_name", "avatar_url", "last_seen", "is_online")
+        fields = (
+            "id",
+            "username",
+            "first_name",
+            "last_name",
+            "full_name",
+            "avatar_url",
+            "last_seen",
+            "is_online",
+            "role",  # 🆕 Qo‘shildi
+        )
 
     def get_full_name(self, obj):
         return f"{obj.first_name or ''} {obj.last_name or ''}".strip()
