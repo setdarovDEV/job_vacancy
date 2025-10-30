@@ -44,22 +44,25 @@ class CompanyViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
+        from vacancies.models import JobPost  # 🔹 shu joyni qo‘shamiz
+
         qs = (
             Company.objects
             .select_related("owner")
-            .only(
-                "id", "name", "industry", "location",
-                "logo", "banner", "created_at",
-                "owner_id"  # ✅ shu qo‘shiladi
-            )
             .annotate(
                 reviews_count=Count("reviews", distinct=True),
                 followers_count=Count("follows", distinct=True),
+                # ✅ COUNT orqali yoki fallback orqali aniqlaymiz
                 vacancies_count=Count("job_posts", distinct=True),
                 avg_rating=Coalesce(Avg("reviews__rating"), Value(0.0)),
             )
             .order_by("-followers_count", "id")
         )
+
+        # 🔹 fallback — agar annotate 0 chiqsa, biz alohida hisoblaymiz
+        for c in qs:
+            if c.vacancies_count == 0:
+                c.vacancies_count = JobPost.objects.filter(company=c).count()
 
         if self.request.user.is_authenticated and self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
