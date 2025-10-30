@@ -2,7 +2,7 @@ from django.db import transaction
 from django.db.models import Avg, Count, Value
 from django.db.models.functions import Coalesce
 from django.utils.decorators import method_decorator
-from django.views.decorators.cache import cache_page
+from django.views.decorators.cache import cache_page, never_cache
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status, filters as drf_filters
 from rest_framework.decorators import action
@@ -45,11 +45,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
-        """
-        Real-time statistikalar bilan kompaniyalar.
-        vacancies_count — har doim JobPost modeli orqali sanaladi.
-        """
-        from vacancies.models import JobPost  # ⚡ ichki import (aylana importni oldini oladi)
+        from vacancies.models import JobPost
 
         qs = (
             Company.objects
@@ -62,24 +58,20 @@ class CompanyViewSet(viewsets.ModelViewSet):
             .order_by("-followers_count", "id")
         )
 
-        # 🟦 Endi har bir kompaniyaga real-time vacancies_count qo‘shamiz
         company_ids = [c.id for c in qs]
         vacancy_counts = dict(
             JobPost.objects.filter(company_id__in=company_ids)
             .values_list("company_id")
             .annotate(count=Count("id"))
         )
-
         for c in qs:
             c.vacancies_count = vacancy_counts.get(c.id, 0)
 
-        # 🔹 Faqat o‘z kompaniyasini so‘ragan foydalanuvchi uchun filter
         if self.request.user.is_authenticated and self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
         return qs
 
     def get_serializer_context(self):
-        """Serializerga request uzatamiz, rasm URL to‘liq bo‘lishi uchun"""
         context = super().get_serializer_context()
         context["request"] = self.request
         return context
@@ -88,11 +80,12 @@ class CompanyViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
     # === REVIEWS ===
+    @never_cache   # 🚀 Reviewlar uchun cache’ni o‘chir
     @action(
         detail=True,
         methods=["get", "post"],
         url_path="reviews",
-        permission_classes=[IsAuthenticatedOrReadOnly],  # 🔹 bu kerak
+        permission_classes=[IsAuthenticatedOrReadOnly],
     )
     def reviews(self, request, pk=None):
         company = self.get_object()
@@ -106,6 +99,10 @@ class CompanyViewSet(viewsets.ModelViewSet):
         # POST — yangi sharh qo‘shish
         if not request.user.is_authenticated:
             return Response({"detail": "Authentication required"}, status=403)
+
+        # Foydalanuvchi ilgari sharh yozganmi?
+        if CompanyReview.objects.filter(company=company, user=request.user).exists():
+            return Response({"detail": "Siz allaqachon bu kompaniyaga izoh qoldirgansiz."}, status=400)
 
         data = request.data.copy()
         data["company"] = company.id
