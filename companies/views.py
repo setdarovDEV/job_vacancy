@@ -48,7 +48,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
         Real-time statistikalar bilan kompaniyalar.
         vacancies_count — har doim JobPost modeli orqali sanaladi.
         """
-        from vacancies.models import JobPost  # ⚡ ichki import (aylana importni oldini oladi)
+        from vacancies.models import JobPost
 
         qs = (
             Company.objects
@@ -61,18 +61,22 @@ class CompanyViewSet(viewsets.ModelViewSet):
             .order_by("-followers_count", "id")
         )
 
-        # 🟦 Endi har bir kompaniyaga real-time vacancies_count qo‘shamiz
+        # 🟢 endi kompaniya egasi nechta vakansiya yaratganini hisoblaymiz
         company_ids = [c.id for c in qs]
-        vacancy_counts = dict(
-            JobPost.objects.filter(company_id__in=company_ids)
-            .values_list("company_id")
+        owner_to_company = {c.owner_id: c.id for c in qs}
+
+        # owner_id bo‘yicha JobPost sanaymiz
+        job_counts = dict(
+            JobPost.objects
+            .filter(owner_id__in=owner_to_company.keys())
+            .values_list("owner_id")
             .annotate(count=Count("id"))
         )
 
         for c in qs:
-            c.vacancies_count = vacancy_counts.get(c.id, 0)
+            c.vacancies_count = job_counts.get(c.owner_id, 0)
 
-        # 🔹 Faqat o‘z kompaniyasini so‘ragan foydalanuvchi uchun filter
+        # faqat o‘zining kompaniyalarini so‘rasa:
         if self.request.user.is_authenticated and self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
         return qs
