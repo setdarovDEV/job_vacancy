@@ -1,3 +1,4 @@
+from django.db import IntegrityError
 from rest_framework import serializers
 from .models import Company, CompanyReview, CompanyFollow, CompanyPhoto, InterviewExperience
 from django.db.models import Avg, Count
@@ -93,6 +94,17 @@ class CompanyReviewSerializer(serializers.ModelSerializer):
         if not 1 <= value <= 5:
             raise serializers.ValidationError("Reyting 1 dan 5 gacha bo‘lishi kerak.")
         return value
+
+    def create(self, validated_data):
+        """Bir user → bir company uchun bitta izoh"""
+        request = self.context.get("request")
+        validated_data["user"] = request.user
+        try:
+            return super().create(validated_data)
+        except IntegrityError:
+            raise serializers.ValidationError(
+                {"detail": "Siz allaqachon bu kompaniyaga izoh qoldirgansiz."}
+            )
 
 
 class CompanyPhotoSerializer(serializers.ModelSerializer):
