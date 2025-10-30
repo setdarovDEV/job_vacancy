@@ -44,7 +44,11 @@ class CompanyViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def get_queryset(self):
-        from vacancies.models import JobPost  # 🔹 shu joyni qo‘shamiz
+        """
+        Real-time statistikalar bilan kompaniyalar.
+        vacancies_count — har doim JobPost modeli orqali sanaladi.
+        """
+        from vacancies.models import JobPost  # ⚡ ichki import (aylana importni oldini oladi)
 
         qs = (
             Company.objects
@@ -52,18 +56,23 @@ class CompanyViewSet(viewsets.ModelViewSet):
             .annotate(
                 reviews_count=Count("reviews", distinct=True),
                 followers_count=Count("follows", distinct=True),
-                # ✅ COUNT orqali yoki fallback orqali aniqlaymiz
-                vacancies_count=Count("job_posts", distinct=True),
                 avg_rating=Coalesce(Avg("reviews__rating"), Value(0.0)),
             )
             .order_by("-followers_count", "id")
         )
 
-        # 🔹 fallback — agar annotate 0 chiqsa, biz alohida hisoblaymiz
-        for c in qs:
-            if c.vacancies_count == 0:
-                c.vacancies_count = JobPost.objects.filter(company=c).count()
+        # 🟦 Endi har bir kompaniyaga real-time vacancies_count qo‘shamiz
+        company_ids = [c.id for c in qs]
+        vacancy_counts = dict(
+            JobPost.objects.filter(company_id__in=company_ids)
+            .values_list("company_id")
+            .annotate(count=Count("id"))
+        )
 
+        for c in qs:
+            c.vacancies_count = vacancy_counts.get(c.id, 0)
+
+        # 🔹 Faqat o‘z kompaniyasini so‘ragan foydalanuvchi uchun filter
         if self.request.user.is_authenticated and self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
         return qs
