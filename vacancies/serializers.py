@@ -163,3 +163,8 @@ class SavedJobSerializer(serializers.ModelSerializer):
         model = SavedJob
         fields = ["id", "job_post", "saved_at"]
         read_only_fields = ["id", "saved_at"]
+
+class JobPostMiniSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = JobPost
+        fields = ['id', 'position', 'salary_min', 'salary_max', 'location', 'created_at']

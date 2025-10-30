@@ -18,6 +18,7 @@ class CompanySerializer(serializers.ModelSerializer):
     jobpost_count = serializers.SerializerMethodField()
     open_jobpost_count = serializers.SerializerMethodField()
     hire_rate = serializers.SerializerMethodField()
+    vacancies = serializers.SerializerMethodField()  # ✅ qo‘shamiz
 
     class Meta:
         model = Company
@@ -69,6 +70,11 @@ class CompanySerializer(serializers.ModelSerializer):
             return "0%"
         return f"{round((filled / total) * 100)}%"
 
+    def get_vacancies(self, obj):
+        from vacancies.models import JobPost
+        qs = JobPost.objects.filter(company=obj).order_by('-created_at')[:3]  # 🔹 faqat so‘nggi 3 ta
+        from vacancies.serializers import JobPostMiniSerializer
+        return JobPostMiniSerializer(qs, many=True, context=self.context).data
 
 # ✅ Review Serializer with validation & fallback name
 class CompanyReviewSerializer(serializers.ModelSerializer):
