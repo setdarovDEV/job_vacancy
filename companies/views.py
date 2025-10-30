@@ -8,6 +8,7 @@ from rest_framework import viewsets, permissions, status, filters as drf_filters
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
 from .filters import CompanyFilter
@@ -87,30 +88,33 @@ class CompanyViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
     # === REVIEWS ===
-    @action(detail=True, methods=["get", "post"], url_path="reviews")
+    @action(
+        detail=True,
+        methods=["get", "post"],
+        url_path="reviews",
+        permission_classes=[IsAuthenticatedOrReadOnly],  # 🔹 bu kerak
+    )
     def reviews(self, request, pk=None):
         company = self.get_object()
 
+        # GET — sharhlar ro‘yxati
         if request.method == "GET":
-            qs = company.reviews.select_related("user").only(
-                "id", "rating", "text", "country", "created_at",
-                "user__id", "user__first_name", "user__last_name"
-            ).order_by("-created_at")
-            page = self.paginate_queryset(qs)
-            ser = CompanyReviewSerializer(page or qs, many=True)
-            return self.get_paginated_response(ser.data) if page else Response(ser.data)
+            qs = CompanyReview.objects.filter(company=company).order_by("-created_at")
+            serializer = CompanyReviewSerializer(qs, many=True, context={"request": request})
+            return Response(serializer.data)
 
+        # POST — yangi sharh qo‘shish
         if not request.user.is_authenticated:
-            return Response({"detail": "Avtorizatsiya talab qilinadi."}, status=401)
+            return Response({"detail": "Authentication required"}, status=403)
 
-        if CompanyReview.objects.filter(company=company, user=request.user).exists():
-            return Response({"detail": "Siz allaqachon sharh qoldirgansiz."}, status=400)
-
-        serializer = CompanyReviewSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        with transaction.atomic():
-            serializer.save(company=company, user=request.user)
-        return Response(serializer.data, status=201)
+        data = request.data.copy()
+        data["company"] = company.id
+        data["user"] = request.user.id
+        serializer = CompanyReviewSerializer(data=data, context={"request": request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     # === PHOTOS ===
     @action(detail=True, methods=["get", "post"], url_path="photos")
