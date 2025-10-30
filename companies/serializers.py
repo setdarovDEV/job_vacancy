@@ -26,12 +26,13 @@ class CompanySerializer(serializers.ModelSerializer):
 
     # 🔹 Rasm uchun to‘liq URL
     def get_logo_url(self, obj):
-        if not obj.logo:
-            return None
         request = self.context.get('request')
-        url = obj.logo.url
-        abs_url = request.build_absolute_uri(url) if request else url
-        return abs_url.replace("http://", "https://")
+        if obj.logo:
+            url = obj.logo.url
+            abs_url = request.build_absolute_uri(url) if request else url
+            return abs_url.replace("http://", "https://")
+        # 🔹 default logo
+        return request.build_absolute_uri("/media/defaults/company_default.png") if request else None
 
     # 🔹 User follow holati
     def get_is_following(self, obj):
