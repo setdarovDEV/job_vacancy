@@ -129,8 +129,9 @@ class LoginSerializer(serializers.Serializer):
         return {
             "access": str(refresh.access_token),
             "refresh": str(refresh),
-            "role": user.role or "JOB_SEEKER",  # ✅ rolni qo‘shdik
-            "username": user.username,          # ✅ username ham qo‘shdik
+            "role": user.role or "JOB_SEEKER",
+            "username": user.username,
+            "user_id": str(user.id),
         }
 
 class UpdateSalaryView(APIView):
