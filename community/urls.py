@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .serializers import JobSeekerProfileView, EmployerProfileView
-from .views import PostViewSet, CommentViewSet, PostLikeView, AnyUserProfileView
+from .views import PostViewSet, CommentViewSet, PostLikeView
 
 router = DefaultRouter()
 router.register(r"posts", PostViewSet, basename="post")
@@ -24,5 +24,4 @@ urlpatterns = [
     path("posts/<int:pk>/like/", PostLikeView.as_view(), name="post-like"),
     path("community/jobseeker-profile/<uuid:id>/", JobSeekerProfileView.as_view(), name="jobseeker-profile"),
     path("community/employer-profile/<uuid:id>/", EmployerProfileView.as_view(), name="employer-profile"),
-    path("community/profile/<uuid:id>/", AnyUserProfileView.as_view(), name="any-user-profile"),
 ]
