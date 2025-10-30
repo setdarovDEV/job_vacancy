@@ -49,6 +49,8 @@ class CompanyViewSet(viewsets.ModelViewSet):
         vacancies_count — har doim JobPost modeli orqali sanaladi.
         """
         from vacancies.models import JobPost
+        from django.db.models import Avg, Count, Value
+        from django.db.models.functions import Coalesce
 
         qs = (
             Company.objects
@@ -61,22 +63,20 @@ class CompanyViewSet(viewsets.ModelViewSet):
             .order_by("-followers_count", "id")
         )
 
-        # 🟢 endi kompaniya egasi nechta vakansiya yaratganini hisoblaymiz
-        company_ids = [c.id for c in qs]
-        owner_to_company = {c.owner_id: c.id for c in qs}
-
-        # owner_id bo‘yicha JobPost sanaymiz
+        # 🟢 kompaniya egasiga qarab job sonini hisoblaymiz
+        owner_ids = list(qs.values_list("owner_id", flat=True))
         job_counts = dict(
             JobPost.objects
-            .filter(owner_id__in=owner_to_company.keys())
-            .values_list("owner_id")
+            .filter(owner_id__in=owner_ids)
+            .values("owner_id")
             .annotate(count=Count("id"))
+            .values_list("owner_id", "count")
         )
 
         for c in qs:
             c.vacancies_count = job_counts.get(c.owner_id, 0)
 
-        # faqat o‘zining kompaniyalarini so‘rasa:
+        # 🔹 faqat o‘zining kompaniyalari kerak bo‘lsa
         if self.request.user.is_authenticated and self.request.query_params.get("mine") == "1":
             qs = qs.filter(owner=self.request.user)
         return qs
