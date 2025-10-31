@@ -6,20 +6,17 @@ from django.db.models import Avg, Count
 class CompanySerializer(serializers.ModelSerializer):
     reviews_count = serializers.IntegerField(read_only=True)
     followers_count = serializers.IntegerField(read_only=True)
-    vacancies_count = serializers.IntegerField(read_only=True)
     avg_rating = serializers.DecimalField(max_digits=3, decimal_places=2, read_only=True)
 
-    # 🟢 Asl fayl maydon (fayl saqlanadi)
     logo = serializers.ImageField(required=False, allow_null=True, use_url=False)
-
-    # 🟢 Faqat o‘qish uchun to‘liq URL
     logo_url = serializers.SerializerMethodField(read_only=True)
 
     is_following = serializers.SerializerMethodField()
     jobpost_count = serializers.SerializerMethodField()
     open_jobpost_count = serializers.SerializerMethodField()
     hire_rate = serializers.SerializerMethodField()
-    vacancies = serializers.SerializerMethodField()  # ✅ qo‘shamiz
+    vacancies = serializers.SerializerMethodField()
+    vacancies_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Company
@@ -82,6 +79,9 @@ class CompanySerializer(serializers.ModelSerializer):
         qs = JobPost.objects.filter(company=obj).order_by('-created_at')[:3]  # 🔹 faqat so‘nggi 3 ta
         from vacancies.serializers import JobPostMiniSerializer
         return JobPostMiniSerializer(qs, many=True, context=self.context).data
+
+    def get_vacancies_count(self, obj):
+        return obj.job_posts.count()  # ✅ to‘g‘rilandi
 
 # ✅ Review Serializer with validation & fallback name
 class CompanyReviewSerializer(serializers.ModelSerializer):

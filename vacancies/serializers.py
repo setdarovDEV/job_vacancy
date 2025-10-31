@@ -165,6 +165,13 @@ class SavedJobSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "saved_at"]
 
 class JobPostMiniSerializer(serializers.ModelSerializer):
+    budget = serializers.SerializerMethodField()
+
     class Meta:
         model = JobPost
-        fields = ['id', 'position', 'salary_min', 'salary_max', 'location', 'created_at']
+        fields = ['id', 'title', 'budget', 'location', 'created_at']
+
+    def get_budget(self, obj):
+        if obj.budget_min and obj.budget_max:
+            return f"{obj.budget_min} - {obj.budget_max} USD"
+        return "Не указано"

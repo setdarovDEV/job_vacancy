@@ -56,7 +56,11 @@ class JobPostViewSet(viewsets.ModelViewSet):
         return [permissions.AllowAny()]
 
     def perform_create(self, serializer):
-        serializer.save(employer=self.request.user)
+        from companies.models import Company
+
+        user = self.request.user
+        company = Company.objects.filter(owner=user).first()  # 🔹 Shu user’ning kompaniyasi
+        serializer.save(employer=user, company=company)
 
     def get_is_saved(self, obj):
         request = self.context.get("request")
