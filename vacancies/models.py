@@ -57,7 +57,7 @@ class JobPost(models.Model):
 
     # 🔥 Plan with choices
     plan = models.CharField(max_length=50, choices=PlanChoices.choices, blank=True, null=True)
-
+    is_draft = models.BooleanField(default=True)
     @property
     def average_stars(self):
         avg = self.ratings.aggregate(a=Avg("stars"))["a"]

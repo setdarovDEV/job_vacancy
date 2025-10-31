@@ -31,17 +31,15 @@ class JobPostViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = JobPost.objects.select_related("employer", "company").order_by("-created_at")
-
-        # ✅ Faqat o‘zim yaratganlar
-        mine = self.request.query_params.get("mine")
         user = self.request.user
-        if mine == "1" and user.is_authenticated:
-            print(f"🔍 Filtering by mine=1 for user {user.username}")
+
+        # ✅ Faqat o‘zim yaratganlar (draftlarim ham)
+        if self.request.query_params.get("mine") == "1" and user.is_authenticated:
             return qs.filter(employer=user)
 
-        # ⚙️ Oddiy public ro‘yxat
+        # 🌍 Oddiy public list — faqat tayyor va to‘liq e’lonlar
         if self.action in ("list", "recent", "featured", "by_company"):
-            qs = qs.filter(budget_min__isnull=False, budget_max__isnull=False)
+            qs = qs.filter(is_draft=False, budget_min__isnull=False, budget_max__isnull=False)
         return qs
 
     def get_serializer_class(self):
