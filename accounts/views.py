@@ -721,3 +721,69 @@ class AnyUserProfileView(generics.RetrieveAPIView):
                 to_attr="pref_skills"
             )
         )
+
+class MobilePasswordResetRequestView(APIView):
+    """
+    Mobil ilova uchun — parolni tiklash kodi email orqali yuboriladi.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email")
+        if not email:
+            return Response({"detail": "Email kiriting."}, status=400)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"detail": "Bunday email topilmadi."}, status=404)
+
+        # 6 xonali kod generatsiya
+        code = f"{random.randint(100000, 999999)}"
+        EmailVerificationCode.objects.update_or_create(
+            user=user, defaults={"code": code}
+        )
+
+        # E-mail yuborish
+        threading.Thread(
+            target=lambda: send_mail(
+                subject="Парольni tiklash kodi",
+                message=f"Sizning parolingizni tiklash kodingiz: {code}",
+                from_email=DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                fail_silently=True,
+            )
+        ).start()
+
+        return Response({"message": "Tasdiqlash kodi yuborildi ✅"})
+
+
+class MobilePasswordResetConfirmView(APIView):
+    """
+    Mobil ilova uchun — foydalanuvchi kodni yuborib yangi parolni o‘rnatadi.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email")
+        code = request.data.get("code")
+        new_password = request.data.get("new_password")
+
+        if not all([email, code, new_password]):
+            return Response({"detail": "Barcha maydonlar talab qilinadi."}, status=400)
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"detail": "Bunday email topilmadi."}, status=404)
+
+        try:
+            record = EmailVerificationCode.objects.get(user=user, code=code)
+        except EmailVerificationCode.DoesNotExist:
+            return Response({"detail": "Kod noto‘g‘ri yoki eskirgan."}, status=400)
+
+        user.set_password(new_password)
+        user.save()
+        record.delete()
+
+        return Response({"message": "Parol muvaffaqiyatli yangilandi ✅"})
