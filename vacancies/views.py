@@ -129,3 +129,16 @@ class JobPostViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(qs)
         ser = JobPostPublicSerializer(page or qs, many=True, context={"request": request})
         return self.get_paginated_response(ser.data) if page else Response(ser.data, status=200)
+
+    # === MY SAVED JOBS (GET) ===
+    @action(detail=False, methods=["get"], url_path="saved-jobs", permission_classes=[permissions.IsAuthenticated])
+    def saved_jobs(self, request):
+        qs = (
+            JobPost.objects
+            .filter(saved_by__user=request.user)
+            .select_related("company", "employer")
+            .order_by("-created_at")
+        )
+        page = self.paginate_queryset(qs)
+        ser = JobPostPublicSerializer(page or qs, many=True, context={"request": request})
+        return self.get_paginated_response(ser.data) if page else Response(ser.data, status=200)
