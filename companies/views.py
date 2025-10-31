@@ -209,7 +209,9 @@ class CompanyViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["get"], url_path="vacancies")
     def vacancies(self, request, pk=None):
         company = self.get_object()
-        qs = JobPost.objects.filter(company=company).order_by("-created_at")
+
+        # 🔹 Faqat shu kompaniyani yaratgan userning vakansiyalari
+        qs = JobPost.objects.filter(employer=company.owner).order_by("-created_at")
 
         page = self.paginate_queryset(qs)
         ser = JobPostSerializer(page or qs, many=True, context={"request": request})
