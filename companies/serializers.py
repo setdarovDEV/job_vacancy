@@ -26,15 +26,21 @@ class CompanySerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['owner', 'created_at']
 
-    # 🔹 Rasm uchun to‘liq URL
     def get_logo_url(self, obj):
         request = self.context.get('request')
-        if obj.logo:
+        if not obj.logo:
+            if request:
+                return request.build_absolute_uri("/media/defaults/company_default.png")
+            return None
+
+        try:
             url = obj.logo.url
-            abs_url = request.build_absolute_uri(url) if request else url
-            return abs_url.replace("http://", "https://")
-        # 🔹 default logo
-        return request.build_absolute_uri("/media/defaults/company_default.png") if request else None
+            if request:
+                abs_url = request.build_absolute_uri(url)
+                return abs_url.replace("http://", "https://")
+            return url
+        except Exception:
+            return None
 
     # 🔹 User follow holati
     def get_is_following(self, obj):

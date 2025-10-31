@@ -80,7 +80,6 @@ class CompanyViewSet(viewsets.ModelViewSet):
         serializer.save(owner=self.request.user)
 
     # === REVIEWS ===
-    @never_cache   # 🚀 Reviewlar uchun cache’ni o‘chir
     @action(
         detail=True,
         methods=["get", "post"],
@@ -90,28 +89,24 @@ class CompanyViewSet(viewsets.ModelViewSet):
     def reviews(self, request, pk=None):
         company = self.get_object()
 
-        # GET — sharhlar ro‘yxati
         if request.method == "GET":
             qs = CompanyReview.objects.filter(company=company).order_by("-created_at")
             serializer = CompanyReviewSerializer(qs, many=True, context={"request": request})
             return Response(serializer.data)
 
-        # POST — yangi sharh qo‘shish
         if not request.user.is_authenticated:
             return Response({"detail": "Authentication required"}, status=403)
 
-        # Foydalanuvchi ilgari sharh yozganmi?
-        if CompanyReview.objects.filter(company=company, user=request.user).exists():
+        # 🔧 bu tekshiruvni to‘g‘ri joyga o‘tkazamiz
+        existing = CompanyReview.objects.filter(company=company, user=request.user).first()
+        if existing:
             return Response({"detail": "Siz allaqachon bu kompaniyaga izoh qoldirgansiz."}, status=400)
 
-        data = request.data.copy()
-        data["company"] = company.id
-        data["user"] = request.user.id
-        serializer = CompanyReviewSerializer(data=data, context={"request": request})
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # 🔧 company va user ni faqat bu yerda set qilamiz
+        serializer = CompanyReviewSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save(company=company, user=request.user)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
 
     # === PHOTOS ===
     @action(detail=True, methods=["get", "post"], url_path="photos")
