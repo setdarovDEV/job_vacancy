@@ -201,11 +201,8 @@ class MyApplicationsView(generics.ListAPIView):
     def get_queryset(self):
         return (
             JobApplication.objects
-            .select_related("job_post", "applicant")
-            .only(
-                "id", "cover_letter", "status", "created_at",
-                "job_post__id", "job_post__title", "job_post__company", "job_post__location"
-            )
+            .select_related("job_post", "applicant")  # ✅ select_related qoldiramiz
+            # ⚠️ .only()ni olib tashlaymiz — bu joyda kerak emas
             .filter(applicant=self.request.user)
             .order_by("-created_at")
         )
