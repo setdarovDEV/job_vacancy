@@ -11,6 +11,8 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
+from vacancies.models import JobPost
+from vacancies.serializers import JobPostSerializer
 from .filters import CompanyFilter
 from .models import (
     Company, CompanyReview, CompanyPhoto,
@@ -203,3 +205,13 @@ class CompanyViewSet(viewsets.ModelViewSet):
         )
         ser = self.get_serializer(qs, many=True, context={"request": request})
         return Response(ser.data, status=200)
+
+    @action(detail=True, methods=["get"], url_path="vacancies")
+    def vacancies(self, request, pk=None):
+        company = self.get_object()
+        qs = JobPost.objects.filter(company=company).order_by("-created_at")
+
+        page = self.paginate_queryset(qs)
+        ser = JobPostSerializer(page or qs, many=True, context={"request": request})
+
+        return self.get_paginated_response(ser.data) if page else Response(ser.data)
