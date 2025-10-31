@@ -58,6 +58,7 @@ class JobPost(models.Model):
     # 🔥 Plan with choices
     plan = models.CharField(max_length=50, choices=PlanChoices.choices, blank=True, null=True)
     is_draft = models.BooleanField(default=True)
+
     @property
     def average_stars(self):
         avg = self.ratings.aggregate(a=Avg("stars"))["a"]
@@ -66,6 +67,12 @@ class JobPost(models.Model):
     def __str__(self):
         return self.title
 
+    def save(self, *args, **kwargs):
+        # 🔹 Agar majburiy maydonlardan biri yo‘q bo‘lsa, avtomatik draft sifatida saqlanadi
+        required_fields = [self.title, self.description, self.location, self.budget_min, self.budget_max]
+        if not all(required_fields):
+            self.is_draft = True
+        super().save(*args, **kwargs)
 
 class JobPostRating(models.Model):
     job_post = models.ForeignKey(JobPost, related_name="ratings", on_delete=models.CASCADE)

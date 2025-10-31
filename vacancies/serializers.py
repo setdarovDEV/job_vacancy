@@ -105,7 +105,7 @@ class JobPostPublicSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "description", "skills", "location",
             "rating", "payment_verified", "budget", "published_ago", "timeAgo",
-            "ratings_count", "is_remote", "duration", "deadline", "plan", "created_at", "is_saved", "company"
+            "ratings_count", "is_remote", "duration", "deadline", "plan", "created_at", "is_saved", "company", "is_draft"
             # kerak bo‘lsa qo‘sh: "average_stars"
         ]
         read_only_fields = fields

@@ -37,9 +37,9 @@ class JobPostViewSet(viewsets.ModelViewSet):
         if self.request.query_params.get("mine") == "1" and user.is_authenticated:
             return qs.filter(employer=user)
 
-        # 🌍 Oddiy public list — faqat tayyor va to‘liq e’lonlar
+        # 🌍 Public list faqat to‘liq e’lonlar
         if self.action in ("list", "recent", "featured", "by_company"):
-            qs = qs.filter(is_draft=False, budget_min__isnull=False, budget_max__isnull=False)
+            qs = qs.filter(is_draft=False, is_filled=False)
         return qs
 
     def get_serializer_class(self):
@@ -57,8 +57,8 @@ class JobPostViewSet(viewsets.ModelViewSet):
         from companies.models import Company
 
         user = self.request.user
-        company = Company.objects.filter(owner=user).first()  # 🔹 Shu user’ning kompaniyasi
-        serializer.save(employer=user, company=company)
+        company = Company.objects.filter(owner=user).first()
+        serializer.save(employer=user, company=company, is_draft=True)
 
     def get_is_saved(self, obj):
         request = self.context.get("request")
