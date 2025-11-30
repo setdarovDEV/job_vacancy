@@ -107,27 +107,39 @@ WSGI_APPLICATION = "headhunter_backend.wsgi.application"
 ASGI_APPLICATION = "headhunter_backend.asgi.application"
 
 # --------------------------------------------------
-# ✅ Database
+# ✅ Database (DigitalOcean SSL)
 # --------------------------------------------------
+import dj_database_url
+
+DATABASES = {}
+
 db_url = os.environ.get("DATABASE_URL")
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("DB_NAME"),
-        "USER": os.getenv("DB_USER"),
-        "PASSWORD": os.getenv("DB_PASSWORD"),
-        "HOST": os.getenv("DB_HOST"),
-        "PORT": os.getenv("DB_PORT"),
-        "OPTIONS": {
-            "sslmode": os.getenv("DB_SSLMODE", "require"),
-        },
-        "CONN_HEALTH_CHECKS": True,
+if db_url:
+    # Agar DATABASE_URL bo‘lsa, uni parse qilamiz
+    DATABASES["default"] = dj_database_url.parse(
+        db_url,
+        conn_max_age=600,
+        ssl_require=True,
+    )
+else:
+    # Agar DATABASE_URL bo‘lmasa, env variable’lardan o‘qiymiz
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.environ.get("DB_NAME"),
+            "USER": os.environ.get("DB_USER"),
+            "PASSWORD": os.environ.get("DB_PASSWORD"),
+            "HOST": os.environ.get("DB_HOST"),
+            "PORT": os.environ.get("DB_PORT"),
+            "OPTIONS": {
+                "sslmode": os.environ.get("DB_SSLMODE", "require"),
+            },
+            "CONN_HEALTH_CHECKS": True,
+        }
     }
-}
 
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
-
 
 # --------------------------------------------------
 # ✅ Redis Cache
