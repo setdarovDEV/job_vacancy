@@ -8,9 +8,14 @@ from pathlib import Path
 from urllib.parse import urlparse
 import dj_database_url
 import dotenv
+import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-dotenv.load_dotenv(os.path.join(Path(__file__).resolve().parent, ".env"))
+# ✅ Test ishga tushganda .env.test faylni yuklaymiz
+if "pytest" in sys.argv[0]:
+    dotenv.load_dotenv(os.path.join(Path(__file__).resolve().parent.parent, ".env.test"))
+else:
+    dotenv.load_dotenv(os.path.join(Path(__file__).resolve().parent, ".env"))
 
 # --------------------------------------------------
 # ✅ Basic settings
@@ -105,16 +110,22 @@ ASGI_APPLICATION = "headhunter_backend.asgi.application"
 # ✅ Database
 # --------------------------------------------------
 db_url = os.environ.get("DATABASE_URL")
-if not db_url:
-    raise Exception("DATABASE_URL env variable is required!")
 
 DATABASES = {
-    "default": dj_database_url.config(
-        default=db_url,
-        conn_max_age=600,
-        ssl_require=True,   # Render’da SSL kerak
-    )
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST"),
+        "PORT": os.getenv("DB_PORT"),
+        "OPTIONS": {
+            "sslmode": os.getenv("DB_SSLMODE", "require"),
+        },
+        "CONN_HEALTH_CHECKS": True,
+    }
 }
+
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 

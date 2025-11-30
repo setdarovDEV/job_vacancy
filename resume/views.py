@@ -23,12 +23,20 @@ class ResumeViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
     # /resumes/my/ — faol (yoki oxirgi) resume’ni olish
-    @decorators.action(detail=False, methods=["get"], url_path="my")
+    @decorators.action(detail=False, methods=["get", "patch"], url_path="my")
     def my_resume(self, request):
         resume = self.get_queryset().order_by("-updated_at").first()
         if not resume:
             return response.Response({}, status=status.HTTP_204_NO_CONTENT)
-        ser = self.get_serializer(resume)
+
+        if request.method == "GET":
+            ser = self.get_serializer(resume)
+            return response.Response(ser.data)
+
+        # PATCH
+        ser = self.get_serializer(resume, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
         return response.Response(ser.data)
 
     # /resumes/my/ — PATCH bilan tezkor yangilash
