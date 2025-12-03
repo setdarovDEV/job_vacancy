@@ -116,9 +116,11 @@ class RegisterStepFourRoleView(APIView):
         serializer = RegisterStepFourRoleSerializer(data=request.data, context={"user": user})
         if serializer.is_valid():
             serializer.save()
-            return Response({"message": "Registration completed"}, status=200)
+            return Response({
+                "message": "Registration completed",
+                "success": True  # ✅ Qo'shildi
+            }, status=200)
         return Response(serializer.errors, status=400)
-
 
 # ---------------- EMAIL VERIFICATION ----------------
 class ResendVerificationCodeView(APIView):
