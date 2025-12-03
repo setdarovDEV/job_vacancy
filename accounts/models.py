@@ -80,10 +80,32 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             models.Index(fields=['role']),
         ]
 
+
 class EmailVerificationCode(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE)
     code = models.CharField(max_length=6)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_expired(self):
+        """
+        Kodning muddati o'tganini tekshiradi
+        30 daqiqadan keyin expired bo'ladi
+        """
+        from django.utils import timezone
+        expiry_time = self.created_at + timezone.timedelta(minutes=30)
+        return timezone.now() > expiry_time
+
+    def time_remaining(self):
+        """
+        Kod muddati tugashiga qancha vaqt qolganini qaytaradi (sekundlarda)
+        """
+        from django.utils import timezone
+        expiry_time = self.created_at + timezone.timedelta(minutes=30)
+        remaining = (expiry_time - timezone.now()).total_seconds()
+        return max(0, int(remaining))
+
+    def __str__(self):
+        return f"{self.user.username} - {self.code}"
 
 class LanguageSkill(models.Model):
     user = models.ForeignKey(CustomUser, on_delete=models.CASCADE, related_name="languages")

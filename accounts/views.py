@@ -80,10 +80,28 @@ class RegisterStepThreeVerifyCodeView(APIView):
         except CustomUser.DoesNotExist:
             return Response({"error": "User not found"}, status=404)
 
-        serializer = RegisterStepThreeVerifyCodeSerializer(data=request.data, context={"user": user})
-        if serializer.is_valid():
+        code = request.data.get("code")
+        if not code:
+            return Response({"error": "Код обязателен"}, status=400)
+
+        try:
+            code_obj = EmailVerificationCode.objects.get(user=user, code=code)
+
+            # ✅ Muddati tekshirish
+            if code_obj.is_expired():
+                return Response({
+                    "error": "Код истёк. Пожалуйста, запросите новый код."
+                }, status=400)
+
+            # Kod to'g'ri va muddati o'tmagan
+            user.is_email_verified = True
+            user.save(update_fields=["is_email_verified"])
+            code_obj.delete()
+
             return Response({"message": "Email verified"}, status=200)
-        return Response(serializer.errors, status=400)
+
+        except EmailVerificationCode.DoesNotExist:
+            return Response({"error": "Неверный код"}, status=400)
 
 
 class RegisterStepFourRoleView(APIView):
