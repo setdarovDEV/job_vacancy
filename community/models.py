@@ -19,8 +19,15 @@ class Post(models.Model):
     likes = models.ManyToManyField(User, related_name="liked_posts", blank=True)
     shares_count = models.PositiveIntegerField(default=0)
 
-    # ➕ Frontga kerak bo‘ladigan denormalized field
+    # ➕ Frontga kerak bo'ladigan denormalized field
     comments_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['author', '-created_at']),
+        ]
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.author} - {self.content[:30]}"

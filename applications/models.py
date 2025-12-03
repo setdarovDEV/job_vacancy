@@ -27,6 +27,11 @@ class JobApplication(models.Model):
     class Meta:
         unique_together = ("job_post", "applicant")
         ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=['applicant', '-created_at']),
+            models.Index(fields=['job_post', '-created_at']),
+            models.Index(fields=['status']),
+        ]
 
     def __str__(self):
         return f"{self.applicant_id} -> {self.job_post_id} ({self.status})"

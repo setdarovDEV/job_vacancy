@@ -79,7 +79,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-#    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -219,6 +219,7 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 # --------------------------------------------------
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -240,23 +241,21 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
 
 CSRF_TRUSTED_ORIGINS = [
-    'https://jobvacancy-api.duckdns.org',
-    'http://jobvacancy-api.duckdns.org',
+    o.replace("http://", "https://") for o in CORS_ALLOWED_ORIGINS
 ]
-
 if RENDER_URL:
     CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
 if FRONTEND_URL:
     CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
 
-# DuckDNS uchun qo'shish
+# DuckDNS domenini qo'shish
 CSRF_TRUSTED_ORIGINS.extend([
     'https://jobvacancy-api.duckdns.org',
     'http://jobvacancy-api.duckdns.org',
 ])
 
-CSRF_COOKIE_SECURE = True
-CSRF_COOKIE_HTTPONLY = False
+# CSRF cookie sozlamalari
+CSRF_COOKIE_HTTPONLY = False  # Admin uchun muhim!
 CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_SAMESITE = 'Lax'
 CSRF_USE_SESSIONS = False

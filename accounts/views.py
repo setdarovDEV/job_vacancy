@@ -1,3 +1,4 @@
+import os
 import random
 import threading
 from django.contrib.auth import get_user_model
@@ -176,7 +177,10 @@ class PasswordResetRequestView(APIView):
 
         uid = urlsafe_base64_encode(force_bytes(str(user.pk)))
         token = token_generator.make_token(user)
-        reset_url = f"http://localhost:5173/reset-password/{uid}/{token}/"
+
+        # Get frontend URL from settings
+        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+        reset_url = f"{frontend_url}/reset-password/{uid}/{token}/"
 
         threading.Thread(
             target=lambda: send_mail(

@@ -1,21 +1,15 @@
-import asyncio
 import os
+import random
 
-from asgiref.sync import sync_to_async
-import httpx
 from django.contrib.auth import authenticate
+from django.core.mail import send_mail
 from rest_framework import serializers
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from headhunter_backend.settings import DEFAULT_FROM_EMAIL
 from .models import CustomUser, EmailVerificationCode, LanguageSkill, Education, PortfolioMedia, PortfolioProject, \
     Skill, Certificate, WorkExperience, SkillAnswer
-from django.core.mail import send_mail
-import random
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 
 class RegisterStepOneSerializer(serializers.ModelSerializer):
@@ -39,6 +33,7 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
     def save(self, **kwargs):
+        import threading
         user = self.context['user']
         email = self.validated_data['email']
 
@@ -51,21 +46,12 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
             defaults={'code': code}
         )
 
-        # 🔹 Email yuborishni background task sifatida ishga tushiramiz:
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # async kontekstda
-                loop.create_task(send_verification_email(email, code))
-            else:
-                # sync kontekstda
-                asyncio.run(send_verification_email(email, code))
-        except RuntimeError:
-            # Django runserver kontekstida fallback
-            import threading
-            threading.Thread(
-                target=lambda: asyncio.run(send_verification_email(email, code))
-            ).start()
+        # Send email in background thread
+        threading.Thread(
+            target=send_verification_email,
+            args=(email, code),
+            daemon=True
+        ).start()
 
         return {"detail": "Tasdiqlash kodi yuborildi"}
 
@@ -118,7 +104,7 @@ class LoginSerializer(serializers.Serializer):
     def validate(self, data):
         user = authenticate(username=data['username'], password=data['password'])
         if not user:
-            raise serializers.ValidationError("Login yoki parol noto‘g‘ri!")
+            raise serializers.ValidationError("Login yoki parol noto'g'ri!")
 
         # ❗️email tasdiqlanmaganini tekshirish
         if not user.is_email_verified:
@@ -133,60 +119,6 @@ class LoginSerializer(serializers.Serializer):
             "username": user.username,
             "user_id": str(user.id),
         }
-
-class UpdateSalaryView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request):
-        salary = request.data.get('salary_usd')
-
-        if salary is None:
-            return Response({'error': 'Salary is required'}, status=400)
-
-        try:
-            salary = float(salary)  # 👈 floatga aylantiramiz
-        except (TypeError, ValueError):
-            return Response({'error': 'Invalid salary format'}, status=400)
-
-        request.user.salary_usd = salary
-        request.user.save(update_fields=["salary_usd"])  # 🔹 aniq update_fields
-
-        return Response({
-            'message': 'Salary updated successfully ✅',
-            'salary_usd': request.user.salary_usd  # 🔹 qayta yuboriladi
-        }, status=200)
-
-class UpdateAboutMeView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request):
-        about = request.data.get("about_me")
-        if about is None:
-            return Response({"error": "About me is required"}, status=400)
-
-        request.user.about_me = about.strip()
-        request.user.save(update_fields=["about_me"])
-
-        return Response({
-            "message": "About me updated successfully ✅",
-            "about_me": request.user.about_me
-        }, status=200)
-
-class UpdateTitleView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request):
-        title = request.data.get('title')
-        if not title:
-            return Response({'error': 'Title is required'}, status=400)
-
-        request.user.title = title.strip()
-        request.user.save(update_fields=["title"])
-
-        return Response({
-            'message': 'Title updated successfully ✅',
-            'title': request.user.title
-        }, status=200)
 
 class ProfileImageSerializer(serializers.ModelSerializer):
     class Meta:
@@ -251,28 +183,8 @@ class CustomUserSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
-            'profile_image', 'title', 'salary_usd', 'about_me'  # 🆕 qo‘shildi
+            'profile_image', 'title', 'salary_usd', 'about_me'  # 🆕 qo'shildi
         ]
-
-class PortfolioMediaSerializer(serializers.ModelSerializer):
-    file = serializers.SerializerMethodField()
-
-    class Meta:
-        model = PortfolioMedia
-        fields = ['id', 'project', 'file', 'file_type']  # ✅ faqat mavjud maydonlar
-        read_only_fields = ['id', 'project']
-
-    def get_file(self, obj):
-        request = self.context.get('request')
-        if obj.file and hasattr(obj.file, 'url'):
-            return request.build_absolute_uri(obj.file.url)
-        return None
-
-    def get_image(self, obj):
-        request = self.context.get('request')
-        if obj.image:
-            return request.build_absolute_uri(obj.image.url) if request else obj.image.url
-        return None
 
 class SkillSerializer(serializers.ModelSerializer):
     class Meta:
@@ -395,35 +307,30 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return [s.name for s in obj.skills.all()]
 
     def get_languages(self, obj):
-        from .serializers import LanguageSkillSerializer
         langs = getattr(obj, "pref_languages", None)
         if langs is not None:
             return LanguageSkillSerializer(langs, many=True).data
         return LanguageSkillSerializer(obj.languages.all(), many=True).data
 
     def get_educations(self, obj):
-        from .serializers import EducationSerializer
         edus = getattr(obj, "pref_educations", None)
         if edus is not None:
             return EducationSerializer(edus, many=True).data
         return EducationSerializer(obj.educations.all(), many=True).data
 
     def get_certificates(self, obj):
-        from .serializers import CertificateSerializer
         certs = getattr(obj, "pref_certificates", None)
         if certs is not None:
             return CertificateSerializer(certs, many=True, context=self.context).data
         return CertificateSerializer(obj.certificates.all(), many=True, context=self.context).data
 
     def get_portfolio(self, obj):
-        from .serializers import PortfolioProjectSerializer
         projects = getattr(obj, "pref_portfolio", None)
         if projects is not None:
             return PortfolioProjectSerializer(projects, many=True, context=self.context).data
         return PortfolioProjectSerializer(obj.portfolio_projects.all(), many=True, context=self.context).data
 
     def get_experiences(self, obj):
-        from .serializers import WorkExperienceSerializer
         exp = getattr(obj, "pref_experiences", None)
         if exp is not None:
             return WorkExperienceSerializer(exp, many=True).data

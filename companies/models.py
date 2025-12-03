@@ -12,6 +12,13 @@ class Company(models.Model):
     description = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['owner']),
+            models.Index(fields=['name']),
+            models.Index(fields=['-created_at']),
+        ]
+
     def __str__(self):
         return self.name
 

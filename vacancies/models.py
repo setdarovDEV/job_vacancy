@@ -64,11 +64,20 @@ class JobPost(models.Model):
         avg = self.ratings.aggregate(a=Avg("stars"))["a"]
         return round(avg) if avg else 0
 
+    class Meta:
+        indexes = [
+            models.Index(fields=['-created_at']),
+            models.Index(fields=['employer', '-created_at']),
+            models.Index(fields=['company', '-created_at']),
+            models.Index(fields=['is_draft', 'is_filled', '-created_at']),
+            models.Index(fields=['plan']),
+        ]
+
     def __str__(self):
         return self.title
 
     def save(self, *args, **kwargs):
-        # 🔹 Agar majburiy maydonlardan biri yo‘q bo‘lsa, avtomatik draft sifatida saqlanadi
+        # 🔹 Agar majburiy maydonlardan biri yo'q bo'lsa, avtomatik draft sifatida saqlanadi
         required_fields = [self.title, self.description, self.location, self.budget_min, self.budget_max]
         if not all(required_fields):
             self.is_draft = True
