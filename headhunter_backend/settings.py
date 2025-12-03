@@ -22,7 +22,7 @@ else:
 # --------------------------------------------------
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret")
 DEBUG = os.environ.get("DEBUG", "0") == "1"
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"]
+ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
 
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
@@ -79,7 +79,7 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
+#    "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -240,12 +240,26 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
 
 CSRF_TRUSTED_ORIGINS = [
-    o.replace("http://", "https://") for o in CORS_ALLOWED_ORIGINS
+    'https://jobvacancy-api.duckdns.org',
+    'http://jobvacancy-api.duckdns.org',
 ]
+
 if RENDER_URL:
     CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
 if FRONTEND_URL:
     CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
+
+# DuckDNS uchun qo'shish
+CSRF_TRUSTED_ORIGINS.extend([
+    'https://jobvacancy-api.duckdns.org',
+    'http://jobvacancy-api.duckdns.org',
+])
+
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_USE_SESSIONS = False
 
 # --------------------------------------------------
 # ✅ Channels (WebSocket)
