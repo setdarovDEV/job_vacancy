@@ -31,29 +31,30 @@ class RegisterStepOneSerializer(serializers.ModelSerializer):
 
 class RegisterStepTwoEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
-
+    
     def save(self, **kwargs):
-        import threading
-        user = self.context['user']
-        email = self.validated_data['email']
+    user = self.context['user']
+    email = self.validated_data['email']
 
-        user.email = email
-        user.save(update_fields=["email"])
-        code = f"{random.randint(100000, 999999)}"
+    user.email = email
+    user.save(update_fields=["email"])
+    code = f"{random.randint(100000, 999999)}"
 
-        EmailVerificationCode.objects.update_or_create(
-            user=user,
-            defaults={'code': code}
-        )
+    EmailVerificationCode.objects.update_or_create(
+        user=user,
+        defaults={'code': code}
+    )
 
-        # Send email in background thread
-        threading.Thread(
-            target=send_verification_email,
-            args=(email, code),
-            daemon=True
-        ).start()
+    # ✅ To'g'ridan-to'g'ri email yuborish (threading yo'q!)
+    print(f"📧 Sending email to {email} with code: {code}")
+    try:
+        send_verification_email(email, code)
+        print(f"✅ Email sent successfully!")
+    except Exception as e:
+        print(f"❌ Email error: {e}")
+        raise
 
-        return {"detail": "Tasdiqlash kodi yuborildi"}
+    return {"detail": "Tasdiqlash kodi yuborildi"}
 
 
 class RegisterStepThreeVerifyCodeSerializer(serializers.Serializer):
@@ -339,12 +340,37 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 def send_verification_email(email, code):
     """
-    Oddiy, sinxron email yuborish (SMTP orqali).
+    Resend.com orqali email yuborish
     """
-    send_mail(
-        subject="Tasdiqlash kodi",
-        message=f"Sizning tasdiqlash kodingiz: {code}",
-        from_email=DEFAULT_FROM_EMAIL,
-        recipient_list=[email],
-        fail_silently=False,  # xatolikni ko‘rsatadi
-    )
+    import resend
+    import os
+    
+    api_key = os.environ.get("RESEND_API_KEY")
+    if not api_key:
+        print("⚠️ RESEND_API_KEY topilmadi!")
+        return
+    
+    resend.api_key = api_key
+    
+    try:
+        params = {
+            "from": "Job Vacancy <onboarding@resend.dev>",
+            "to": [email],
+            "subject": "Ваш код подтверждения",
+            "html": f"""
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2 style="color: #3066BE;">Код подтверждения</h2>
+                    <p>Ваш код для завершения регистрации:</p>
+                    <div style="background: #f4f6fa; padding: 20px; border-radius: 10px; text-align: center;">
+                        <h1 style="color: #3066BE; font-size: 48px; margin: 0; letter-spacing: 8px;">{code}</h1>
+                    </div>
+                    <p style="color: #666; margin-top: 20px;">Этот код действителен в течение 10 минут.</p>
+                </div>
+            """
+        }
+        
+        response = resend.Emails.send(params)
+        print(f"✅ Email yuborildi: {response}")
+        
+    except Exception as e:
+        print(f"❌ Email yuborishda xato: {str(e)}")

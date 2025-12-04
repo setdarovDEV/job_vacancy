@@ -44,3 +44,6 @@ vine==5.1.0
 waitress==3.0.2
 wcwidth==0.2.14
 whitenoise==6.11.0
+resend==2.19.0
+resend==2.19.0
+resend==2.19.0
