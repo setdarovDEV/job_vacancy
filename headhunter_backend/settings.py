@@ -253,6 +253,8 @@ CSRF_TRUSTED_ORIGINS.extend([
     'http://jobvacancy-api.duckdns.org',
 ])
 
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', 're_5dFoBdK3_Boo8tKWUYrgBc3QnREwLjiWm')
+
 # CSRF cookie sozlamalari
 CSRF_COOKIE_HTTPONLY = False  # Admin uchun muhim!
 CSRF_COOKIE_SAMESITE = 'Lax'
