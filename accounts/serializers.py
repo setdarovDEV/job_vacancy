@@ -29,6 +29,7 @@ class RegisterStepOneSerializer(serializers.ModelSerializer):
         validated_data.pop('confirm_password')
         return CustomUser.objects.create_user(**validated_data)
 
+
 class RegisterStepTwoEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
@@ -45,7 +46,7 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
             defaults={'code': code}
         )
 
-        # ✅ To'g'ridan-to'g'ri email yuborish
+        # ✅ To'g'ridan-to'g'ri email yuborish (threading yo'q!)
         print(f"📧 Sending email to {email} with code: {code}")
         try:
             send_verification_email(email, code)
@@ -72,6 +73,7 @@ class RegisterStepThreeVerifyCodeSerializer(serializers.Serializer):
         code_obj.delete()
         return data
 
+
 class RegisterStepFourRoleSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=[("JOB_SEEKER", "Job Seeker"), ("EMPLOYER", "Employer")])
 
@@ -80,6 +82,7 @@ class RegisterStepFourRoleSerializer(serializers.Serializer):
         user.role = self.validated_data['role']
         user.save()
         return user
+
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     username_field = CustomUser.USERNAME_FIELD
@@ -97,6 +100,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             'role': user.role,
         })
         return data
+
 
 class LoginSerializer(serializers.Serializer):
     username = serializers.CharField()
@@ -121,17 +125,19 @@ class LoginSerializer(serializers.Serializer):
             "user_id": str(user.id),
         }
 
+
 class ProfileImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ['profile_image']
 
     def update(self, instance, validated_data):
-        # Eski rasm bo‘lsa o‘chiramiz
+        # Eski rasm bo'lsa o'chiramiz
         if validated_data.get("profile_image") and instance.profile_image:
             instance.profile_image.delete(save=False)
 
         return super().update(instance, validated_data)
+
 
 # serializers.py
 class PortfolioMediaSerializer(serializers.ModelSerializer):
@@ -147,7 +153,7 @@ class PortfolioMediaSerializer(serializers.ModelSerializer):
         if obj.file and hasattr(obj.file, 'url'):
             if request:
                 return request.build_absolute_uri(obj.file.url)
-            # fallback: agar request yo‘q bo‘lsa ham nisbiy yo‘lni qaytarmaymiz
+            # fallback: agar request yo'q bo'lsa ham nisbiy yo'lni qaytarmaymiz
             from django.conf import settings
             base = os.environ.get("RENDER_EXTERNAL_URL", "").rstrip("/")
             return f"{base}{obj.file.url}" if base else obj.file.url
@@ -173,11 +179,13 @@ class LanguageSkillSerializer(serializers.ModelSerializer):
         model = LanguageSkill
         fields = ['id', 'language', 'level']
 
+
 class EducationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Education
         fields = '__all__'
         read_only_fields = ['user']
+
 
 class CustomUserSerializer(serializers.ModelSerializer):
     class Meta:
@@ -187,10 +195,12 @@ class CustomUserSerializer(serializers.ModelSerializer):
             'profile_image', 'title', 'salary_usd', 'about_me'  # 🆕 qo'shildi
         ]
 
+
 class SkillSerializer(serializers.ModelSerializer):
     class Meta:
         model = Skill
         fields = ['id', 'name']
+
 
 class SkillAnswerSerializer(serializers.ModelSerializer):
     class Meta:
@@ -201,6 +211,7 @@ class SkillAnswerSerializer(serializers.ModelSerializer):
 
 class BulkSkillSerializer(serializers.Serializer):
     skills = serializers.ListField(child=serializers.CharField(max_length=100))
+
 
 class CertificateSerializer(serializers.ModelSerializer):
     file_url = serializers.SerializerMethodField()
@@ -216,11 +227,13 @@ class CertificateSerializer(serializers.ModelSerializer):
             return request.build_absolute_uri(obj.file.url) if request else obj.file.url
         return None
 
+
 class WorkExperienceSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkExperience
         fields = '__all__'
         read_only_fields = ['user']
+
 
 class UserPublicSerializer(serializers.ModelSerializer):
     full_name = serializers.SerializerMethodField()
@@ -235,7 +248,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
             "last_name",
             "full_name",
             "avatar_url",
-            "role",          # ✅ muhim: roleni qaytaramiz
+            "role",  # ✅ muhim: roleni qaytaramiz
             "is_online",
             "last_seen",
         )
@@ -245,11 +258,11 @@ class UserPublicSerializer(serializers.ModelSerializer):
 
     def get_avatar_url(self, obj):
         """
-        Profil rasmi uchun to‘liq URL qaytaradi (agar mavjud bo‘lsa)
+        Profil rasmi uchun to'liq URL qaytaradi (agar mavjud bo'lsa)
         """
         request = self.context.get("request")
 
-        # 🔹 To‘g‘ri maydon — bizda avatar emas, profile_image
+        # 🔹 To'g'ri maydon — bizda avatar emas, profile_image
         if obj.profile_image:
             try:
                 url = obj.profile_image.url
@@ -257,6 +270,7 @@ class UserPublicSerializer(serializers.ModelSerializer):
             except Exception:
                 return None
         return None
+
 
 def abs_url(request, raw):
     if not raw:
@@ -268,6 +282,7 @@ def abs_url(request, raw):
         return raw
     base = request.build_absolute_uri("/")[:-1]
     return f"{base}{raw}"
+
 
 # accounts/serializers.py
 # serializers.py
@@ -343,34 +358,45 @@ def send_verification_email(email, code):
     Resend.com orqali email yuborish
     """
     import resend
-    import os
-    
-    api_key = os.environ.get("RESEND_API_KEY")
+    from django.conf import settings
+
+    api_key = settings.RESEND_API_KEY
     if not api_key:
         print("⚠️ RESEND_API_KEY topilmadi!")
         return
-    
+
     resend.api_key = api_key
-    
+
     try:
         params = {
             "from": "Job Vacancy <onboarding@resend.dev>",
             "to": [email],
-            "subject": "Ваш код подтверждения",
+            "subject": "Job Vacancy - Tasdiqlash kodi",
             "html": f"""
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
-                    <h2 style="color: #3066BE;">Код подтверждения</h2>
-                    <p>Ваш код для завершения регистрации:</p>
-                    <div style="background: #f4f6fa; padding: 20px; border-radius: 10px; text-align: center;">
-                        <h1 style="color: #3066BE; font-size: 48px; margin: 0; letter-spacing: 8px;">{code}</h1>
+                <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
+                    <div style="background: linear-gradient(135deg, #3066BE 0%, #4A90E2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
+                        <h2 style="color: white; margin: 0; text-align: center;">Job Vacancy Platform</h2>
                     </div>
-                    <p style="color: #666; margin-top: 20px;">Этот код действителен в течение 10 минут.</p>
+                    <div style="background: #f8f9fa; padding: 40px; border-radius: 0 0 10px 10px;">
+                        <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
+                            Assalomu alaykum! Ro'yxatdan o'tish jarayonini davom ettirish uchun quyidagi kodni kiriting:
+                        </p>
+                        <div style="background: white; padding: 20px; border-radius: 8px; text-align: center; margin: 30px 0;">
+                            <p style="color: #666; margin: 0 0 10px 0; font-size: 14px;">Tasdiqlash kodi:</p>
+                            <h1 style="color: #3066BE; font-size: 48px; letter-spacing: 10px; margin: 10px 0; font-weight: bold;">{code}</h1>
+                        </div>
+                        <p style="color: #666; font-size: 14px; margin-top: 30px; text-align: center;">
+                            ⏰ Bu kod <strong>30 daqiqa</strong> amal qiladi.
+                        </p>
+                        <p style="color: #999; font-size: 12px; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 20px;">
+                            Agar bu so'rovni siz yubormagan bo'lsangiz, ushbu xabarni e'tiborsiz qoldiring.
+                        </p>
+                    </div>
                 </div>
             """
         }
-        
         response = resend.Emails.send(params)
-        print(f"✅ Email yuborildi: {response}")
-        
+        print(f"✅ Resend email yuborildi: {response}")
     except Exception as e:
-        print(f"❌ Email yuborishda xato: {str(e)}")
+        print(f"❌ Resend email yuborishda xato: {str(e)}")
+        raise
