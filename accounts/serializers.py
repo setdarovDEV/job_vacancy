@@ -31,30 +31,30 @@ class RegisterStepOneSerializer(serializers.ModelSerializer):
 
 class RegisterStepTwoEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
-    
+
     def save(self, **kwargs):
-    user = self.context['user']
-    email = self.validated_data['email']
+        user = self.context['user']
+        email = self.validated_data['email']
 
-    user.email = email
-    user.save(update_fields=["email"])
-    code = f"{random.randint(100000, 999999)}"
+        user.email = email
+        user.save(update_fields=["email"])
+        code = f"{random.randint(100000, 999999)}"
 
-    EmailVerificationCode.objects.update_or_create(
-        user=user,
-        defaults={'code': code}
-    )
+        EmailVerificationCode.objects.update_or_create(
+            user=user,
+            defaults={'code': code}
+        )
 
-    # ✅ To'g'ridan-to'g'ri email yuborish (threading yo'q!)
-    print(f"📧 Sending email to {email} with code: {code}")
-    try:
-        send_verification_email(email, code)
-        print(f"✅ Email sent successfully!")
-    except Exception as e:
-        print(f"❌ Email error: {e}")
-        raise
+        # ✅ To'g'ridan-to'g'ri email yuborish
+        print(f"📧 Sending email to {email} with code: {code}")
+        try:
+            send_verification_email(email, code)
+            print(f"✅ Email sent successfully!")
+        except Exception as e:
+            print(f"❌ Email error: {e}")
+            raise
 
-    return {"detail": "Tasdiqlash kodi yuborildi"}
+        return {"detail": "Tasdiqlash kodi yuborildi"}
 
 
 class RegisterStepThreeVerifyCodeSerializer(serializers.Serializer):
