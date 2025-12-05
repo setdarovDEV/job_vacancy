@@ -37,11 +37,11 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
         user = self.context['user']
         email = self.validated_data['email']
 
-        # Email'ni saqlash
+        # ✅ Email'ni saqlash
         user.email = email
         user.save(update_fields=["email"])
 
-        # Kod yaratish
+        # ✅ Kod yaratish va saqlash
         code = f"{random.randint(100000, 999999)}"
 
         EmailVerificationCode.objects.update_or_create(
@@ -49,8 +49,9 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
             defaults={'code': code}
         )
 
-        # ✅ Resend orqali yuborish
-        print(f"📧 Attempting to send email to {email} with code: {code}")
+        # ✅ MUHIM: Kod allaqachon saqlangan, endi email yuborishda xato bo'lsa ham davom etadi
+        print(f"📧 Code saved to DB: {code}")
+        print(f"📧 Attempting to send email to {email}")
 
         try:
             send_verification_email(
@@ -59,13 +60,13 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
                 subject="Job Vacancy - Ro'yxatdan o'tish kodi",
                 title="Ro'yxatdan o'tish"
             )
-            print(f"✅ Email successfully sent to {email}")
+            print(f"✅ Email sent successfully!")
         except Exception as e:
-            # ⚠️ Email yuborilmasa ham xato bermaydi
+            # ⚠️ Email yuborilmasa ham, kod DB'da saqlangan
             print(f"⚠️ Email sending failed: {str(e)}")
-            # Xatoni log qilamiz, lekin ValidationError bermaymiz
-            import traceback
-            traceback.print_exc()
+            print(f"⚠️ But code is saved in database!")
+            # ❌ ValidationError bermaslik kerak!
+            pass
 
         return {"detail": "Tasdiqlash kodi yuborildi"}
 
