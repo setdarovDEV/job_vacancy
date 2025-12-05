@@ -368,9 +368,10 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi", title="Ro'yxatdan o'tish"):
     """
-    Gmail SMTP orqali email yuborish
+    Gmail SMTP orqali email yuborish (background thread)
     """
-    from django.core.mail import send_mail
+    import threading
+    from django.core.mail import EmailMessage
     from django.conf import settings
 
     html_message = f"""
@@ -389,31 +390,35 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
                 <p style="color: #666; font-size: 14px; margin-top: 30px; text-align: center;">
                     ⏰ Bu kod <strong>30 daqiqa</strong> amal qiladi.
                 </p>
-                <div style="margin-top: 30px; padding: 20px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
-                    <p style="color: #856404; font-size: 13px; margin: 0;">
-                        ⚠️ <strong>Xavfsizlik:</strong> Bu kodni hech kimga bermang!
-                    </p>
-                </div>
-                <p style="color: #999; font-size: 12px; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 20px;">
-                    Agar bu so'rovni siz yubormagan bo'lsangiz, xabarni e'tiborsiz qoldiring.
-                </p>
             </div>
         </div>
     """
 
-    try:
-        print(f"📧 Sending email via Gmail SMTP to: {email}")
-        send_mail(
-            subject=subject,
-            message=f"Tasdiqlash kodi: {code}",  # Plain text fallback
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            html_message=html_message,
-            fail_silently=False,
-        )
-        print(f"✅ Email sent successfully to {email}")
-    except Exception as e:
-        print(f"❌ Email error: {e}")
-        import traceback
-        traceback.print_exc()
-        raise Exception(f"Email yuborishda xato: {str(e)}")
+    def send_async():
+        """Background thread'da email yuborish"""
+        try:
+            print(f"📧 [GMAIL THREAD] Sending to: {email}")
+            print(f"📧 [GMAIL THREAD] Code: {code}")
+            print(f"📧 [GMAIL THREAD] Using Gmail SMTP")
+
+            email_msg = EmailMessage(
+                subject=subject,
+                body=html_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[email],
+            )
+            email_msg.content_subtype = "html"
+
+            result = email_msg.send(fail_silently=False)
+            print(f"✅ [GMAIL THREAD] Email sent! Result: {result}")
+
+        except Exception as e:
+            print(f"❌ [GMAIL THREAD] Error: {e}")
+            import traceback
+            traceback.print_exc()
+
+    print(f"🚀 [GMAIL] Starting background thread for {email}")
+    thread = threading.Thread(target=send_async)
+    thread.daemon = False
+    thread.start()
+    print(f"🔄 [GMAIL] Thread started")
