@@ -3,6 +3,7 @@ import random
 
 from django.contrib.auth import authenticate
 from django.core.mail import send_mail
+from django.db import IntegrityError
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
@@ -33,26 +34,37 @@ class RegisterStepOneSerializer(serializers.ModelSerializer):
 class RegisterStepTwoEmailSerializer(serializers.Serializer):
     email = serializers.EmailField()
 
+    def validate_email(self, value):
+        user = self.context['user']
+
+        # Shu email boshqa userda bormi?
+        if CustomUser.objects.filter(email__iexact=value).exclude(id=user.id).exists():
+            raise serializers.ValidationError("Этот E-mail уже используется.")
+        return value
+
     def save(self, **kwargs):
         user = self.context['user']
         email = self.validated_data['email']
 
-        # ✅ Email'ni saqlash
-        user.email = email
-        user.save(update_fields=["email"])
+        # 1️⃣ Emailni saqlash (qo‘shimcha himoya)
+        try:
+            user.email = email
+            user.save(update_fields=["email"])
+        except IntegrityError:
+            # Agar baribir unique constraint o‘qisa
+            raise serializers.ValidationError({"email": "Этот E-mail уже используется."})
 
-        # ✅ Kod yaratish va saqlash
+        # 2️⃣ Kod yaratish
         code = f"{random.randint(100000, 999999)}"
-
         EmailVerificationCode.objects.update_or_create(
             user=user,
             defaults={'code': code}
         )
 
-        # ✅ MUHIM: Kod allaqachon saqlangan, endi email yuborishda xato bo'lsa ham davom etadi
         print(f"📧 Code saved to DB: {code}")
         print(f"📧 Attempting to send email to {email}")
 
+        # 3️⃣ Email yuborish
         try:
             send_verification_email(
                 email=email,
@@ -60,13 +72,11 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
                 subject="Job Vacancy - Ro'yxatdan o'tish kodi",
                 title="Ro'yxatdan o'tish"
             )
-            print(f"✅ Email sent successfully!")
+            print("✅ Email sent successfully!")
         except Exception as e:
-            # ⚠️ Email yuborilmasa ham, kod DB'da saqlangan
             print(f"⚠️ Email sending failed: {str(e)}")
-            print(f"⚠️ But code is saved in database!")
-            # ❌ ValidationError bermaslik kerak!
-            pass
+            print("⚠️ But code is saved in database!")
+            # bu yerda xatoni ko‘tarmaymiz – frontend baribir 201 oladi
 
         return {"detail": "Tasdiqlash kodi yuborildi"}
 
