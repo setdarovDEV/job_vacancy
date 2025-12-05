@@ -7,7 +7,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
-from headhunter_backend.settings import DEFAULT_FROM_EMAIL
+# from headhunter_backend.settings import DEFAULT_FROM_EMAIL
 from .models import CustomUser, EmailVerificationCode, LanguageSkill, Education, PortfolioMedia, PortfolioProject, \
     Skill, Certificate, WorkExperience, SkillAnswer
 
