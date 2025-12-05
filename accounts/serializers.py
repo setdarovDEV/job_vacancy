@@ -368,7 +368,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi", title="Ro'yxatdan o'tish"):
     """
-    Brevo SMTP orqali email yuborish
+    Gmail SMTP orqali email yuborish
     """
     from django.core.mail import send_mail
     from django.conf import settings
@@ -402,7 +402,7 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
     """
 
     try:
-        print(f"📧 Sending email via Brevo to: {email}")
+        print(f"📧 Sending email via Gmail SMTP to: {email}")
         send_mail(
             subject=subject,
             message=f"Tasdiqlash kodi: {code}",  # Plain text fallback
@@ -414,4 +414,6 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
         print(f"✅ Email sent successfully to {email}")
     except Exception as e:
         print(f"❌ Email error: {e}")
+        import traceback
+        traceback.print_exc()
         raise Exception(f"Email yuborishda xato: {str(e)}")
