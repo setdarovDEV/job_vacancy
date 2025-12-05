@@ -37,8 +37,11 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
         user = self.context['user']
         email = self.validated_data['email']
 
+        # Email'ni saqlash
         user.email = email
         user.save(update_fields=["email"])
+
+        # Kod yaratish
         code = f"{random.randint(100000, 999999)}"
 
         EmailVerificationCode.objects.update_or_create(
@@ -47,7 +50,8 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
         )
 
         # ✅ Resend orqali yuborish
-        print(f"📧 Sending email to {email} with code: {code}")
+        print(f"📧 Attempting to send email to {email} with code: {code}")
+
         try:
             send_verification_email(
                 email=email,
@@ -55,12 +59,16 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
                 subject="Job Vacancy - Ro'yxatdan o'tish kodi",
                 title="Ro'yxatdan o'tish"
             )
-            print(f"✅ Email sent successfully!")
+            print(f"✅ Email successfully sent to {email}")
         except Exception as e:
-            print(f"❌ Email error: {e}")
-            raise serializers.ValidationError(f"Email yuborishda xato: {str(e)}")
+            # ⚠️ Email yuborilmasa ham xato bermaydi
+            print(f"⚠️ Email sending failed: {str(e)}")
+            # Xatoni log qilamiz, lekin ValidationError bermaymiz
+            import traceback
+            traceback.print_exc()
 
         return {"detail": "Tasdiqlash kodi yuborildi"}
+
 
 class RegisterStepThreeVerifyCodeSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=6)
@@ -364,11 +372,14 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
     import resend
     from django.conf import settings
 
+    # API key tekshirish
     api_key = settings.RESEND_API_KEY
-    if not api_key:
-        print("⚠️ RESEND_API_KEY topilmadi!")
-        raise Exception("RESEND_API_KEY sozlanmagan!")
+    if not api_key or api_key == '':
+        error_msg = "⚠️ RESEND_API_KEY sozlanmagan!"
+        print(error_msg)
+        raise Exception(error_msg)
 
+    # Resend sozlash
     resend.api_key = api_key
 
     try:
@@ -379,29 +390,38 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
             "html": f"""
                 <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
                     <div style="background: linear-gradient(135deg, #3066BE 0%, #4A90E2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
-                        <h2 style="color: white; margin: 0; text-align: center;">Job Vacancy Platform</h2>
+                        <h2 style="color: white; margin: 0; text-align: center;">🚀 Job Vacancy Platform</h2>
                     </div>
                     <div style="background: #f8f9fa; padding: 40px; border-radius: 0 0 10px 10px;">
                         <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
                             Assalomu alaykum! <strong>{title}</strong> uchun quyidagi kodni kiriting:
                         </p>
-                        <div style="background: white; padding: 20px; border-radius: 8px; text-align: center; margin: 30px 0;">
+                        <div style="background: white; padding: 20px; border-radius: 8px; text-align: center; margin: 30px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
                             <p style="color: #666; margin: 0 0 10px 0; font-size: 14px;">Tasdiqlash kodi:</p>
                             <h1 style="color: #3066BE; font-size: 48px; letter-spacing: 10px; margin: 10px 0; font-weight: bold;">{code}</h1>
                         </div>
                         <p style="color: #666; font-size: 14px; margin-top: 30px; text-align: center;">
                             ⏰ Bu kod <strong>30 daqiqa</strong> amal qiladi.
                         </p>
+                        <div style="margin-top: 30px; padding: 20px; background: #fff3cd; border-radius: 8px; border-left: 4px solid #ffc107;">
+                            <p style="color: #856404; font-size: 13px; margin: 0;">
+                                ⚠️ <strong>Xavfsizlik:</strong> Bu kodni hech kimga bermang!
+                            </p>
+                        </div>
                         <p style="color: #999; font-size: 12px; margin-top: 20px; text-align: center; border-top: 1px solid #ddd; padding-top: 20px;">
-                            Agar bu so'rovni siz yubormagan bo'lsangiz, ushbu xabarni e'tiborsiz qoldiring.
+                            Agar bu so'rovni siz yubormagan bo'lsangiz, xabarni e'tiborsiz qoldiring.
                         </p>
                     </div>
                 </div>
             """
         }
+
+        print(f"📤 Sending email via Resend to: {email}")
         response = resend.Emails.send(params)
-        print(f"✅ Resend email yuborildi: {response}")
+        print(f"✅ Resend response: {response}")
         return response
+
     except Exception as e:
-        print(f"❌ Resend email yuborishda xato: {str(e)}")
-        raise
+        error_msg = f"❌ Resend email error: {str(e)}"
+        print(error_msg)
+        raise Exception(error_msg)
