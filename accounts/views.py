@@ -607,6 +607,7 @@ class ChangePasswordView(APIView):
         request.user.save()
         return Response({"message": "Password changed successfully ✅"})
 
+
 class UpdateEmailSendView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -615,22 +616,38 @@ class UpdateEmailSendView(APIView):
         if not new_email:
             return Response({"error": "Email is required"}, status=400)
 
+        # Email formatini tekshirish
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
+        try:
+            validate_email(new_email)
+        except ValidationError:
+            return Response({"error": "Email formati noto'g'ri"}, status=400)
+
+        # Agar email allaqachon band bo'lsa
+        if CustomUser.objects.filter(email=new_email).exclude(id=request.user.id).exists():
+            return Response({"error": "Bu email allaqachon ishlatilmoqda"}, status=400)
+
         code = f"{random.randint(100000, 999999)}"
         EmailVerificationCode.objects.update_or_create(
             user=request.user,
             defaults={"code": code}
         )
 
-        send_mail(
-            subject="Код для смены E-mail",
-            message=f"Ваш код подтверждения: {code}",
-            from_email=DEFAULT_FROM_EMAIL,
-            recipient_list=[new_email],
-            fail_silently=True,
-        )
+        # ✅ Resend orqali yuborish
+        try:
+            from .serializers import send_verification_email
+            send_verification_email(
+                email=new_email,
+                code=code,
+                subject="Job Vacancy - Email o'zgartirish kodi",
+                title="Email manzilni o'zgartirish"
+            )
 
-        cache.set(f"email_change:{request.user.id}", new_email, timeout=300)
-        return Response({"message": "Код отправлен на новый E-mail"})
+            cache.set(f"email_change:{request.user.id}", new_email, timeout=300)
+            return Response({"message": "Kod yangi emailga yuborildi ✅"}, status=200)
+        except Exception as e:
+            return Response({"error": f"Email yuborilmadi: {str(e)}"}, status=500)
 
 class UpdateEmailVerifyView(APIView):
     permission_classes = [IsAuthenticated]
