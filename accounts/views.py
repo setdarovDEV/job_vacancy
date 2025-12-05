@@ -22,7 +22,7 @@ from rest_framework import status, permissions, viewsets, generics, serializers
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from headhunter_backend.settings import DEFAULT_FROM_EMAIL
+# from headhunter_backend.settings import DEFAULT_FROM_EMAIL
 from .serializers import (
     RegisterStepOneSerializer,
     RegisterStepTwoEmailSerializer,
