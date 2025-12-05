@@ -66,21 +66,14 @@ class RegisterStepTwoEmailView(APIView):
 
         serializer = RegisterStepTwoEmailSerializer(data=request.data, context={"user": user})
         if serializer.is_valid():
-            try:
-                serializer.save()
-                # ✅ MUHIM: 201 status qaytarish
-                return Response({
-                    "message": "Tasdiqlash kodi yuborildi",
-                    "success": True
-                }, status=status.HTTP_201_CREATED)
-            except Exception as e:
-                # ⚠️ Email yuborilmasa ham 201 qaytaramiz (DB da saqlangan)
-                print(f"⚠️ Email yuborish xatosi: {str(e)}")
-                return Response({
-                    "message": "Tasdiqlash kodi yuborildi",
-                    "success": True,
-                    "warning": "Email yuborishda muammo bo'ldi, lekin kod saqlandi"
-                }, status=status.HTTP_201_CREATED)
+            # ✅ MUHIM: Serializerda email yuborish background'da
+            serializer.save()
+
+            # ✅ Darhol javob qaytaramiz (emailni kutmaymiz)
+            return Response({
+                "message": "Tasdiqlash kodi yuborildi",
+                "success": True
+            }, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=400)
 

@@ -1,4 +1,4 @@
-#!/var/www/job_vacancy/venv/bin/python3
+#!/home/maclap-uz/Projects/job_vacancy_backend/venv/bin/python3
 import sys
 from celery.__main__ import main
 if __name__ == '__main__':
