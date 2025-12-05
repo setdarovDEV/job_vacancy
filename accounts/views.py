@@ -31,7 +31,7 @@ from .serializers import (
     LanguageSkillSerializer, EducationSerializer, PortfolioProjectSerializer,
     PortfolioMediaSerializer, SkillSerializer, BulkSkillSerializer,
     CertificateSerializer, WorkExperienceSerializer, SkillAnswerSerializer,
-    UserPublicSerializer, UserProfileSerializer,
+    UserPublicSerializer, UserProfileSerializer, send_verification_email,
 )
 from .models import (
     CustomUser, EmailVerificationCode, LanguageSkill, Education,
@@ -55,20 +55,37 @@ class RegisterStepOneView(APIView):
         return Response(serializer.errors, status=400)
 
 
-class RegisterStepTwoEmailView(APIView):
-    permission_classes = [AllowAny]
+class RegisterStepTwoEmailSerializer(serializers.Serializer):
+    email = serializers.EmailField()
 
-    def post(self, request, user_id):
+    def save(self, **kwargs):
+        user = self.context['user']
+        email = self.validated_data['email']
+
+        user.email = email
+        user.save(update_fields=["email"])
+        code = f"{random.randint(100000, 999999)}"
+
+        EmailVerificationCode.objects.update_or_create(
+            user=user,
+            defaults={'code': code}
+        )
+
+        # ✅ Resend orqali yuborish
+        print(f"📧 Sending email to {email} with code: {code}")
         try:
-            user = CustomUser.objects.only("id", "email").get(id=user_id)
-        except CustomUser.DoesNotExist:
-            return Response({"error": "User not found"}, status=404)
+            send_verification_email(
+                email=email,
+                code=code,
+                subject="Job Vacancy - Ro'yxatdan o'tish kodi",
+                title="Ro'yxatdan o'tish"
+            )
+            print(f"✅ Email sent successfully!")
+        except Exception as e:
+            print(f"❌ Email error: {e}")
+            raise
 
-        serializer = RegisterStepTwoEmailSerializer(data=request.data, context={"user": user})
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "Tasdiqlash kodi yuborildi"}, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=400)
+        return {"detail": "Tasdiqlash kodi yuborildi"}
 
 
 class RegisterStepThreeVerifyCodeView(APIView):
@@ -141,19 +158,18 @@ class ResendVerificationCodeView(APIView):
             user=user, defaults={'code': code}
         )
 
-        # threading — email yuborishni tezlashtiradi
-        threading.Thread(
-            target=lambda: send_mail(
-                subject="Qayta yuborilgan tasdiqlash kodingiz",
-                message=f"Sizning yangi tasdiqlash kodingiz: {code}",
-                from_email=DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
+        # ✅ Resend orqali yuborish
+        try:
+            from .serializers import send_verification_email
+            send_verification_email(
+                email=user.email,
+                code=code,
+                subject="Job Vacancy - Qayta yuborilgan kod",
+                title="Ro'yxatdan o'tish (qayta)"
             )
-        ).start()
-
-        return Response({"message": "Kod qayta yuborildi"}, status=200)
-
+            return Response({"message": "Kod qayta yuborildi ✅"}, status=200)
+        except Exception as e:
+            return Response({"error": f"Email yuborilmadi: {str(e)}"}, status=500)
 
 # ---------------- LOGIN / LOGOUT ----------------
 class LoginView(APIView):
@@ -195,50 +211,61 @@ class PasswordResetRequestView(APIView):
         except User.DoesNotExist:
             return Response({"detail": "Bunday email mavjud emas."}, status=404)
 
-        uid = urlsafe_base64_encode(force_bytes(str(user.pk)))
-        token = token_generator.make_token(user)
+        # ✅ 6 xonali kod
+        code = f"{random.randint(100000, 999999)}"
+        EmailVerificationCode.objects.update_or_create(
+            user=user, defaults={'code': code}
+        )
 
-        # Get frontend URL from settings
-        frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:5173")
-        reset_url = f"{frontend_url}/reset-password/{uid}/{token}/"
-
-        threading.Thread(
-            target=lambda: send_mail(
-                subject="Parolni tiklash havolasi",
-                message=f"Sizning parolingizni tiklash havolasi: {reset_url}",
-                from_email=DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=True,
+        # ✅ Resend orqali yuborish
+        try:
+            from .serializers import send_verification_email
+            send_verification_email(
+                email=email,
+                code=code,
+                subject="Job Vacancy - Parolni tiklash kodi",
+                title="Parolni tiklash"
             )
-        ).start()
-
-        return Response({"detail": "Parolni tiklash havolasi yuborildi."})
+            return Response({"detail": "Parolni tiklash kodi yuborildi ✅"}, status=200)
+        except Exception as e:
+            return Response({"error": f"Email yuborilmadi: {str(e)}"}, status=500)
 
 
 class PasswordResetConfirmView(APIView):
+    """
+    Parolni tiklash - kod orqali (Register bilan bir xil flow)
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
-        uid = request.data.get("uid")
-        token = request.data.get("token")
-        password = request.data.get("password")
+        email = request.data.get("email")
+        code = request.data.get("code")
+        new_password = request.data.get("new_password")
 
-        if not (uid and token and password):
+        if not all([email, code, new_password]):
             return Response({"detail": "Barcha maydonlar talab qilinadi."}, status=400)
 
         try:
-            user_id = urlsafe_base64_decode(uid).decode()
-            user = User.objects.get(pk=user_id)
-        except (User.DoesNotExist, ValueError, TypeError):
-            return Response({"detail": "Noto‘g‘ri link."}, status=400)
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            return Response({"detail": "Bunday email topilmadi."}, status=404)
 
-        if not token_generator.check_token(user, token):
-            return Response({"detail": "Token noto‘g‘ri yoki eskirgan."}, status=400)
+        try:
+            code_obj = EmailVerificationCode.objects.get(user=user, code=code)
 
-        user.set_password(password)
-        user.save()
-        return Response({"detail": "Parol yangilandi."}, status=200)
+            # ✅ Muddati tekshirish
+            if code_obj.is_expired():
+                return Response({"error": "Kod eskirgan. Yangi kod so'rang."}, status=400)
 
+            # Parolni yangilash
+            user.set_password(new_password)
+            user.save()
+            code_obj.delete()
+
+            return Response({"detail": "Parol muvaffaqiyatli yangilandi ✅"}, status=200)
+        except EmailVerificationCode.DoesNotExist:
+            return Response({"detail": "Kod noto'g'ri yoki eskirgan."}, status=400)
+            return Response({"detail": "Kod noto'g'ri yoki eskirgan."}, status=400)
 
 # ---------------- PROFILE & UPDATES ----------------
 class ProfileImageUpdateView(APIView):
@@ -746,6 +773,7 @@ class AnyUserProfileView(generics.RetrieveAPIView):
             )
         )
 
+
 class MobilePasswordResetRequestView(APIView):
     """
     Mobil ilova uchun — parolni tiklash kodi email orqali yuboriladi.
@@ -768,23 +796,23 @@ class MobilePasswordResetRequestView(APIView):
             user=user, defaults={"code": code}
         )
 
-        # E-mail yuborish
-        threading.Thread(
-            target=lambda: send_mail(
-                subject="Парольni tiklash kodi",
-                message=f"Sizning parolingizni tiklash kodingiz: {code}",
-                from_email=DEFAULT_FROM_EMAIL,
-                recipient_list=[email],
-                fail_silently=True,
+        # ✅ Resend orqali yuborish
+        try:
+            from .serializers import send_verification_email
+            send_verification_email(
+                email=email,
+                code=code,
+                subject="Job Vacancy - Parolni tiklash kodi (Mobile)",
+                title="Parolni tiklash"
             )
-        ).start()
-
-        return Response({"message": "Tasdiqlash kodi yuborildi ✅"})
+            return Response({"message": "Tasdiqlash kodi yuborildi ✅"}, status=200)
+        except Exception as e:
+            return Response({"error": f"Email yuborilmadi: {str(e)}"}, status=500)
 
 
 class MobilePasswordResetConfirmView(APIView):
     """
-    Mobil ilova uchun — foydalanuvchi kodni yuborib yangi parolni o‘rnatadi.
+    Mobil ilova uchun — foydalanuvchi kodni yuborib yangi parolni o'rnatadi.
     """
     permission_classes = [AllowAny]
 
@@ -803,11 +831,15 @@ class MobilePasswordResetConfirmView(APIView):
 
         try:
             record = EmailVerificationCode.objects.get(user=user, code=code)
+
+            # ✅ Muddati tekshirish
+            if record.is_expired():
+                return Response({"detail": "Kod eskirgan. Yangi kod so'rang."}, status=400)
+
+            user.set_password(new_password)
+            user.save()
+            record.delete()
+
+            return Response({"message": "Parol muvaffaqiyatli yangilandi ✅"}, status=200)
         except EmailVerificationCode.DoesNotExist:
-            return Response({"detail": "Kod noto‘g‘ri yoki eskirgan."}, status=400)
-
-        user.set_password(new_password)
-        user.save()
-        record.delete()
-
-        return Response({"message": "Parol muvaffaqiyatli yangilandi ✅"})
+            return Response({"detail": "Kod noto'g'ri yoki eskirgan."}, status=400)

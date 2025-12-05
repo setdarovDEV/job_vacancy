@@ -353,9 +353,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return WorkExperienceSerializer(obj.experiences.all(), many=True).data
 
 
-def send_verification_email(email, code):
+def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi", title="Ro'yxatdan o'tish"):
     """
-    Resend.com orqali email yuborish
+    Resend.com orqali universal email yuborish funksiyasi
+    - Register uchun
+    - Password reset uchun
     """
     import resend
     from django.conf import settings
@@ -363,7 +365,7 @@ def send_verification_email(email, code):
     api_key = settings.RESEND_API_KEY
     if not api_key:
         print("⚠️ RESEND_API_KEY topilmadi!")
-        return
+        raise Exception("RESEND_API_KEY sozlanmagan!")
 
     resend.api_key = api_key
 
@@ -371,7 +373,7 @@ def send_verification_email(email, code):
         params = {
             "from": "Job Vacancy <onboarding@resend.dev>",
             "to": [email],
-            "subject": "Job Vacancy - Tasdiqlash kodi",
+            "subject": subject,
             "html": f"""
                 <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
                     <div style="background: linear-gradient(135deg, #3066BE 0%, #4A90E2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
@@ -379,7 +381,7 @@ def send_verification_email(email, code):
                     </div>
                     <div style="background: #f8f9fa; padding: 40px; border-radius: 0 0 10px 10px;">
                         <p style="font-size: 16px; color: #333; margin-bottom: 20px;">
-                            Assalomu alaykum! Ro'yxatdan o'tish jarayonini davom ettirish uchun quyidagi kodni kiriting:
+                            Assalomu alaykum! <strong>{title}</strong> uchun quyidagi kodni kiriting:
                         </p>
                         <div style="background: white; padding: 20px; border-radius: 8px; text-align: center; margin: 30px 0;">
                             <p style="color: #666; margin: 0 0 10px 0; font-size: 14px;">Tasdiqlash kodi:</p>
@@ -397,6 +399,7 @@ def send_verification_email(email, code):
         }
         response = resend.Emails.send(params)
         print(f"✅ Resend email yuborildi: {response}")
+        return response
     except Exception as e:
         print(f"❌ Resend email yuborishda xato: {str(e)}")
         raise
