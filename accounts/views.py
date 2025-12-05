@@ -54,38 +54,20 @@ class RegisterStepOneView(APIView):
             return Response({"message": "Step 1 muvaffaqiyatli", "user_id": user.id}, status=201)
         return Response(serializer.errors, status=400)
 
+class RegisterStepTwoEmailView(APIView):
+    permission_classes = [AllowAny]
 
-class RegisterStepTwoEmailSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
-    def save(self, **kwargs):
-        user = self.context['user']
-        email = self.validated_data['email']
-
-        user.email = email
-        user.save(update_fields=["email"])
-        code = f"{random.randint(100000, 999999)}"
-
-        EmailVerificationCode.objects.update_or_create(
-            user=user,
-            defaults={'code': code}
-        )
-
-        # ✅ Resend orqali yuborish
-        print(f"📧 Sending email to {email} with code: {code}")
+    def post(self, request, user_id):
         try:
-            send_verification_email(
-                email=email,
-                code=code,
-                subject="Job Vacancy - Ro'yxatdan o'tish kodi",
-                title="Ro'yxatdan o'tish"
-            )
-            print(f"✅ Email sent successfully!")
-        except Exception as e:
-            print(f"❌ Email error: {e}")
-            raise
+            user = CustomUser.objects.only("id", "email").get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return Response({"error": "User not found"}, status=404)
 
-        return {"detail": "Tasdiqlash kodi yuborildi"}
+        serializer = RegisterStepTwoEmailSerializer(data=request.data, context={"user": user})
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "Tasdiqlash kodi yuborildi"}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=400)
 
 
 class RegisterStepThreeVerifyCodeView(APIView):

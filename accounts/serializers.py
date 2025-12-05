@@ -46,16 +46,22 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
             defaults={'code': code}
         )
 
-        # ✅ To'g'ridan-to'g'ri email yuborish (threading yo'q!)
+        # ✅ Resend orqali yuborish
         print(f"📧 Sending email to {email} with code: {code}")
         try:
-            send_verification_email(email, code)
+            send_verification_email(
+                email=email,
+                code=code,
+                subject="Job Vacancy - Ro'yxatdan o'tish kodi",
+                title="Ro'yxatdan o'tish"
+            )
             print(f"✅ Email sent successfully!")
         except Exception as e:
             print(f"❌ Email error: {e}")
             raise
 
         return {"detail": "Tasdiqlash kodi yuborildi"}
+
 
 
 class RegisterStepThreeVerifyCodeSerializer(serializers.Serializer):
