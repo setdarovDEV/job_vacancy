@@ -208,17 +208,25 @@ EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
-EMAIL_TIMEOUT = 10
+EMAIL_TIMEOUT = 30  # 30 seconds timeout
 
 # --------------------------------------------------
-# ✅ CORS Settings
+# ✅ CORS Settings (Development va Production)
 # --------------------------------------------------
-# ⚠️ VAQTINCHA - FAQAT DEVELOPMENT UCHUN!
-# Production'da CORS_ALLOW_ALL_ORIGINS = False bo'lishi KERAK!
-CORS_ALLOW_ALL_ORIGINS = True  # ✅ Local test uchun
 CORS_ALLOW_CREDENTIALS = True
 
-# ✅ Production uchun specific origins (keyinchalik)
+# ✅ Development: Allow all origins
+# ✅ Production: Only specific origins
+if DEBUG:
+    # Development mode - allow all for testing
+    CORS_ALLOW_ALL_ORIGINS = True
+    print("⚠️ [CORS] Development mode - allowing all origins")
+else:
+    # Production mode - strict CORS
+    CORS_ALLOW_ALL_ORIGINS = False
+    print("✅ [CORS] Production mode - strict origin checking")
+
+# ✅ Base allowed origins (development)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -227,13 +235,19 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",
 ]
 
-# ✅ Environment'dan qo'shimcha origin'lar
+# ✅ Add production origins from environment
 env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
 if env_origins:
     for origin in env_origins.split(","):
         origin = origin.strip()
         if origin and origin not in CORS_ALLOWED_ORIGINS:
             CORS_ALLOWED_ORIGINS.append(origin)
+            print(f"✅ [CORS] Added origin: {origin}")
+
+# ✅ Add FRONTEND_URL if provided
+if FRONTEND_URL and FRONTEND_URL not in CORS_ALLOWED_ORIGINS:
+    CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
+    print(f"✅ [CORS] Added FRONTEND_URL: {FRONTEND_URL}")
 
 # --------------------------------------------------
 # ✅ CSRF Settings
@@ -258,6 +272,24 @@ CSRF_TRUSTED_ORIGINS.extend([
 CSRF_COOKIE_HTTPONLY = False  # Required for admin and some APIs
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_USE_SESSIONS = False
+
+# ✅ Additional CORS headers for production
+CORS_ALLOW_HEADERS = [
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "content-type",
+    "dnt",
+    "origin",
+    "user-agent",
+    "x-csrftoken",
+    "x-requested-with",
+]
+
+CORS_EXPOSE_HEADERS = [
+    "content-type",
+    "x-csrftoken",
+]
 
 # --------------------------------------------------
 # ✅ Security Settings
