@@ -58,11 +58,9 @@ class RegisterStepTwoEmailSerializer(serializers.Serializer):
             print(f"✅ Email sent successfully!")
         except Exception as e:
             print(f"❌ Email error: {e}")
-            raise
+            raise serializers.ValidationError(f"Email yuborishda xato: {str(e)}")
 
         return {"detail": "Tasdiqlash kodi yuborildi"}
-
-
 
 class RegisterStepThreeVerifyCodeSerializer(serializers.Serializer):
     code = serializers.CharField(max_length=6)
@@ -362,8 +360,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
 def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi", title="Ro'yxatdan o'tish"):
     """
     Resend.com orqali universal email yuborish funksiyasi
-    - Register uchun
-    - Password reset uchun
     """
     import resend
     from django.conf import settings
