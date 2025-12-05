@@ -218,18 +218,41 @@ DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 # ✅ Security
 # --------------------------------------------------
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_SECURE = not DEBUG
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE = not DEBUG
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "DENY"
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_ALL_ORIGINS = False
+
+# ✅ Localhost'ni qo'shish
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",  # ✅ MUHIM!
+    "http://127.0.0.1:5173",  # ✅ MUHIM!
+]
+
+# ✅ CSRF sozlamalari
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",  # ✅ MUHIM!
+    "http://127.0.0.1:5173",  # ✅ MUHIM!
+    "https://jobvacancy-api.duckdns.org",
+]
+
+# ✅ Cookie sozlamalari
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False  # Development uchun
+CSRF_COOKIE_SECURE = False     # Development uchun
 
 # --------------------------------------------------
 # ✅ CORS / CSRF
 # --------------------------------------------------
 SITE_ID = 1
-CORS_ALLOW_CREDENTIALS = True
 
 LOCAL_ORIGINS = [
     "http://localhost:3000", "http://127.0.0.1:3000",
