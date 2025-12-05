@@ -372,14 +372,10 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
     import resend
     from django.conf import settings
 
-    # API key tekshirish
     api_key = settings.RESEND_API_KEY
-    if not api_key or api_key == '':
-        error_msg = "⚠️ RESEND_API_KEY sozlanmagan!"
-        print(error_msg)
-        raise Exception(error_msg)
+    if not api_key:
+        raise Exception("RESEND_API_KEY sozlanmagan!")
 
-    # Resend sozlash
     resend.api_key = api_key
 
     try:
@@ -418,10 +414,10 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
 
         print(f"📤 Sending email via Resend to: {email}")
         response = resend.Emails.send(params)
-        print(f"✅ Resend response: {response}")
+        print(f"✅ Email sent successfully! ID: {response}")
         return response
 
     except Exception as e:
-        error_msg = f"❌ Resend email error: {str(e)}"
+        error_msg = f"❌ Resend error: {str(e)}"
         print(error_msg)
         raise Exception(error_msg)
