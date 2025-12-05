@@ -11,6 +11,7 @@ import dotenv
 import sys
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
 # ✅ Test ishga tushganda .env.test faylni yuklaymiz
 if "pytest" in sys.argv[0]:
     dotenv.load_dotenv(os.path.join(Path(__file__).resolve().parent.parent, ".env.test"))
@@ -55,9 +56,8 @@ INSTALLED_APPS = [
     "django_filters",
     "corsheaders",
     "channels",
-    "django_redis",             # ⚡ Cache
-    "drf_orjson_renderer",      # ⚡ Super fast JSON
-    'silk',
+    "drf_orjson_renderer",
+    "silk",
 
     # Local apps
     "accounts",
@@ -74,8 +74,8 @@ INSTALLED_APPS = [
 # --------------------------------------------------
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "django.middleware.gzip.GZipMiddleware",        # ⚡ Compress responses
-    "whitenoise.middleware.WhiteNoiseMiddleware",   # ⚡ Static optimization
+    "django.middleware.gzip.GZipMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -83,7 +83,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    'silk.middleware.SilkyMiddleware',
+    "silk.middleware.SilkyMiddleware",
 ]
 
 ROOT_URLCONF = "headhunter_backend.urls"
@@ -109,21 +109,17 @@ ASGI_APPLICATION = "headhunter_backend.asgi.application"
 # --------------------------------------------------
 # ✅ Database (DigitalOcean SSL)
 # --------------------------------------------------
-import dj_database_url
-
 DATABASES = {}
 
 db_url = os.environ.get("DATABASE_URL")
 
 if db_url:
-    # Agar DATABASE_URL bo‘lsa, uni parse qilamiz
     DATABASES["default"] = dj_database_url.parse(
         db_url,
         conn_max_age=600,
         ssl_require=True,
     )
 else:
-    # Agar DATABASE_URL bo‘lmasa, env variable’lardan o‘qiymiz
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -142,7 +138,7 @@ else:
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 # --------------------------------------------------
-# ✅ Redis Cache
+# ✅ Cache (Simple LocMem - Redis o'chirildi)
 # --------------------------------------------------
 CACHES = {
     "default": {
@@ -171,12 +167,12 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
     "DEFAULT_RENDERER_CLASSES": [
-        "drf_orjson_renderer.renderers.ORJSONRenderer",  # ⚡ orjson
+        "drf_orjson_renderer.renderers.ORJSONRenderer",
     ],
-    'DEFAULT_PARSER_CLASSES': [
-        'rest_framework.parsers.JSONParser',
-        'rest_framework.parsers.FormParser',
-        'rest_framework.parsers.MultiPartParser',
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",
     ],
 }
 
@@ -197,104 +193,101 @@ AUTH_USER_MODEL = "accounts.CustomUser"
 STATIC_URL = os.environ.get("STATIC_URL", "/static/")
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30  # ⚡ 30 days cache
+WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days cache
 
-MEDIA_ROOT = '/opt/render/project/src/media'
-MEDIA_URL = '/media/'
-
-# --------------------------------------------------
-# ✅ Email
-# --------------------------------------------------
-# Email settings
-EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.environ.get('EMAIL_PORT', 587))
-EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+MEDIA_ROOT = "/opt/render/project/src/media"
+MEDIA_URL = "/media/"
 
 # --------------------------------------------------
-# ✅ Security
+# ✅ Email (Gmail SMTP)
 # --------------------------------------------------
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SESSION_COOKIE_HTTPONLY = True
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = "DENY"
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp.gmail.com")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 587))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
+EMAIL_TIMEOUT = 30  # 30 seconds timeout
 
+# --------------------------------------------------
+# ✅ CORS Settings
+# --------------------------------------------------
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
 
-# ✅ Localhost'ni qo'shish
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",  # ✅ MUHIM!
-    "http://127.0.0.1:5173",  # ✅ MUHIM!
-]
-
-# ✅ CSRF sozlamalari
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",  # ✅ MUHIM!
-    "http://127.0.0.1:5173",  # ✅ MUHIM!
-    "https://jobvacancy-api.duckdns.org",
-]
-
-# ✅ Cookie sozlamalari
-SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SECURE = False  # Development uchun
-CSRF_COOKIE_SECURE = False     # Development uchun
-
-# --------------------------------------------------
-# ✅ CORS / CSRF
-# --------------------------------------------------
-SITE_ID = 1
-
+# Local development origins
 LOCAL_ORIGINS = [
-    "http://localhost:3000", "http://127.0.0.1:3000",
-    "http://localhost:5173", "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
+
+# Production origins from environment or fallback to local
 CORS_ALLOWED_ORIGINS = [
     o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()
 ] or LOCAL_ORIGINS
-CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
 
+# --------------------------------------------------
+# ✅ CSRF Settings
+# --------------------------------------------------
 CSRF_TRUSTED_ORIGINS = [
     o.replace("http://", "https://") for o in CORS_ALLOWED_ORIGINS
 ]
+
+# Add production URLs
 if RENDER_URL:
     CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
 if FRONTEND_URL:
     CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
 
-# DuckDNS domenini qo'shish
+# DuckDNS domain
 CSRF_TRUSTED_ORIGINS.extend([
-    'https://jobvacancy-api.duckdns.org',
-    'http://jobvacancy-api.duckdns.org',
+    "https://jobvacancy-api.duckdns.org",
+    "http://jobvacancy-api.duckdns.org",
 ])
 
-# CSRF cookie sozlamalari
-CSRF_COOKIE_HTTPONLY = False  # Admin uchun muhim!
-CSRF_COOKIE_SAMESITE = 'Lax'
-SESSION_COOKIE_SAMESITE = 'Lax'
+# CSRF Cookie settings
+CSRF_COOKIE_HTTPONLY = False  # Required for admin and some APIs
+CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_USE_SESSIONS = False
+
+# --------------------------------------------------
+# ✅ Security Settings
+# --------------------------------------------------
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = "DENY"
+
+# Session settings
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+
+# Dynamic security based on DEBUG mode
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
 
 # --------------------------------------------------
 # ✅ Channels (WebSocket)
 # --------------------------------------------------
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {"hosts": [os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")]},
+        "BACKEND": "channels.layers.InMemoryChannelLayer"  # Simple in-memory for development
     }
 }
 
+# If you have Redis in production, use this instead:
+# CHANNEL_LAYERS = {
+#     "default": {
+#         "BACKEND": "channels_redis.core.RedisChannelLayer",
+#         "CONFIG": {"hosts": [os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")]},
+#     }
+# }
+
 # --------------------------------------------------
-# ✅ i18n / tz
+# ✅ Internationalization
 # --------------------------------------------------
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = os.environ.get("TIME_ZONE", "Asia/Tashkent")
@@ -302,12 +295,8 @@ USE_I18N = True
 USE_TZ = True
 
 # --------------------------------------------------
-# ✅ Misc
+# ✅ Miscellaneous
 # --------------------------------------------------
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
-
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30  # 30 kun
-
 USE_X_FORWARDED_HOST = True
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SITE_ID = 1
