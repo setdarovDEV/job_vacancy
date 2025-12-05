@@ -214,20 +214,27 @@ EMAIL_TIMEOUT = 30  # 30 seconds timeout
 # ✅ CORS Settings
 # --------------------------------------------------
 CORS_ALLOW_CREDENTIALS = True
+
+# ⚠️ FAQAT DEVELOPMENT UCHUN - Production'da False bo'lishi kerak!
 CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
 
-# Local development origins
-LOCAL_ORIGINS = [
+# ✅ Barcha kerakli origin'lar
+CORS_ALLOWED_ORIGINS = [
+    # Local development
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:8000",
 ]
 
-# Production origins from environment or fallback to local
-CORS_ALLOWED_ORIGINS = [
-    o.strip() for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o.strip()
-] or LOCAL_ORIGINS
+# ✅ Environment'dan qo'shimcha origin'lar
+env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+if env_origins:
+    for origin in env_origins.split(","):
+        origin = origin.strip()
+        if origin and origin not in CORS_ALLOWED_ORIGINS:
+            CORS_ALLOWED_ORIGINS.append(origin)
 
 # --------------------------------------------------
 # ✅ CSRF Settings
