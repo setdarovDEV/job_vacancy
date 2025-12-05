@@ -84,38 +84,73 @@ class RegisterStepTwoEmailView(APIView):
 
         return Response(serializer.errors, status=400)
 
+
 class RegisterStepThreeVerifyCodeView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request, user_id):
+        print(f"🔵 ============ STEP 3 VERIFY ============")
+        print(f"🔵 User ID: {user_id}")
+        print(f"🔵 Request data: {request.data}")
+        print(f"🔵 Request method: {request.method}")
+
         try:
-            user = CustomUser.objects.only("id").get(id=user_id)
+            user = CustomUser.objects.get(id=user_id)
+            print(f"🔵 User found: {user.username} ({user.email})")
+            print(f"🔵 Email verified status: {user.is_email_verified}")
         except CustomUser.DoesNotExist:
+            print(f"🔴 User NOT found: {user_id}")
             return Response({"error": "User not found"}, status=404)
 
         code = request.data.get("code")
+        print(f"🔵 Code from request: '{code}'")
+
         if not code:
+            print(f"🔴 Code is empty!")
             return Response({"error": "Код обязателен"}, status=400)
 
         try:
             code_obj = EmailVerificationCode.objects.get(user=user, code=code)
+            print(f"🔵 Code FOUND in database!")
+            print(f"🔵 Code created at: {code_obj.created_at}")
 
-            # ✅ Muddati tekshirish
+            # Muddati tekshirish
             if code_obj.is_expired():
+                print(f"⚠️ Code EXPIRED!")
+                code_obj.delete()
                 return Response({
                     "error": "Код истёк. Пожалуйста, запросите новый код."
                 }, status=400)
 
-            # Kod to'g'ri va muddati o'tmagan
+            # Kod to'g'ri
+            print(f"✅ Code is VALID! Verifying email...")
             user.is_email_verified = True
             user.save(update_fields=["is_email_verified"])
             code_obj.delete()
 
-            return Response({"message": "Email verified"}, status=200)
+            print(f"✅ Email VERIFIED for {user.username}")
+
+            return Response({
+                "message": "Email verified",
+                "success": True
+            }, status=200)
 
         except EmailVerificationCode.DoesNotExist:
+            print(f"🔴 Code NOT FOUND in database!")
+
+            # Debug: barcha kodlarni ko'rsatish
+            all_codes = EmailVerificationCode.objects.filter(user=user)
+            print(f"🔍 Available codes for user:")
+            for ac in all_codes:
+                print(f"   - {ac.code} (created: {ac.created_at})")
+
             return Response({"error": "Неверный код"}, status=400)
 
+        except Exception as e:
+            print(f"🔴 UNEXPECTED ERROR: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response({"error": "Внутренняя ошибка сервера"}, status=500)
 
 class RegisterStepFourRoleView(APIView):
     permission_classes = [AllowAny]
