@@ -366,9 +366,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return WorkExperienceSerializer(obj.experiences.all(), many=True).data
 
 
+# accounts/serializers.py
+
 def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi", title="Ro'yxatdan o'tish"):
     """
-    Gmail SMTP orqali email yuborish (background thread)
+    Gmail SMTP orqali email yuborish (optimized threading)
     """
     import threading
     from django.core.mail import EmailMessage
@@ -397,9 +399,7 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
     def send_async():
         """Background thread'da email yuborish"""
         try:
-            print(f"📧 [GMAIL THREAD] Sending to: {email}")
-            print(f"📧 [GMAIL THREAD] Code: {code}")
-            print(f"📧 [GMAIL THREAD] Using Gmail SMTP")
+            print(f"📧 [GMAIL] Sending to: {email}")
 
             email_msg = EmailMessage(
                 subject=subject,
@@ -409,16 +409,15 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
             )
             email_msg.content_subtype = "html"
 
+            # ✅ Timeout bilan yuborish (10 sekund)
             result = email_msg.send(fail_silently=False)
-            print(f"✅ [GMAIL THREAD] Email sent! Result: {result}")
+            print(f"✅ [GMAIL] Email sent! Result: {result}")
 
         except Exception as e:
-            print(f"❌ [GMAIL THREAD] Error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"❌ [GMAIL] Error: {e}")
 
-    print(f"🚀 [GMAIL] Starting background thread for {email}")
-    thread = threading.Thread(target=send_async)
-    thread.daemon = False
+    # ✅ Daemon=False - thread to'liq tugashini kutmaymiz
+    thread = threading.Thread(target=send_async, daemon=True)
     thread.start()
-    print(f"🔄 [GMAIL] Thread started")
+
+    print(f"🚀 [GMAIL] Thread started for {email}")

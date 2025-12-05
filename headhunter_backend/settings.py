@@ -208,19 +208,18 @@ EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
-EMAIL_TIMEOUT = 30  # 30 seconds timeout
+EMAIL_TIMEOUT = 10
 
 # --------------------------------------------------
 # ✅ CORS Settings
 # --------------------------------------------------
+# ⚠️ VAQTINCHA - FAQAT DEVELOPMENT UCHUN!
+# Production'da CORS_ALLOW_ALL_ORIGINS = False bo'lishi KERAK!
+CORS_ALLOW_ALL_ORIGINS = True  # ✅ Local test uchun
 CORS_ALLOW_CREDENTIALS = True
 
-# ⚠️ FAQAT DEVELOPMENT UCHUN - Production'da False bo'lishi kerak!
-CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "False") == "True"
-
-# ✅ Barcha kerakli origin'lar
+# ✅ Production uchun specific origins (keyinchalik)
 CORS_ALLOWED_ORIGINS = [
-    # Local development
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
