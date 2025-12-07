@@ -432,15 +432,20 @@ class EducationViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
 
+# accounts/views.py
+
+# ✅ TUZATILGAN SkillViewSet
 class SkillViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request):
+        """GET /api/skills/"""
         skills = Skill.objects.filter(user=request.user).only("id", "name")
         serializer = SkillSerializer(skills, many=True)
         return Response(serializer.data)
 
     def create(self, request):
+        """POST /api/skills/"""
         serializer = BulkSkillSerializer(data=request.data)
         if serializer.is_valid():
             data = serializer.validated_data['skills']
@@ -448,8 +453,17 @@ class SkillViewSet(viewsets.ViewSet):
             new = [Skill(user=request.user, name=n) for n in data if n not in existing]
             with transaction.atomic():
                 Skill.objects.bulk_create(new, ignore_conflicts=True)
-            return Response({"detail": "Yangi skill(lar) qo‘shildi!"}, status=201)
+            return Response({"detail": "Yangi skill(lar) qo'shildi!"}, status=201)
         return Response(serializer.errors, status=400)
+
+    def destroy(self, request, pk=None):
+        """DELETE /api/skills/{id}/"""
+        try:
+            skill = Skill.objects.get(id=pk, user=request.user)
+            skill.delete()
+            return Response({"detail": "Skill o'chirildi ✅"}, status=204)
+        except Skill.DoesNotExist:
+            return Response({"error": "Skill topilmadi"}, status=404)
 
 
 class SkillAnswerViewSet(viewsets.ModelViewSet):

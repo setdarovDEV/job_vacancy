@@ -184,12 +184,14 @@ class Certificate(models.Model):
             models.Index(fields=['issue_date']),
         ]
 
+# ✅ TUZATILGAN WorkExperience model
 class WorkExperience(models.Model):
     user = models.ForeignKey(AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="experiences")
     company_name = models.CharField(max_length=255)
     position = models.CharField(max_length=255)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
+    is_current = models.BooleanField(default=False)  # ✅ QO'SHILDI!
     description = models.TextField(blank=True)
     city = models.CharField(max_length=100, blank=True)
     country = models.CharField(max_length=100, blank=True)
@@ -197,3 +199,5 @@ class WorkExperience(models.Model):
     def __str__(self):
         return f"{self.position} at {self.company_name}"
 
+    class Meta:
+        ordering = ['-start_date']  # ✅ Yangilar birinchi
