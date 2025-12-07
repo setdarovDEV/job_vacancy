@@ -27,6 +27,11 @@ def health(request):
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+
+    # 🔽 Avval DRF router
+    path('api/', include(router.urls)),
+
+    # 🔽 Keyin boshqa app'lar
     path('api/auth/', include('accounts.urls')),
     path('api/vacancies/', include('vacancies.urls')),
     path('api/', include('companies.urls')),
@@ -34,10 +39,11 @@ urlpatterns = [
     path("api/", include("community.urls")),
     path("api/", include("chats.urls")),
     path("api/applications/", include("applications.urls")),
-    path('api/', include(router.urls)),
+
     path("healthz/", health),
     path('silk/', include('silk.urls', namespace='silk')),
 ]
+
 
 # ✅ Lokal ishlaganda media fayllar
 if settings.DEBUG:

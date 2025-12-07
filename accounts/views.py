@@ -6,6 +6,7 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
 from django.db import transaction
 from django.db.models import Q, Prefetch
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -434,37 +435,50 @@ class EducationViewSet(viewsets.ModelViewSet):
 
 # accounts/views.py
 
-# ✅ TUZATILGAN SkillViewSet
-class SkillViewSet(viewsets.ViewSet):
+class SkillViewSet(viewsets.ModelViewSet):
+    """
+    /api/skills/  - GET, POST
+    /api/skills/{id}/ - GET, DELETE, PUT, PATCH
+    """
+    serializer_class = SkillSerializer
     permission_classes = [IsAuthenticated]
 
-    def list(self, request):
-        """GET /api/skills/"""
-        skills = Skill.objects.filter(user=request.user).only("id", "name")
-        serializer = SkillSerializer(skills, many=True)
-        return Response(serializer.data)
+    def get_queryset(self):
+        # Faqat o'z skillarini ko'rsatamiz
+        return Skill.objects.filter(user=self.request.user).only("id", "name")
 
-    def create(self, request):
-        """POST /api/skills/"""
-        serializer = BulkSkillSerializer(data=request.data)
-        if serializer.is_valid():
-            data = serializer.validated_data['skills']
-            existing = set(Skill.objects.filter(user=request.user).values_list('name', flat=True))
-            new = [Skill(user=request.user, name=n) for n in data if n not in existing]
-            with transaction.atomic():
-                Skill.objects.bulk_create(new, ignore_conflicts=True)
-            return Response({"detail": "Yangi skill(lar) qo'shildi!"}, status=201)
-        return Response(serializer.errors, status=400)
+    def create(self, request, *args, **kwargs):
+        """
+        Frontend POST /api/skills/
+        Body: { "skills": ["Python", "Django"] }
+        """
+        bulk_serializer = BulkSkillSerializer(data=request.data)
+        bulk_serializer.is_valid(raise_exception=True)
 
-    def destroy(self, request, pk=None):
-        """DELETE /api/skills/{id}/"""
-        try:
-            skill = Skill.objects.get(id=pk, user=request.user)
-            skill.delete()
-            return Response({"detail": "Skill o'chirildi ✅"}, status=204)
-        except Skill.DoesNotExist:
-            return Response({"error": "Skill topilmadi"}, status=404)
+        names = bulk_serializer.validated_data["skills"]
+        existing = set(
+            Skill.objects.filter(user=request.user).values_list("name", flat=True)
+        )
+        new_objs = [
+            Skill(user=request.user, name=name)
+            for name in names
+            if name not in existing
+        ]
 
+        with transaction.atomic():
+            Skill.objects.bulk_create(new_objs, ignore_conflicts=True)
+
+        # Yangilangan ro'yxatni qaytaramiz
+        out = SkillSerializer(self.get_queryset(), many=True)
+        return Response(out.data, status=status.HTTP_201_CREATED)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        DELETE /api/skills/{id}/
+        """
+        skill = get_object_or_404(Skill, pk=kwargs.get("pk"), user=request.user)
+        skill.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 class SkillAnswerViewSet(viewsets.ModelViewSet):
     serializer_class = SkillAnswerSerializer
@@ -505,7 +519,28 @@ class WorkExperienceViewSet(viewsets.ModelViewSet):
         return WorkExperience.objects.filter(user=user).order_by('-start_date')
 
     def perform_create(self, serializer):
+        # Bu yerda faqat user biriktiramiz
         serializer.save(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        """
+        POST /api/experiences/
+        Frontdan: company_name, position, start_date, is_current, city, country, description, end_date(optional)
+        """
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            self.perform_create(serializer)
+        except Exception as exc:
+            # 🔴 Debug uchun server logga chiqaramiz
+            print("❌ WorkExperience create error:", repr(exc))
+            return Response(
+                {"detail": f"WorkExperience yaratishda xatolik: {str(exc)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
 # ---------------- SEARCH / PROFILE DETAIL ----------------
