@@ -84,6 +84,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "silk.middleware.SilkyMiddleware",
+    "headhunter_backend.middleware.MediaCORPMiddleware",
 ]
 
 ROOT_URLCONF = "headhunter_backend.urls"
@@ -195,8 +196,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 WHITENOISE_MAX_AGE = 60 * 60 * 24 * 30  # 30 days cache
 
-MEDIA_ROOT = "/opt/render/project/src/media"
 MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 # --------------------------------------------------
 # ✅ Email (Gmail SMTP)
