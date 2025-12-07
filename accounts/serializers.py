@@ -280,12 +280,8 @@ class UserPublicSerializer(serializers.ModelSerializer):
         return f"{obj.first_name or ''} {obj.last_name or ''}".strip() or obj.username
 
     def get_avatar_url(self, obj):
-        """
-        Profil rasmi uchun to'liq URL qaytaradi (agar mavjud bo'lsa)
-        """
         request = self.context.get("request")
 
-        # 🔹 To'g'ri maydon — bizda avatar emas, profile_image
         if obj.profile_image:
             try:
                 url = obj.profile_image.url

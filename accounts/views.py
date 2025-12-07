@@ -300,8 +300,11 @@ class ProfileImageUpdateView(APIView):
         serializer = ProfileImageSerializer(user, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
-            full_url = request.build_absolute_uri(user.profile_image.url)
-            return Response({"detail": "Profil rasmi yangilandi", "image": full_url})
+            rel_url = user.profile_image.url if user.profile_image else None
+            return Response({
+                "detail": "Profil rasmi yangilandi",
+                "profile_image": rel_url
+            })
         return Response(serializer.errors, status=400)
 
 
@@ -312,11 +315,12 @@ class CurrentUserView(APIView):
         u = request.user
         return Response({
             "id": u.id,
-            "full_name": f"{u.first_name} {u.last_name}",
+            "full_name": f"{u.first_name} {u.last_name}".strip(),
             "email": u.email,
             "username": u.username,
             "role": u.role,
-            "profile_image": request.build_absolute_uri(u.profile_image.url) if u.profile_image else None,
+            # ❗️ Faqat nisbiy yo‘lni qaytaramiz
+            "profile_image": u.profile_image.url if u.profile_image else None,
             "latitude": u.latitude,
             "longitude": u.longitude,
             "work_hours_per_week": u.work_hours_per_week,
@@ -558,7 +562,7 @@ class ProfileView(APIView):
             "first_name": user.first_name,
             "last_name": user.last_name,
             "role": user.role,
-            "profile_image": request.build_absolute_uri(user.profile_image.url) if user.profile_image else None,
+            "profile_image": user.profile_image.url if user.profile_image else None,
             "title": user.title,
             "about_me": user.about_me,
             "salary_usd": user.salary_usd,
