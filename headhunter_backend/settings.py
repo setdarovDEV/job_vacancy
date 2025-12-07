@@ -211,16 +211,15 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 EMAIL_TIMEOUT = 30  # ✅ Timeout qo'shish
 
 # --------------------------------------------------
-# ✅ CORS Settings (TUZATILGAN VERSIYA)
+# ✅ CORS Settings (MEDIA FILES UCHUN TUZATILGAN)
 # --------------------------------------------------
 
 CORS_ALLOW_CREDENTIALS = True
 
-# ✅ CORS_ALLOW_ALL_ORIGINS - har doim True (development)
-# Production'da .env orqali boshqariladi
-CORS_ALLOW_ALL_ORIGINS = os.environ.get("CORS_ALLOW_ALL_ORIGINS", "True") == "True"
+# ✅ CORS_ALLOW_ALL_ORIGINS
+CORS_ALLOW_ALL_ORIGINS = True  # Development uchun
 
-# ✅ Base allowed origins (development + production)
+# ✅ Base allowed origins
 CORS_ALLOWED_ORIGINS = [
     # Development - HTTP
     "http://localhost:3000",
@@ -228,7 +227,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:8000",
-    "http://127.0.0.1:8000",  # ✅ QO'SHILDI
+    "http://127.0.0.1:8000",
 
     # Production - HTTPS
     "https://jobvacancy-api.duckdns.org",
@@ -241,23 +240,12 @@ if env_origins:
         origin = origin.strip()
         if origin and origin not in CORS_ALLOWED_ORIGINS:
             CORS_ALLOWED_ORIGINS.append(origin)
-            print(f"✅ [CORS] Added origin: {origin}")
 
 # ✅ Add FRONTEND_URL if provided
 if FRONTEND_URL and FRONTEND_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
-    print(f"✅ [CORS] Added FRONTEND_URL: {FRONTEND_URL}")
 
-# ✅ Debug output
-if DEBUG:
-    print("⚠️ [CORS] Development mode - CORS_ALLOW_ALL_ORIGINS:", CORS_ALLOW_ALL_ORIGINS)
-    print("⚠️ [CORS] Allowed origins:", CORS_ALLOWED_ORIGINS)
-
-# --------------------------------------------------
-# O'ZGARMAGAN QOLGAN QISM
-# --------------------------------------------------
-
-# ✅ CSRF Settings (o'zgartirmang)
+# ✅ CSRF Settings
 CSRF_TRUSTED_ORIGINS = [
     o.replace("http://", "https://") for o in CORS_ALLOWED_ORIGINS
 ]
@@ -276,7 +264,7 @@ CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
 CSRF_USE_SESSIONS = False
 
-# ✅ CORS headers (o'zgartirmang)
+# ✅ CORS headers - MEDIA FILES UCHUN TUZATILGAN!
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
@@ -287,28 +275,32 @@ CORS_ALLOW_HEADERS = [
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
+    "cache-control",  # ✅ QO'SHILDI
+    "pragma",  # ✅ QO'SHILDI
 ]
 
+# ✅ CORS expose headers - MEDIA FILES UCHUN!
 CORS_EXPOSE_HEADERS = [
     "content-type",
     "x-csrftoken",
+    "content-disposition",  # ✅ Media files uchun
+    "content-length",  # ✅ Media files uchun
+    "cache-control",  # ✅ Media files uchun
+    "etag",  # ✅ Media files uchun
 ]
-# --------------------------------------------------
-# ✅ Security Settings
-# --------------------------------------------------
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = "DENY"
 
-# Session settings
-SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = "Lax"
+# ✅ CORS methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
 
-# Dynamic security based on DEBUG mode
-SESSION_COOKIE_SECURE = not DEBUG
-CSRF_COOKIE_SECURE = not DEBUG
-
+# ✅ CORS preflight cache
+CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
 # --------------------------------------------------
 # ✅ Channels (WebSocket)
 # --------------------------------------------------
