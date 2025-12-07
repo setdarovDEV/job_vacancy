@@ -380,9 +380,8 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi", title="Ro'yxatdan o'tish"):
     """
-    Gmail SMTP orqali email yuborish (optimized threading)
+    Brevo SMTP orqali email yuborish (threading kerak emas, juda tez!)
     """
-    import threading
     from django.core.mail import EmailMessage
     from django.conf import settings
 
@@ -406,28 +405,21 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
         </div>
     """
 
-    def send_async():
-        """Background thread'da email yuborish"""
-        try:
-            print(f"📧 [GMAIL] Sending to: {email}")
+    try:
+        print(f"📧 [BREVO] Sending to: {email}")
+        print(f"📧 [BREVO] Code: {code}")
 
-            email_msg = EmailMessage(
-                subject=subject,
-                body=html_message,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[email],
-            )
-            email_msg.content_subtype = "html"
+        email_msg = EmailMessage(
+            subject=subject,
+            body=html_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[email],
+        )
+        email_msg.content_subtype = "html"
 
-            # ✅ Timeout bilan yuborish (10 sekund)
-            result = email_msg.send(fail_silently=False)
-            print(f"✅ [GMAIL] Email sent! Result: {result}")
+        result = email_msg.send(fail_silently=False)
+        print(f"✅ [BREVO] Email sent! Result: {result}")
 
-        except Exception as e:
-            print(f"❌ [GMAIL] Error: {e}")
-
-    # ✅ Daemon=False - thread to'liq tugashini kutmaymiz
-    thread = threading.Thread(target=send_async, daemon=True)
-    thread.start()
-
-    print(f"🚀 [GMAIL] Thread started for {email}")
+    except Exception as e:
+        print(f"❌ [BREVO] Error: {e}")
+        raise
