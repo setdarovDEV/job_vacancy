@@ -36,7 +36,7 @@ if RENDER_URL:
     except Exception:
         pass
 
-# ✅ DuckDNS domain qo'shish
+# ✅ DuckDNS domain qo'shish (API domeni)
 if "jobvacancy-api.duckdns.org" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("jobvacancy-api.duckdns.org")
 
@@ -227,7 +227,9 @@ MEDIA_ROOT = BASE_DIR / "media"
 # --------------------------------------------------
 # ✅ Email (Gmail SMTP)
 # --------------------------------------------------
-EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend"
+)
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "smtp-relay.brevo.com")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 587))
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
@@ -237,70 +239,50 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 EMAIL_TIMEOUT = 30  # ✅ Timeout qo'shish
 
 # --------------------------------------------------
-# ✅ CORS Settings (TO'LIQ TUZATILGAN!)
+# ✅ CORS & CSRF Settings (TO'LIQ TUZATILGAN)
 # --------------------------------------------------
 
-# ✅ Development uchun barcha originlarga ruxsat
+# Frontend ishlashi mumkin bo'lgan lokal originlar (Vite, CRA va h.k.)
+LOCAL_FRONTEND_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# API domeni (Django backend)
+API_ORIGINS = [
+    "https://jobvacancy-api.duckdns.org",
+    "http://jobvacancy-api.duckdns.org",
+]
+
+# Prod frontend originlar (ENV va FRONTEND_URL dan)
+PROD_FRONTEND_ORIGINS = []
+
+if FRONTEND_URL:
+    PROD_FRONTEND_ORIGINS.append(FRONTEND_URL)
+
+env_cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+if env_cors_origins:
+    for origin in env_cors_origins.split(","):
+        origin = origin.strip()
+        if origin and origin not in PROD_FRONTEND_ORIGINS:
+            PROD_FRONTEND_ORIGINS.append(origin)
+
+# ---------- CORS ----------
 if DEBUG:
+    # Dev rejim – hamma origin ruxsat
     CORS_ALLOW_ALL_ORIGINS = True
-    CORS_ALLOWED_ORIGINS = []  # Debug rejimida kerak emas
+    CORS_ALLOWED_ORIGINS = []
 else:
+    # Prod rejim – faqat frontend originlar ruxsat
     CORS_ALLOW_ALL_ORIGINS = False
-    # ✅ Production uchun aniq originlar
     CORS_ALLOWED_ORIGINS = [
-        "https://jobvacancy-api.duckdns.org",
-        "http://jobvacancy-api.duckdns.org",
+        *LOCAL_FRONTEND_ORIGINS,   # localdan ham ulana olasan
+        *PROD_FRONTEND_ORIGINS,    # real frontend domen(lar)i
     ]
-
-    # ✅ Add production origins from environment
-    env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
-    if env_origins:
-        for origin in env_origins.split(","):
-            origin = origin.strip()
-            if origin and origin not in CORS_ALLOWED_ORIGINS:
-                CORS_ALLOWED_ORIGINS.append(origin)
-
-    # ✅ Add FRONTEND_URL if provided
-    if FRONTEND_URL and FRONTEND_URL not in CORS_ALLOWED_ORIGINS:
-        CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
 
 CORS_ALLOW_CREDENTIALS = True
-
-# ✅ CSRF Settings
-if DEBUG:
-    CSRF_TRUSTED_ORIGINS = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:8000",
-        "http://127.0.0.1:8000",
-    ]
-else:
-    CSRF_TRUSTED_ORIGINS = [
-        "https://jobvacancy-api.duckdns.org",
-        "http://jobvacancy-api.duckdns.org",
-    ]
-
-    # ✅ Add production URLs
-    if RENDER_URL and RENDER_URL not in CSRF_TRUSTED_ORIGINS:
-        CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
-
-    if FRONTEND_URL and FRONTEND_URL not in CSRF_TRUSTED_ORIGINS:
-        CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
-
-    # ✅ Add from environment
-    env_origins = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
-    if env_origins:
-        for origin in env_origins.split(","):
-            origin = origin.strip()
-            if origin and origin not in CSRF_TRUSTED_ORIGINS:
-                CSRF_TRUSTED_ORIGINS.append(origin)
-
-CSRF_COOKIE_HTTPONLY = False
-CSRF_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SECURE = not DEBUG  # ✅ Production'da HTTPS kerak
-CSRF_USE_SESSIONS = False
 
 # ✅ CORS headers - Media files uchun to'liq!
 CORS_ALLOW_HEADERS = [
@@ -343,6 +325,38 @@ CORS_ALLOW_METHODS = [
 # ✅ CORS preflight cache
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
 
+# ---------- CSRF ----------
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS = [
+        *LOCAL_FRONTEND_ORIGINS,
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+else:
+    # Prod – backend + frontend + local dev
+    CSRF_TRUSTED_ORIGINS = [
+        *API_ORIGINS,
+        *LOCAL_FRONTEND_ORIGINS,
+        *PROD_FRONTEND_ORIGINS,
+    ]
+
+    # Qo'shimcha backend URL'lari
+    if RENDER_URL:
+        CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
+
+    # ENV orqali ham qo'shish
+    env_csrf_origins = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+    if env_csrf_origins:
+        for origin in env_csrf_origins.split(","):
+            origin = origin.strip()
+            if origin and origin not in CSRF_TRUSTED_ORIGINS:
+                CSRF_TRUSTED_ORIGINS.append(origin)
+
+CSRF_COOKIE_HTTPONLY = False
+CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = not DEBUG  # ✅ Production'da HTTPS kerak
+CSRF_USE_SESSIONS = False
+
 # --------------------------------------------------
 # ✅ Security Settings (Production)
 # --------------------------------------------------
@@ -370,15 +384,6 @@ CHANNEL_LAYERS = {
         "BACKEND": "channels.layers.InMemoryChannelLayer"
     }
 }
-
-# If you have Redis in production, use this:
-# REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")
-# CHANNEL_LAYERS = {
-#     "default": {
-#         "BACKEND": "channels_redis.core.RedisChannelLayer",
-#         "CONFIG": {"hosts": [REDIS_URL]},
-#     }
-# }
 
 # --------------------------------------------------
 # ✅ Internationalization
