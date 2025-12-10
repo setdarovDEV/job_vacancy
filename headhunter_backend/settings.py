@@ -88,7 +88,7 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "silk.middleware.SilkyMiddleware",
-    "headhunter_backend.middleware.MediaCORPMiddleware",
+    "headhunter_backend.middleware.MediaCORSMiddleware",
 ]
 
 ROOT_URLCONF = "headhunter_backend.urls"
