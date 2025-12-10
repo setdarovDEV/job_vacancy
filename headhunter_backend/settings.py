@@ -54,11 +54,11 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
 
     # Third-party
+    "corsheaders",  # ✅ CORS - bu yerda bo'lishi kerak
     "rest_framework",
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
-    "corsheaders",  # ✅ CORS
     "channels",
     "drf_orjson_renderer",
     "silk",
@@ -243,53 +243,59 @@ EMAIL_TIMEOUT = 30  # ✅ Timeout qo'shish
 # ✅ Development uchun barcha originlarga ruxsat
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
+    CORS_ALLOWED_ORIGINS = []  # Debug rejimida kerak emas
 else:
     CORS_ALLOW_ALL_ORIGINS = False
+    # ✅ Production uchun aniq originlar
+    CORS_ALLOWED_ORIGINS = [
+        "https://jobvacancy-api.duckdns.org",
+        "http://jobvacancy-api.duckdns.org",
+    ]
+
+    # ✅ Add production origins from environment
+    env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+    if env_origins:
+        for origin in env_origins.split(","):
+            origin = origin.strip()
+            if origin and origin not in CORS_ALLOWED_ORIGINS:
+                CORS_ALLOWED_ORIGINS.append(origin)
+
+    # ✅ Add FRONTEND_URL if provided
+    if FRONTEND_URL and FRONTEND_URL not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
 
 CORS_ALLOW_CREDENTIALS = True
 
-# ✅ Allowed origins
-CORS_ALLOWED_ORIGINS = [
-    # Development - HTTP
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-
-    # Production - HTTPS
-    "https://jobvacancy-api.duckdns.org",
-    "http://jobvacancy-api.duckdns.org",
-]
-
-# ✅ Add production origins from environment
-env_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
-if env_origins:
-    for origin in env_origins.split(","):
-        origin = origin.strip()
-        if origin and origin not in CORS_ALLOWED_ORIGINS:
-            CORS_ALLOWED_ORIGINS.append(origin)
-
-# ✅ Add FRONTEND_URL if provided
-if FRONTEND_URL and FRONTEND_URL not in CORS_ALLOWED_ORIGINS:
-    CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
-
 # ✅ CSRF Settings
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
+else:
+    CSRF_TRUSTED_ORIGINS = [
+        "https://jobvacancy-api.duckdns.org",
+        "http://jobvacancy-api.duckdns.org",
+    ]
 
-# ✅ Add HTTPS versions
-for origin in CORS_ALLOWED_ORIGINS:
-    if origin.startswith("http://"):
-        https_version = origin.replace("http://", "https://")
-        if https_version not in CSRF_TRUSTED_ORIGINS:
-            CSRF_TRUSTED_ORIGINS.append(https_version)
+    # ✅ Add production URLs
+    if RENDER_URL and RENDER_URL not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
 
-if RENDER_URL and RENDER_URL not in CSRF_TRUSTED_ORIGINS:
-    CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
+    if FRONTEND_URL and FRONTEND_URL not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
 
-if FRONTEND_URL and FRONTEND_URL not in CSRF_TRUSTED_ORIGINS:
-    CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
+    # ✅ Add from environment
+    env_origins = os.environ.get("CSRF_TRUSTED_ORIGINS", "")
+    if env_origins:
+        for origin in env_origins.split(","):
+            origin = origin.strip()
+            if origin and origin not in CSRF_TRUSTED_ORIGINS:
+                CSRF_TRUSTED_ORIGINS.append(origin)
 
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
@@ -341,7 +347,7 @@ CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
 # ✅ Security Settings (Production)
 # --------------------------------------------------
 if not DEBUG:
-    SECURE_SSL_REDIRECT = True
+    SECURE_SSL_REDIRECT = False  # ✅ Nginx hal qiladi
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
@@ -350,7 +356,11 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_BROWSER_XSS_FILTER = True
-    X_FRAME_OPTIONS = "DENY"
+    X_FRAME_OPTIONS = "SAMEORIGIN"  # ✅ DENY o'rniga SAMEORIGIN
+else:
+    SECURE_SSL_REDIRECT = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
 
 # --------------------------------------------------
 # ✅ Channels (WebSocket)
