@@ -36,6 +36,10 @@ if RENDER_URL:
     except Exception:
         pass
 
+# ✅ DuckDNS domain qo'shish
+if "jobvacancy-api.duckdns.org" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("jobvacancy-api.duckdns.org")
+
 # --------------------------------------------------
 # ✅ Applications
 # --------------------------------------------------
@@ -54,7 +58,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
-    "corsheaders",
+    "corsheaders",  # ✅ CORS
     "channels",
     "drf_orjson_renderer",
     "silk",
@@ -70,13 +74,13 @@ INSTALLED_APPS = [
 ]
 
 # --------------------------------------------------
-# ✅ Middleware
+# ✅ Middleware (CORS eng yuqorida!)
 # --------------------------------------------------
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",  # ✅ 1-o'rinda!
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.gzip.GZipMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -184,9 +188,30 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(days=5),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=31),
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "ROTATE_REFRESH_TOKENS": True,  # ✅ Refresh token rotation
+    "BLACKLIST_AFTER_ROTATION": True,  # ✅ Old tokens blacklist
 }
 
 AUTH_USER_MODEL = "accounts.CustomUser"
+
+# --------------------------------------------------
+# ✅ Password validation
+# --------------------------------------------------
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        "NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
+    },
+    {
+        "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+]
 
 # --------------------------------------------------
 # ✅ Static / Media
@@ -212,15 +237,18 @@ DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 EMAIL_TIMEOUT = 30  # ✅ Timeout qo'shish
 
 # --------------------------------------------------
-# ✅ CORS Settings (MEDIA FILES UCHUN TUZATILGAN)
+# ✅ CORS Settings (TO'LIQ TUZATILGAN!)
 # --------------------------------------------------
+
+# ✅ Development uchun barcha originlarga ruxsat
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+else:
+    CORS_ALLOW_ALL_ORIGINS = False
 
 CORS_ALLOW_CREDENTIALS = True
 
-# ✅ CORS_ALLOW_ALL_ORIGINS
-CORS_ALLOW_ALL_ORIGINS = True  # Development uchun
-
-# ✅ Base allowed origins
+# ✅ Allowed origins
 CORS_ALLOWED_ORIGINS = [
     # Development - HTTP
     "http://localhost:3000",
@@ -232,6 +260,7 @@ CORS_ALLOWED_ORIGINS = [
 
     # Production - HTTPS
     "https://jobvacancy-api.duckdns.org",
+    "http://jobvacancy-api.duckdns.org",
 ]
 
 # ✅ Add production origins from environment
@@ -247,25 +276,27 @@ if FRONTEND_URL and FRONTEND_URL not in CORS_ALLOWED_ORIGINS:
     CORS_ALLOWED_ORIGINS.append(FRONTEND_URL)
 
 # ✅ CSRF Settings
-CSRF_TRUSTED_ORIGINS = [
-    o.replace("http://", "https://") for o in CORS_ALLOWED_ORIGINS
-]
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS.copy()
 
-if RENDER_URL:
+# ✅ Add HTTPS versions
+for origin in CORS_ALLOWED_ORIGINS:
+    if origin.startswith("http://"):
+        https_version = origin.replace("http://", "https://")
+        if https_version not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(https_version)
+
+if RENDER_URL and RENDER_URL not in CSRF_TRUSTED_ORIGINS:
     CSRF_TRUSTED_ORIGINS.append(RENDER_URL)
-if FRONTEND_URL:
-    CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
 
-CSRF_TRUSTED_ORIGINS.extend([
-    "https://jobvacancy-api.duckdns.org",
-    "http://jobvacancy-api.duckdns.org",
-])
+if FRONTEND_URL and FRONTEND_URL not in CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS.append(FRONTEND_URL)
 
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = not DEBUG  # ✅ Production'da HTTPS kerak
 CSRF_USE_SESSIONS = False
 
-# ✅ CORS headers - MEDIA FILES UCHUN TUZATILGAN!
+# ✅ CORS headers - Media files uchun to'liq!
 CORS_ALLOW_HEADERS = [
     "accept",
     "accept-encoding",
@@ -276,46 +307,66 @@ CORS_ALLOW_HEADERS = [
     "user-agent",
     "x-csrftoken",
     "x-requested-with",
-    "cache-control",  # ✅ QO'SHILDI
-    "pragma",  # ✅ QO'SHILDI
+    "cache-control",
+    "pragma",
+    "if-modified-since",
+    "if-none-match",
 ]
 
-# ✅ CORS expose headers - MEDIA FILES UCHUN!
+# ✅ CORS expose headers - Media files uchun!
 CORS_EXPOSE_HEADERS = [
     "content-type",
     "x-csrftoken",
-    "content-disposition",  # ✅ Media files uchun
-    "content-length",  # ✅ Media files uchun
-    "cache-control",  # ✅ Media files uchun
-    "etag",  # ✅ Media files uchun
+    "content-disposition",
+    "content-length",
+    "cache-control",
+    "etag",
+    "last-modified",
 ]
 
 # ✅ CORS methods
 CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
 ]
 
 # ✅ CORS preflight cache
 CORS_PREFLIGHT_MAX_AGE = 86400  # 24 hours
+
+# --------------------------------------------------
+# ✅ Security Settings (Production)
+# --------------------------------------------------
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = "DENY"
+
 # --------------------------------------------------
 # ✅ Channels (WebSocket)
 # --------------------------------------------------
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer"  # Simple in-memory for development
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
     }
 }
 
-# If you have Redis in production, use this instead:
+# If you have Redis in production, use this:
+# REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")
 # CHANNEL_LAYERS = {
 #     "default": {
 #         "BACKEND": "channels_redis.core.RedisChannelLayer",
-#         "CONFIG": {"hosts": [os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")]},
+#         "CONFIG": {"hosts": [REDIS_URL]},
 #     }
 # }
 
@@ -328,8 +379,49 @@ USE_I18N = True
 USE_TZ = True
 
 # --------------------------------------------------
+# ✅ Logging (Production uchun)
+# --------------------------------------------------
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "{levelname} {asctime} {module} {message}",
+            "style": "{",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "verbose",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO" if not DEBUG else "DEBUG",
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
+# --------------------------------------------------
 # ✅ Miscellaneous
 # --------------------------------------------------
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 USE_X_FORWARDED_HOST = True
 SITE_ID = 1
+
+# ✅ File upload settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB
+
+# ✅ Session settings
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = not DEBUG
+SESSION_COOKIE_SAMESITE = "Lax"
+SESSION_COOKIE_AGE = 1209600  # 2 weeks
