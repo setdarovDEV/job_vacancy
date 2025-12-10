@@ -472,14 +472,6 @@ class SkillViewSet(viewsets.ModelViewSet):
         out = SkillSerializer(self.get_queryset(), many=True)
         return Response(out.data, status=status.HTTP_201_CREATED)
 
-    def destroy(self, request, *args, **kwargs):
-        """
-        DELETE /api/skills/{id}/
-        """
-        skill = get_object_or_404(Skill, pk=kwargs.get("pk"), user=request.user)
-        skill.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
 class SkillAnswerViewSet(viewsets.ModelViewSet):
     serializer_class = SkillAnswerSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -521,27 +513,6 @@ class WorkExperienceViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # Bu yerda faqat user biriktiramiz
         serializer.save(user=self.request.user)
-
-    def create(self, request, *args, **kwargs):
-        """
-        POST /api/experiences/
-        Frontdan: company_name, position, start_date, is_current, city, country, description, end_date(optional)
-        """
-        serializer = self.get_serializer(data=request.data)
-        try:
-            serializer.is_valid(raise_exception=True)
-            self.perform_create(serializer)
-        except Exception as exc:
-            # 🔴 Debug uchun server logga chiqaramiz
-            print("❌ WorkExperience create error:", repr(exc))
-            return Response(
-                {"detail": f"WorkExperience yaratishda xatolik: {str(exc)}"},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-
 
 # ---------------- SEARCH / PROFILE DETAIL ----------------
 @method_decorator(cache_page(30), name='get')

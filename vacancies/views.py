@@ -21,7 +21,7 @@ class TenPerPagePagination(PageNumberPagination):
 @method_decorator(cache_page(10), name="list")
 class JobPostViewSet(viewsets.ModelViewSet):
     """
-    Vakansiyalar uchun CRUD, filter, rating, save va company bo‘yicha qidiruv.
+    Vakansiyalar uchun CRUD, filter, rating, save va company bo'yicha qidiruv.
     """
     serializer_class = JobPostSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
@@ -33,13 +33,16 @@ class JobPostViewSet(viewsets.ModelViewSet):
         qs = JobPost.objects.select_related("employer", "company").order_by("-created_at")
         user = self.request.user
 
-        # ✅ Faqat o‘zim yaratganlar (draftlarim ham)
-        if self.request.query_params.get("mine") == "1" and user.is_authenticated:
+        # ✅ TUZATISH: Agar user EMPLOYER bo'lsa, faqat o'z vakansiyalarini ko'rsatish
+        if user.is_authenticated and hasattr(user, 'role') and user.role == "EMPLOYER":
+            # Employer o'z profilida faqat o'z vakansiyalarini ko'radi
             return qs.filter(employer=user)
 
-        # 🌍 Public list faqat to‘liq e’lonlar
+        # ✅ Job seeker yoki anonim foydalanuvchi uchun
+        # Faqat to'liq, draft bo'lmagan va to'ldirilmagan vakansiyalarni ko'rsatish
         if self.action in ("list", "recent", "featured", "by_company"):
             qs = qs.filter(is_draft=False, is_filled=False)
+
         return qs
 
     def get_serializer_class(self):
@@ -49,34 +52,72 @@ class JobPostViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         # faqat create, rate, save uchun login kerak
-        if self.action in ("create", "rate", "save_vacancy"):
+        if self.action in ("create", "update", "partial_update", "destroy", "rate", "save_vacancy"):
             return [permissions.IsAuthenticated()]
         return [permissions.AllowAny()]
 
     def perform_create(self, serializer):
+        """Vakansiya yaratishda avtomatik employer va company bog'lanadi"""
         from companies.models import Company
 
         user = self.request.user
         company = Company.objects.filter(owner=user).first()
-        serializer.save(employer=user, company=company, is_draft=True)
 
-    def get_is_saved(self, obj):
-        request = self.context.get("request")
-        if not request or request.user.is_anonymous:
-            return False
-        return obj.saved_by.filter(user=request.user).exists()
+        # ✅ MUHIM: Agar barcha maydonlar to'ldirilgan bo'lsa, is_draft=False
+        data = serializer.validated_data
+        is_draft = not all([
+            data.get('title'),
+            data.get('description'),
+            data.get('location'),
+            data.get('budget_min'),
+            data.get('budget_max'),
+        ])
+
+        serializer.save(
+            employer=user,
+            company=company,
+            is_draft=is_draft
+        )
+
+    def perform_update(self, serializer):
+        """Vakansiya yangilashda ham is_draft tekshiriladi"""
+        data = serializer.validated_data
+        is_draft = not all([
+            data.get('title'),
+            data.get('description'),
+            data.get('location'),
+            data.get('budget_min'),
+            data.get('budget_max'),
+        ])
+        serializer.save(is_draft=is_draft)
+
+    # === PERMISSION CHECK ===
+    def check_object_permissions(self, request, obj):
+        """Faqat vakansiya egasi tahrirlashi/o'chirishi mumkin"""
+        super().check_object_permissions(request, obj)
+
+        if self.action in ('update', 'partial_update', 'destroy'):
+            if obj.employer != request.user:
+                self.permission_denied(
+                    request,
+                    message="Siz faqat o'z vakansiyalaringizni tahrirlashingiz mumkin!"
+                )
 
     # === FEATURED ===
     @action(detail=False, methods=["get"], url_path="featured")
     def featured(self, request):
-        qs = JobPost.objects.filter(plan__in=[PlanChoices.PRO, PlanChoices.PREMIUM]).order_by("-created_at")[:20]
+        qs = (
+            JobPost.objects
+            .filter(plan__in=[PlanChoices.PRO, PlanChoices.PREMIUM], is_draft=False, is_filled=False)
+            .order_by("-created_at")[:20]
+        )
         ser = JobPostPublicSerializer(qs, many=True, context={"request": request})
         return Response(ser.data, status=200)
 
     # === RECENT ===
     @action(detail=False, methods=["get"], url_path="recent")
     def recent(self, request):
-        qs = JobPost.objects.order_by("-created_at")[:30]
+        qs = JobPost.objects.filter(is_draft=False, is_filled=False).order_by("-created_at")[:30]
         page = self.paginate_queryset(qs)
         ser = JobPostPublicSerializer(page or qs, many=True, context={"request": request})
         return self.get_paginated_response(ser.data) if page else Response(ser.data, status=200)
@@ -88,10 +129,10 @@ class JobPostViewSet(viewsets.ModelViewSet):
         try:
             stars = int(request.data.get("stars", 0))
         except Exception:
-            return Response({"detail": "stars noto‘g‘ri formatda"}, status=400)
+            return Response({"detail": "stars noto'g'ri formatda"}, status=400)
 
         if not (1 <= stars <= 5):
-            return Response({"detail": "Stars 1 dan 5 gacha bo‘lishi kerak"}, status=400)
+            return Response({"detail": "Stars 1 dan 5 gacha bo'lishi kerak"}, status=400)
 
         with transaction.atomic():
             JobPostRating.objects.update_or_create(
@@ -117,7 +158,7 @@ class JobPostViewSet(viewsets.ModelViewSet):
     def by_company(self, request, company_id=None):
         qs = (
             JobPost.objects
-            .filter(company_id=company_id, is_filled=False)
+            .filter(company_id=company_id, is_filled=False, is_draft=False)
             .select_related("company", "employer")
             .only(
                 "id", "title", "location", "plan", "is_remote",
@@ -135,7 +176,7 @@ class JobPostViewSet(viewsets.ModelViewSet):
     def saved_jobs(self, request):
         qs = (
             JobPost.objects
-            .filter(saved_by__user=request.user)
+            .filter(saved_by__user=request.user, is_draft=False, is_filled=False)
             .select_related("company", "employer")
             .order_by("-created_at")
         )
