@@ -17,6 +17,7 @@ class CompanySerializer(serializers.ModelSerializer):
     banner = serializers.SerializerMethodField(read_only=True)
     banner_file = serializers.ImageField(write_only=True, required=False, allow_null=True)
 
+    employer_vacancies_count = serializers.SerializerMethodField()
     is_following = serializers.SerializerMethodField()
     jobpost_count = serializers.SerializerMethodField()
     open_jobpost_count = serializers.SerializerMethodField()
@@ -32,9 +33,18 @@ class CompanySerializer(serializers.ModelSerializer):
             'description', 'created_at',
             'reviews_count', 'followers_count', 'avg_rating',
             'is_following', 'jobpost_count', 'open_jobpost_count',
-            'hire_rate', 'vacancies', 'vacancies_count'
+            'hire_rate', 'vacancies', 'vacancies_count', 'employer_vacancies_count'
         ]
         read_only_fields = ['owner', 'created_at']
+
+    def get_employer_vacancies_count(self, obj):
+        """Kompaniyani yaratgan employer userning barcha vakansiyalari"""
+        try:
+            from vacancies.models import JobPost
+            # Company owner (employer) ning barcha vakansiyalari
+            return JobPost.objects.filter(employer=obj.owner).count()
+        except Exception:
+            return 0
 
     def get_logo(self, obj):
         """✅ To'liq URL qaytarish"""
