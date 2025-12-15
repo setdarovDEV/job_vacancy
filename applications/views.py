@@ -192,21 +192,55 @@ class ApplicationApplicantView(APIView):
         data = ApplicantFullSerializer(app.applicant, context={"request": request}).data
         return Response(data, status=200)
 
+
 # ==============================
-# 7️⃣ JOB SEEKER: o‘zining barcha arizalari
+# 7️⃣ JOB SEEKER: o'zining barcha arizalari
 # ==============================
 class MyApplicationsView(generics.ListAPIView):
+    """
+    Job seeker o'zi yuborgan barcha arizalarni ko'rish
+    GET /api/applications/my/
+    """
     serializer_class = JobApplicationSerializer
     permission_classes = [IsAuthenticated, IsJobSeeker]
 
     def get_queryset(self):
-        return (
+        print("=" * 50)
+        print("🔍 MyApplicationsView DEBUG START")
+        print(f"👤 User: {self.request.user}")
+        print(f"👤 User ID: {self.request.user.id}")
+        print(f"🎭 User Role: {getattr(self.request.user, 'role', 'NO ROLE')}")
+
+        # Barcha arizalarni olish
+        qs = (
             JobApplication.objects
-            .select_related("job_post", "applicant")  # ✅ select_related qoldiramiz
-            # ⚠️ .only()ni olib tashlaymiz — bu joyda kerak emas
+            .select_related("job_post__company", "applicant")
             .filter(applicant=self.request.user)
             .order_by("-created_at")
         )
+
+        print(f"📊 Queryset count: {qs.count()}")
+
+        if qs.exists():
+            for app in qs:
+                print(f"  - Application #{app.id}: job_post={app.job_post_id}, status={app.status}")
+        else:
+            print("⚠️ No applications found for this user")
+
+            # Umumiy statistika
+            total_apps = JobApplication.objects.count()
+            print(f"📊 Total applications in DB: {total_apps}")
+
+            if total_apps > 0:
+                print("🔍 Sample applications in DB:")
+                for app in JobApplication.objects.all()[:3]:
+                    print(
+                        f"  - App #{app.id}: applicant={app.applicant_id} (role={getattr(app.applicant, 'role', 'N/A')})")
+
+        print("🔍 MyApplicationsView DEBUG END")
+        print("=" * 50)
+
+        return qs
 
 
 @method_decorator(cache_page(20), name='get')
