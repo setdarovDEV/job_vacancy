@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from vacancies.models import JobPost
+from vacancies.serializers import JobPostPublicSerializer
 from .models import JobApplication
 from .serializers import (
     JobApplicationSerializer,
@@ -205,4 +206,22 @@ class MyApplicationsView(generics.ListAPIView):
             # ⚠️ .only()ni olib tashlaymiz — bu joyda kerak emas
             .filter(applicant=self.request.user)
             .order_by("-created_at")
+        )
+
+
+@method_decorator(cache_page(20), name='get')
+class MySavedJobsView(generics.ListAPIView):
+    """
+    Job seeker o'zi saqlagan barcha vakansiyalarni ko'rish
+    GET /api/applications/saved-jobs/
+    """
+    serializer_class = JobPostPublicSerializer
+    permission_classes = [IsAuthenticated, IsJobSeeker]
+
+    def get_queryset(self):
+        return (
+            JobPost.objects
+            .filter(saved_by__user=self.request.user, is_draft=False, is_filled=False)
+            .select_related("company", "employer")
+            .order_by("-saved_by__saved_at")  # eng oxirgi saqlangan birinchi
         )
