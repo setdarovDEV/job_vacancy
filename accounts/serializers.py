@@ -413,7 +413,7 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
     send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
         to=[{"email": email}],
         sender={
-            "email": "noreply@brevo.com",  # ✅ Brevo verified email
+            "email": "abbossetdarov3@gmail.com",  # ✅ VERIFIED EMAIL
             "name": "Job Vacancy"
         },
         subject=subject,
