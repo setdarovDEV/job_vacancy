@@ -1,12 +1,14 @@
 import os
 import random
 
+import sib_api_v3_sdk
 from django.contrib.auth import authenticate
 from django.core.mail import send_mail
 from django.db import IntegrityError
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from sib_api_v3_sdk.rest import ApiException
 
 # from headhunter_backend.settings import DEFAULT_FROM_EMAIL
 from .models import CustomUser, EmailVerificationCode, LanguageSkill, Education, PortfolioMedia, PortfolioProject, \
@@ -373,14 +375,15 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
 
 # accounts/serializers.py
-
 def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi", title="Ro'yxatdan o'tish"):
     """
-    Brevo SMTP orqali email yuborish (threading kerak emas, juda tez!)
+    Brevo API orqali email yuborish (SMTP kerak emas!)
     """
-    from django.core.mail import EmailMessage
-    from django.conf import settings
+    # 1️⃣ API Configuration
+    configuration = sib_api_v3_sdk.Configuration()
+    configuration.api_key['api-key'] = os.environ.get('BREVO_API_KEY')
 
+    # 2️⃣ HTML email template
     html_message = f"""
         <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
             <div style="background: linear-gradient(135deg, #3066BE 0%, #4A90E2 100%); padding: 30px; border-radius: 10px 10px 0 0;">
@@ -401,21 +404,35 @@ def send_verification_email(email, code, subject="Job Vacancy - Tasdiqlash kodi"
         </div>
     """
 
+    # 3️⃣ API instance
+    api_instance = sib_api_v3_sdk.TransactionalEmailsApi(
+        sib_api_v3_sdk.ApiClient(configuration)
+    )
+
+    # 4️⃣ Email data
+    send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+        to=[{"email": email}],
+        sender={
+            "email": os.environ.get('DEFAULT_FROM_EMAIL', 'noreply@jobvacancy.com'),
+            "name": "Job Vacancy"
+        },
+        subject=subject,
+        html_content=html_message
+    )
+
+    # 5️⃣ Send email
     try:
-        print(f"📧 [BREVO] Sending to: {email}")
-        print(f"📧 [BREVO] Code: {code}")
+        print(f"📧 [BREVO API] Sending to: {email}")
+        print(f"📧 [BREVO API] Code: {code}")
 
-        email_msg = EmailMessage(
-            subject=subject,
-            body=html_message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[email],
-        )
-        email_msg.content_subtype = "html"
+        api_response = api_instance.send_transac_email(send_smtp_email)
 
-        result = email_msg.send(fail_silently=False)
-        print(f"✅ [BREVO] Email sent! Result: {result}")
+        print(f"✅ [BREVO API] Email sent! Message ID: {api_response.message_id}")
+        return True
 
+    except ApiException as e:
+        print(f"❌ [BREVO API] Error: {e}")
+        raise Exception(f"Brevo API failed: {e}")
     except Exception as e:
-        print(f"❌ [BREVO] Error: {e}")
+        print(f"❌ [BREVO API] Unexpected error: {e}")
         raise
