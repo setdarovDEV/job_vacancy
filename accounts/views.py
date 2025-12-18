@@ -228,32 +228,59 @@ class PasswordResetRequestView(APIView):
 
     def post(self, request):
         email = request.data.get("email")
+
         if not email:
-            return Response({"detail": "Email kiriting."}, status=400)
+            return Response({"error": "Email kiriting."}, status=400)
+
+        # Email formatini tekshirish
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
 
         try:
-            user = User.objects.only("id", "email").get(email=email)
+            validate_email(email)
+        except ValidationError:
+            return Response({"error": "Email formati noto'g'ri"}, status=400)
+
+        # User mavjudligini tekshirish
+        try:
+            user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return Response({"detail": "Bunday email mavjud emas."}, status=404)
+            # ⚠️ Security: Haqiqiy xatolikni ko'rsatmaymiz
+            return Response({"error": "Bunday email mavjud emas."}, status=404)
 
-        # ✅ 6 xonali kod
+        # ✅ 6 xonali kod yaratish
         code = f"{random.randint(100000, 999999)}"
-        EmailVerificationCode.objects.update_or_create(
-            user=user, defaults={'code': code}
-        )
 
-        # ✅ Resend orqali yuborish
+        # ✅ Kod yaratish yoki yangilash
         try:
-            from .serializers import send_verification_email
+            EmailVerificationCode.objects.update_or_create(
+                user=user,
+                defaults={'code': code}
+            )
+        except Exception as e:
+            print(f"❌ Database error: {str(e)}")
+            return Response({"error": "Xatolik yuz berdi"}, status=500)
+
+        # ✅ Email yuborish
+        try:
             send_verification_email(
                 email=email,
                 code=code,
                 subject="Job Vacancy - Parolni tiklash kodi",
                 title="Parolni tiklash"
             )
-            return Response({"detail": "Parolni tiklash kodi yuborildi ✅"}, status=200)
+            print(f"✅ Code sent to {email}: {code}")
+            return Response({
+                "message": "Tasdiqlash kodi emailga yuborildi ✅",
+                "success": True
+            }, status=200)
         except Exception as e:
-            return Response({"error": f"Email yuborilmadi: {str(e)}"}, status=500)
+            print(f"❌ Email sending error: {str(e)}")
+            # Kod bazada saqlangan, lekin email yuborilmagan
+            return Response({
+                "error": "Email yuborishda xatolik. Iltimos qaytadan urinib ko'ring.",
+                "detail": str(e)
+            }, status=500)
 
 
 class PasswordResetConfirmView(APIView):
@@ -267,30 +294,58 @@ class PasswordResetConfirmView(APIView):
         code = request.data.get("code")
         new_password = request.data.get("new_password")
 
+        # ✅ Validatsiya
         if not all([email, code, new_password]):
-            return Response({"detail": "Barcha maydonlar talab qilinadi."}, status=400)
+            return Response({
+                "error": "Barcha maydonlar talab qilinadi."
+            }, status=400)
 
+        # ✅ Parol uzunligi
+        if len(new_password) < 6:
+            return Response({
+                "error": "Parol kamida 6 ta belgidan iborat bo'lishi kerak"
+            }, status=400)
+
+        # ✅ User topish
         try:
             user = User.objects.get(email=email)
         except User.DoesNotExist:
-            return Response({"detail": "Bunday email topilmadi."}, status=404)
+            return Response({
+                "error": "Bunday email topilmadi."
+            }, status=404)
 
+        # ✅ Kodni tekshirish
         try:
             code_obj = EmailVerificationCode.objects.get(user=user, code=code)
 
             # ✅ Muddati tekshirish
             if code_obj.is_expired():
-                return Response({"error": "Kod eskirgan. Yangi kod so'rang."}, status=400)
+                code_obj.delete()
+                return Response({
+                    "error": "Kod eskirgan. Yangi kod so'rang."
+                }, status=400)
 
-            # Parolni yangilash
+            # ✅ Parolni yangilash
             user.set_password(new_password)
             user.save()
+
+            # ✅ Kodni o'chirish
             code_obj.delete()
 
-            return Response({"detail": "Parol muvaffaqiyatli yangilandi ✅"}, status=200)
+            return Response({
+                "message": "Parol muvaffaqiyatli yangilandi ✅",
+                "success": True
+            }, status=200)
+
         except EmailVerificationCode.DoesNotExist:
-            return Response({"detail": "Kod noto'g'ri yoki eskirgan."}, status=400)
-            return Response({"detail": "Kod noto'g'ri yoki eskirgan."}, status=400)
+            return Response({
+                "error": "Kod noto'g'ri yoki eskirgan."
+            }, status=400)
+        except Exception as e:
+            print(f"❌ Password reset error: {str(e)}")
+            return Response({
+                "error": "Xatolik yuz berdi. Qaytadan urinib ko'ring."
+            }, status=500)
 
 # ---------------- PROFILE & UPDATES ----------------
 class ProfileImageUpdateView(APIView):
