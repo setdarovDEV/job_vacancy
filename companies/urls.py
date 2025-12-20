@@ -9,5 +9,4 @@ router.register(r'companies', CompanyViewSet, basename='company')
 
 urlpatterns = [
     path('companies/<int:company_id>/mobile-reviews/', views.mobile_company_reviews),
-    router.urls
-]
+] + router.urls
