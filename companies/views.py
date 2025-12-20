@@ -1,11 +1,12 @@
 from django.db import transaction
 from django.db.models import Avg, Count, Value
 from django.db.models.functions import Coalesce
+from django.shortcuts import get_object_or_404
 from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page, never_cache
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status, filters as drf_filters
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
@@ -217,3 +218,31 @@ class CompanyViewSet(viewsets.ModelViewSet):
         ser = JobPostSerializer(page or qs, many=True, context={"request": request})
 
         return self.get_paginated_response(ser.data) if page else Response(ser.data)
+
+    @api_view(['GET'])
+    @permission_classes([IsAuthenticatedOrReadOnly])
+    def mobile_company_reviews(request, company_id):
+        company = get_object_or_404(Company, id=company_id)
+        reviews = CompanyReview.objects.filter(company=company).select_related('user').order_by('-created_at')
+
+        data = []
+        for review in reviews:
+            item = {
+                'id': review.id,
+                'user': str(review.user.id),
+                'user_name': f"{review.user.first_name} {review.user.last_name}".strip() or review.user.username,
+                'rating': review.rating,
+                'text': review.text,
+                'country': review.country,
+                'created_at': review.created_at.isoformat(),
+            }
+
+            # Avatar URL
+            if review.user.profile_image:
+                item['user_avatar'] = request.build_absolute_uri(review.user.profile_image.url)
+            else:
+                item['user_avatar'] = None
+
+            data.append(item)
+
+        return Response(data)
