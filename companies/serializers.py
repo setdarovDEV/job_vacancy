@@ -152,19 +152,32 @@ class CompanySerializer(serializers.ModelSerializer):
     def get_vacancies_count(self, obj):
         return obj.job_posts.count()
 
-
 # ✅ Review Serializer
 class CompanyReviewSerializer(serializers.ModelSerializer):
     user_name = serializers.SerializerMethodField()
+    user_avatar = serializers.SerializerMethodField()  # ✅ YANGI
 
     class Meta:
         model = CompanyReview
-        fields = ['id', 'company', 'user', 'user_name', 'rating', 'text', 'country', 'created_at']
+        fields = ['id', 'company', 'user', 'user_name', 'user_avatar', 'rating', 'text', 'country', 'created_at']
         read_only_fields = ['user', 'company', 'created_at']
 
     def get_user_name(self, obj):
         full = obj.user.get_full_name().strip()
         return full or obj.user.username
+
+    # ✅ YANGI METHOD
+    def get_user_avatar(self, obj):
+        """User avatar URL qaytaradi"""
+        if obj.user.profile_image:
+            request = self.context.get('request')
+            if request:
+                url = obj.user.profile_image.url
+                abs_url = request.build_absolute_uri(url)
+                return abs_url.replace("http://", "https://")
+            # Fallback
+            return f"https://jobvacancy-api.duckdns.org{obj.user.profile_image.url}"
+        return None
 
     def validate_rating(self, value):
         if not 1 <= value <= 5:
@@ -180,8 +193,6 @@ class CompanyReviewSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"detail": "Siz allaqachon bu kompaniyaga izoh qoldirgansiz."}
             )
-
-
 # ✅ Photo Serializer
 class CompanyPhotoSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField(read_only=True)

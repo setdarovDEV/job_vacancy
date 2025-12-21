@@ -244,6 +244,7 @@ EMAIL_TIMEOUT = 30  # ✅ Timeout qo'shish
 
 # Frontend ishlashi mumkin bo'lgan lokal originlar (Vite, CRA va h.k.)
 LOCAL_FRONTEND_ORIGINS = [
+    "https://job-vacancy-kohl.vercel.app"
     "http://localhost:5173",
     "http://localhost:5174"
     "http://127.0.0.1:5173",
