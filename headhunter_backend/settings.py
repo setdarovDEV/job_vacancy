@@ -40,6 +40,12 @@ if RENDER_URL:
 if "jobvacancy-api.duckdns.org" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append("jobvacancy-api.duckdns.org")
 
+# ✅ Frontend domenlari qo'shish
+if "jobvacancy.uz" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("jobvacancy.uz")
+if "www.jobvacancy.uz" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("www.jobvacancy.uz")
+
 # --------------------------------------------------
 # ✅ Applications
 # --------------------------------------------------
@@ -244,9 +250,9 @@ EMAIL_TIMEOUT = 30  # ✅ Timeout qo'shish
 
 # Frontend ishlashi mumkin bo'lgan lokal originlar (Vite, CRA va h.k.)
 LOCAL_FRONTEND_ORIGINS = [
-    "https://job-vacancy-kohl.vercel.app"
+    "https://job-vacancy-kohl.vercel.app",
     "http://localhost:5173",
-    "http://localhost:5174"
+    "http://localhost:5174",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
@@ -258,10 +264,15 @@ API_ORIGINS = [
     "http://jobvacancy-api.duckdns.org",
 ]
 
-# Prod frontend originlar (ENV va FRONTEND_URL dan)
-PROD_FRONTEND_ORIGINS = []
+# Prod frontend originlar
+PROD_FRONTEND_ORIGINS = [
+    "https://jobvacancy.uz",
+    "http://jobvacancy.uz",
+    "https://www.jobvacancy.uz",
+    "http://www.jobvacancy.uz",
+]
 
-if FRONTEND_URL:
+if FRONTEND_URL and FRONTEND_URL not in PROD_FRONTEND_ORIGINS:
     PROD_FRONTEND_ORIGINS.append(FRONTEND_URL)
 
 env_cors_origins = os.environ.get("CORS_ALLOWED_ORIGINS", "")
