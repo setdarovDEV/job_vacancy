@@ -6,7 +6,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.cache import cache_page, never_cache
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import viewsets, permissions, status, filters as drf_filters
-from rest_framework.decorators import action, api_view
+from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
@@ -100,7 +100,7 @@ class CompanyViewSet(viewsets.ModelViewSet):
         if not request.user.is_authenticated:
             return Response({"detail": "Authentication required"}, status=403)
 
-        # 🔧 bu tekshiruvni to‘g‘ri joyga o‘tkazamiz
+        # 🔧 bu tekshiruvni to'g'ri joyga o'tkazamiz
         existing = CompanyReview.objects.filter(company=company, user=request.user).first()
         if existing:
             return Response({"detail": "Siz allaqachon bu kompaniyaga izoh qoldirgansiz."}, status=400)
@@ -219,30 +219,32 @@ class CompanyViewSet(viewsets.ModelViewSet):
 
         return self.get_paginated_response(ser.data) if page else Response(ser.data)
 
-    @api_view(['GET'])
-    @permission_classes([IsAuthenticatedOrReadOnly])
-    def mobile_company_reviews(request, company_id):
-        company = get_object_or_404(Company, id=company_id)
-        reviews = CompanyReview.objects.filter(company=company).select_related('user').order_by('-created_at')
 
-        data = []
-        for review in reviews:
-            item = {
-                'id': review.id,
-                'user': str(review.user.id),
-                'user_name': f"{review.user.first_name} {review.user.last_name}".strip() or review.user.username,
-                'rating': review.rating,
-                'text': review.text,
-                'country': review.country,
-                'created_at': review.created_at.isoformat(),
-            }
+# ✅ Bu funksiya class TASHQARIDA bo'lishi kerak!
+@api_view(['GET'])
+@permission_classes([IsAuthenticatedOrReadOnly])
+def mobile_company_reviews(request, company_id):
+    company = get_object_or_404(Company, id=company_id)
+    reviews = CompanyReview.objects.filter(company=company).select_related('user').order_by('-created_at')
 
-            # Avatar URL
-            if review.user.profile_image:
-                item['user_avatar'] = request.build_absolute_uri(review.user.profile_image.url)
-            else:
-                item['user_avatar'] = None
+    data = []
+    for review in reviews:
+        item = {
+            'id': review.id,
+            'user': str(review.user.id),
+            'user_name': f"{review.user.first_name} {review.user.last_name}".strip() or review.user.username,
+            'rating': review.rating,
+            'text': review.text,
+            'country': review.country,
+            'created_at': review.created_at.isoformat(),
+        }
 
-            data.append(item)
+        # Avatar URL
+        if review.user.profile_image:
+            item['user_avatar'] = request.build_absolute_uri(review.user.profile_image.url)
+        else:
+            item['user_avatar'] = None
 
-        return Response(data)
+        data.append(item)
+
+    return Response(data)
