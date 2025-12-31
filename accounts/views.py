@@ -648,6 +648,7 @@ class ProfileView(APIView):
             "last_seen": user.last_seen,
         })
 
+
 class PortfolioProjectViewSet(viewsets.ModelViewSet):
     queryset = PortfolioProject.objects.all().order_by('-created_at')
     serializer_class = PortfolioProjectSerializer
@@ -657,13 +658,19 @@ class PortfolioProjectViewSet(viewsets.ModelViewSet):
         serializer.save(user=self.request.user)
 
     def get_queryset(self):
-        """
-        Foydalanuvchining faqat o‘z loyihalarini ko‘rsatish (agar `?mine=1` bo‘lsa)
-        """
         qs = super().get_queryset()
         user = self.request.user
-        if user.is_authenticated and self.request.query_params.get('mine') == '1':
-            qs = qs.filter(user=user)
+
+        # ✅ owner parametri bilan filter (viewOnly mode uchun)
+        owner_id = self.request.query_params.get('owner')
+        if owner_id:
+            return qs.filter(user_id=owner_id)
+
+        # ✅ mine=1 bo'lsa yoki default holatda faqat o'zining portfoliosi
+        if user.is_authenticated:
+            if self.request.query_params.get('mine') == '1' or self.request.query_params.get('all') != '1':
+                qs = qs.filter(user=user)
+
         return qs
 
 
