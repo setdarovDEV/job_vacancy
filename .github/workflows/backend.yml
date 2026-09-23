@@ -1,0 +1,46 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["backend/**", ".github/workflows/backend.yml"]
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: jobvacancy
+          POSTGRES_PASSWORD: jobvacancy
+          POSTGRES_DB: jobvacancy
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U jobvacancy" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      DATABASE_URL: postgres://jobvacancy:jobvacancy@localhost:5432/jobvacancy?sslmode=disable
+      JWT_SECRET: ci-secret-0123456789abcdef0123456789abcdef
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: sqlc code is up to date
+        run: |
+          docker run --rm -v "$PWD":/src -w /src sqlc/sqlc:latest diff
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: migrations apply cleanly (up, down, up)
+        run: |
+          go run ./cmd/migrate up
+          go run ./cmd/migrate down
+          go run ./cmd/migrate up
+      - run: make build

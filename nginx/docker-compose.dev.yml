@@ -1,0 +1,81 @@
+# Local development infrastructure: Postgres, Redis, MinIO (S3) and Mailpit (SMTP catcher).
+# The Go API and the web dev server run on the host (make dev-api / make dev-web).
+#
+#   docker compose -f nginx/docker-compose.dev.yml up -d
+#
+# Host ports are shifted away from defaults so they don't clash with other local projects.
+name: jobvacancy-dev
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: jobvacancy
+      POSTGRES_PASSWORD: jobvacancy
+      POSTGRES_DB: jobvacancy
+    # random_page_cost=1.1: storage is SSD/NVMe. With the HDD default (4) the planner
+    # skips the full-text GIN index for broad queries and seq-scans instead (3x slower).
+    command: >
+      postgres
+        -c shared_buffers=256MB
+        -c work_mem=16MB
+        -c max_connections=200
+        -c random_page_cost=1.1
+        -c effective_cache_size=1GB
+        -c log_min_duration_statement=200
+    ports:
+      - "127.0.0.1:5440:5432"
+    volumes:
+      # Postgres 18 images keep data under /var/lib/postgresql/<major>/docker
+      - pgdata:/var/lib/postgresql
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobvacancy -d jobvacancy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      - "127.0.0.1:6390:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: quay.io/minio/minio:latest # Docker Hub copy is no longer published
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: jobvacancy
+      MINIO_ROOT_PASSWORD: jobvacancy-secret
+    ports:
+      - "127.0.0.1:9200:9000" # S3 API
+      - "127.0.0.1:9201:9001" # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1025:1025" # SMTP
+      - "127.0.0.1:8025:8025" # web UI: http://localhost:8025
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

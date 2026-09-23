@@ -1,0 +1,39 @@
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Go
+backend/bin/
+backend/tmp/
+*.test
+coverage.out
+
+# Node / web
+node_modules/
+web/dist/
+web/build/
+web/.react-router/
+*.tsbuildinfo
+
+# Flutter
+mobile/.dart_tool/
+mobile/build/
+mobile/.flutter-plugins*
+mobile/ios/Pods/
+mobile/android/.gradle/
+
+# Deploy
+nginx/ssl/live/
+nginx/ssl/archive/
+nginx/backups/

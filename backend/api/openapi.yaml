@@ -1,0 +1,1337 @@
+openapi: 3.1.0
+info:
+  title: Job Vacancy API
+  version: 0.5.0
+  description: |
+    Shared contract for the web (React) and mobile (Flutter) clients.
+
+    **Realtime.** POST /ws/ticket, then open `wss://…/api/v1/ws?ticket=…`. Server events:
+    `ready`, `message.new`, `message.read`, `message.deleted`, `typing`, `presence`,
+    `presence.snapshot`, `notification.new`, `pong`, `error` — each `{"type", "data"}`.
+    Client frames: `{"type":"ping"}`, `{"type":"typing","conversation_id"}`,
+    `{"type":"read","conversation_id","message_id"}`, `{"type":"watch_presence","user_ids":[…]}`.
+    Events are not buffered: after reconnecting, fetch `/conversations/{id}/messages?after=<last id>`.
+
+    **Uploads.** POST /files → multipart POST to `upload.url` with every `upload.fields`
+    entry followed by the `file` field → POST /files/{id}/complete → use the file id.
+
+    **Envelope.** Success: `{"data": ...}` (lists add `"meta"`). Failure:
+    `{"error": {"code", "message", "fields"?, "retry_after"?}}`. `code` is stable; clients
+    translate it into uz / uz-Cyrl / ru / en. `fields` maps a JSON field to the failing
+    rule (`required`, `email`, `min=8`, `password`, `oneof=...`).
+
+    **Tokens.** The access token (JWT, 15 min) goes in `Authorization: Bearer`.
+    Web: the refresh token lives in the HttpOnly cookie `jv_refresh` (path `/api/v1/auth`).
+    Mobile: send `X-Client-Type: android|ios`; the refresh token is returned in and read
+    from the JSON body. Refresh tokens rotate on every use.
+servers:
+  - url: https://jobvacancy.uz/api/v1
+  - url: http://localhost:8090/api/v1
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+    VacancyRef: { name: vacancy, in: path, required: true, schema: { type: string }, description: "uuid (writes) or slug (reads)" }
+    ResumeRef: { name: resume, in: path, required: true, schema: { type: string, format: uuid } }
+    ApplicationRef: { name: application, in: path, required: true, schema: { type: string, format: uuid } }
+    CompanyRef: { name: company, in: path, required: true, schema: { type: string }, description: uuid or slug }
+    ClientType:
+      name: X-Client-Type
+      in: header
+      schema: { type: string, enum: [web, android, ios], default: web }
+  schemas:
+    Locale: { type: string, enum: [uz, uz-Cyrl, ru, en] }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string, examples: [invalid_credentials] }
+            message: { type: string }
+            fields: { type: object, additionalProperties: { type: string } }
+            retry_after: { type: integer, description: seconds }
+    User:
+      type: object
+      required: [id, email, email_verified, phone, phone_verified, full_name, avatar_url, role, locale, has_password, google_linked, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: [string, "null"], format: email }
+        email_verified: { type: boolean }
+        phone: { type: [string, "null"], examples: ["+998901234567"] }
+        phone_verified: { type: boolean }
+        full_name: { type: string }
+        avatar_url: { type: [string, "null"] }
+        role: { type: string, enum: [seeker, employer, admin] }
+        locale: { $ref: "#/components/schemas/Locale" }
+        has_password: { type: boolean }
+        google_linked: { type: boolean }
+        created_at: { type: string, format: date-time }
+    Auth:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            user: { $ref: "#/components/schemas/User" }
+            access_token: { type: string }
+            access_token_expires_at: { type: string, format: date-time }
+            refresh_token: { type: string, description: mobile clients only }
+            refresh_token_expires_at: { type: string, format: date-time, description: mobile clients only }
+            is_new_user: { type: boolean }
+    UserResponse:
+      type: object
+      properties: { data: { $ref: "#/components/schemas/User" } }
+    Session:
+      type: object
+      required: [id, platform, user_agent, created_at, last_used_at, current]
+      properties:
+        id: { type: string, format: uuid }
+        platform: { type: string, enum: [web, android, ios] }
+        user_agent: { type: string }
+        ip: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        current: { type: boolean }
+    Code:
+      type: object
+      required: [code]
+      properties: { code: { type: string, pattern: "^[0-9]{6}$" } }
+    Names:
+      type: object
+      required: [uz, uz-Cyrl, ru, en]
+      description: Localized names; clients pick by UI language.
+      properties: { uz: { type: string }, uz-Cyrl: { type: string }, ru: { type: string }, en: { type: string } }
+    Category:
+      type: object
+      required: [id, slug, name]
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        name: { $ref: "#/components/schemas/Names" }
+        icon: { type: string, description: lucide icon name }
+        children: { type: array, items: { $ref: "#/components/schemas/Category" } }
+    Region:
+      type: object
+      required: [id, slug, kind, name]
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        kind: { type: string, enum: [region, city, district] }
+        name: { $ref: "#/components/schemas/Names" }
+        children: { type: array, items: { $ref: "#/components/schemas/Region" } }
+    Skill:
+      type: object
+      required: [id, name]
+      properties: { id: { type: integer }, name: { type: string } }
+    CompanyInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 120 }
+        industry_id: { type: integer, description: category id }
+        size: { type: string, enum: ["1-10", "11-50", "51-200", "201-500", "501-1000", "1000+"] }
+        website: { type: string, description: "scheme optional: najottalim.uz → https://najottalim.uz" }
+        email: { type: string, format: email }
+        phone: { type: string }
+        region_id: { type: integer, description: top-level region }
+        address: { type: string, maxLength: 300 }
+        about: { type: string, maxLength: 5000 }
+        founded_year: { type: integer, minimum: 1800, maximum: 2100 }
+    Company:
+      allOf:
+        - $ref: "#/components/schemas/CompanyInput"
+        - type: object
+          required: [id, slug, name, logo_url, cover_url, verified, created_at, about]
+          properties:
+            id: { type: string, format: uuid }
+            slug: { type: string }
+            logo_url: { type: [string, "null"] }
+            cover_url: { type: [string, "null"] }
+            verified: { type: boolean }
+            created_at: { type: string, format: date-time }
+            open_vacancies: { type: integer, description: public profile only }
+            my_role: { type: string, enum: [owner, admin, recruiter], description: "/me/companies only" }
+    CompanySummary:
+      type: object
+      required: [id, name, slug, logo_url, verified]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        slug: { type: string }
+        logo_url: { type: [string, "null"] }
+        verified: { type: boolean }
+    VacancyInput:
+      type: object
+      required: [title, description, category_id, region_id, employment_type, work_format, experience, schedule]
+      properties:
+        title: { type: string, minLength: 3, maxLength: 150 }
+        description: { type: string, minLength: 30, maxLength: 10000, description: Markdown }
+        category_id: { type: integer }
+        region_id: { type: integer, description: top-level region }
+        district_id: { type: integer, description: must belong to region_id }
+        address: { type: string, maxLength: 300 }
+        salary_min: { type: integer, format: int64 }
+        salary_max: { type: integer, format: int64 }
+        currency: { type: string, enum: [UZS, USD], default: UZS }
+        employment_type: { $ref: "#/components/schemas/EmploymentType" }
+        work_format: { $ref: "#/components/schemas/WorkFormat" }
+        experience: { $ref: "#/components/schemas/Experience" }
+        schedule: { $ref: "#/components/schemas/Schedule" }
+        skills: { type: array, maxItems: 20, items: { type: string, maxLength: 50 }, description: free-text names; unknown ones are created }
+    EmploymentType: { type: string, enum: [full_time, part_time, project, internship, volunteer] }
+    WorkFormat: { type: string, enum: [office, remote, hybrid] }
+    Experience: { type: string, enum: [none, 1_3, 3_6, 6_plus] }
+    Schedule: { type: string, enum: [full_day, shift, flexible, rotation] }
+    VacancyStatus: { type: string, enum: [draft, moderation, published, rejected, archived, expired] }
+    VacancyCard:
+      type: object
+      required: [id, slug, title, company, category_id, region_id, district_id, salary, employment_type, work_format, experience, schedule, skills, is_featured, status, views_count, applications_count, published_at, expires_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string }
+        title: { type: string }
+        company: { $ref: "#/components/schemas/CompanySummary" }
+        category_id: { type: integer }
+        region_id: { type: integer }
+        district_id: { type: [integer, "null"] }
+        salary:
+          type: [object, "null"]
+          properties: { min: { type: [integer, "null"] }, max: { type: [integer, "null"] }, currency: { type: string } }
+        employment_type: { $ref: "#/components/schemas/EmploymentType" }
+        work_format: { $ref: "#/components/schemas/WorkFormat" }
+        experience: { $ref: "#/components/schemas/Experience" }
+        schedule: { $ref: "#/components/schemas/Schedule" }
+        skills: { type: array, items: { $ref: "#/components/schemas/Skill" } }
+        is_featured: { type: boolean }
+        status: { $ref: "#/components/schemas/VacancyStatus" }
+        views_count: { type: integer, description: updated about once a minute }
+        applications_count: { type: integer }
+        published_at: { type: [string, "null"], format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    VacancyDetail:
+      allOf:
+        - $ref: "#/components/schemas/VacancyCard"
+        - type: object
+          required: [description, address, updated_at, can_edit]
+          properties:
+            description: { type: string }
+            address: { type: [string, "null"] }
+            updated_at: { type: string, format: date-time }
+            can_edit: { type: boolean }
+            reject_reason: { type: string, description: company members only }
+            submitted_at: { type: string, format: date-time, description: company members only }
+    VacancyResponse:
+      type: object
+      properties: { data: { $ref: "#/components/schemas/VacancyDetail" } }
+    VacancyPage:
+      type: object
+      properties:
+        data: { type: array, items: { $ref: "#/components/schemas/VacancyCard" } }
+        meta:
+          type: object
+          properties:
+            next_cursor: { type: [string, "null"], description: "pass as ?cursor= for the next page" }
+            total: { type: integer, description: "first page of /vacancies only; capped at 1000" }
+            total_capped: { type: boolean, description: "true → show \"1000+\"" }
+            fuzzy: { type: boolean, description: results are typo-tolerant matches }
+    ResumeInput:
+      type: object
+      required: [title]
+      description: The whole resume; PUT replaces every section.
+      properties:
+        title: { type: string, minLength: 2, maxLength: 150, description: desired position }
+        about: { type: string, maxLength: 5000 }
+        category_id: { type: integer }
+        region_id: { type: integer }
+        relocate: { type: boolean }
+        desired_salary: { type: integer, format: int64 }
+        currency: { type: string, enum: [UZS, USD] }
+        employment_types: { type: array, items: { $ref: "#/components/schemas/EmploymentType" } }
+        work_formats: { type: array, items: { $ref: "#/components/schemas/WorkFormat" } }
+        visibility: { $ref: "#/components/schemas/ResumeVisibility" }
+        experiences: { type: array, maxItems: 20, description: most recent first, items: { $ref: "#/components/schemas/ResumeExperience" } }
+        educations: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/ResumeEducation" } }
+        skills: { type: array, maxItems: 30, items: { type: string } }
+        languages: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/ResumeLanguage" } }
+    ResumeExperience:
+      type: object
+      required: [company, position, start]
+      properties:
+        company: { type: string }
+        position: { type: string }
+        start: { type: string, pattern: "^[0-9]{4}-[0-9]{2}$", examples: ["2021-06"] }
+        end: { type: [string, "null"], description: "null = current job" }
+        description: { type: string, maxLength: 3000 }
+    ResumeEducation:
+      type: object
+      required: [institution, level]
+      properties:
+        institution: { type: string }
+        level: { type: string, enum: [secondary, vocational, incomplete_higher, bachelor, master, phd] }
+        field: { type: string }
+        start_year: { type: integer }
+        end_year: { type: integer }
+    ResumeLanguage:
+      type: object
+      required: [language, level]
+      properties:
+        language: { type: string, description: "ISO 639 code: uz, ru, en…" }
+        level: { type: string, enum: [a1, a2, b1, b2, c1, c2, native] }
+    ResumeVisibility:
+      type: string
+      enum: [public, applied_only, hidden]
+      description: "public: in candidate search · applied_only: only companies you applied to · hidden: only you (and companies you send it to)"
+    ResumeCard:
+      type: object
+      required: [id, title, person, category_id, region_id, relocate, experience_months, desired_salary, last_job, skills, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        person: { type: object, properties: { id: { type: string, format: uuid }, full_name: { type: string }, avatar_url: { type: [string, "null"] } } }
+        category_id: { type: [integer, "null"] }
+        region_id: { type: [integer, "null"] }
+        relocate: { type: boolean }
+        experience_months: { type: integer, description: overlapping jobs counted once }
+        desired_salary: { type: [object, "null"], properties: { amount: { type: integer }, currency: { type: string } } }
+        last_job: { type: [object, "null"], properties: { position: { type: string }, company: { type: string }, current: { type: boolean } } }
+        skills: { type: array, items: { $ref: "#/components/schemas/Skill" } }
+        visibility: { $ref: "#/components/schemas/ResumeVisibility" }
+        updated_at: { type: string, format: date-time }
+    ResumeDetail:
+      allOf:
+        - $ref: "#/components/schemas/ResumeCard"
+        - type: object
+          properties:
+            about: { type: string }
+            employment_types: { type: array, items: { type: string } }
+            work_formats: { type: array, items: { type: string } }
+            experiences: { type: array, items: { $ref: "#/components/schemas/ResumeExperience" } }
+            educations: { type: array, items: { $ref: "#/components/schemas/ResumeEducation" } }
+            languages: { type: array, items: { $ref: "#/components/schemas/ResumeLanguage" } }
+            contacts:
+              type: [object, "null"]
+              description: owner, admins, and companies the seeker applied to / was invited by
+              properties: { email: { type: [string, "null"] }, phone: { type: [string, "null"] } }
+            is_owner: { type: boolean }
+    ApplicationStatus: { type: string, enum: [sent, viewed, invited, interview, hired, rejected, withdrawn] }
+    Application:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        vacancy_id: { type: string, format: uuid }
+        resume_id: { type: string, format: uuid }
+        status: { $ref: "#/components/schemas/ApplicationStatus" }
+        source: { type: string, enum: [apply, invite] }
+        cover_letter: { type: string }
+        viewed_at: { type: [string, "null"], format: date-time }
+        status_changed_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        vacancy: { $ref: "#/components/schemas/VacancyCard" }
+        candidate: { type: object, description: employer only }
+        employer_note: { type: string, description: employer only }
+        events:
+          type: array
+          items:
+            type: object
+            properties:
+              from: { type: [string, "null"] }
+              to: { type: string }
+              note: { type: string, description: "employer: always; seeker: only the invitation message" }
+              at: { type: string, format: date-time }
+    ApplicationResponse:
+      type: object
+      properties: { data: { $ref: "#/components/schemas/Application" } }
+    ResumeResponse:
+      type: object
+      properties: { data: { $ref: "#/components/schemas/ResumeDetail" } }
+  responses:
+    Error:
+      description: Error
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    Auth:
+      description: Signed in
+      content: { application/json: { schema: { $ref: "#/components/schemas/Auth" } } }
+    User:
+      description: Current user
+      content: { application/json: { schema: { $ref: "#/components/schemas/UserResponse" } } }
+    NoContent: { description: Done }
+    Resume:
+      description: Resume
+      content: { application/json: { schema: { $ref: "#/components/schemas/ResumeResponse" } } }
+    Application:
+      description: Application
+      content: { application/json: { schema: { $ref: "#/components/schemas/ApplicationResponse" } } }
+    Vacancy:
+      description: Vacancy
+      content: { application/json: { schema: { $ref: "#/components/schemas/VacancyResponse" } } }
+    VacancyPage:
+      description: Page of vacancies
+      content: { application/json: { schema: { $ref: "#/components/schemas/VacancyPage" } } }
+    Company:
+      description: Company
+      content:
+        application/json:
+          schema: { type: object, properties: { data: { $ref: "#/components/schemas/Company" } } }
+
+paths:
+  /auth/register:
+    post:
+      tags: [auth]
+      summary: Sign up with email and password (sends a verification code by email)
+      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, full_name, role]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8, maxLength: 72, description: at least one letter and one digit }
+                full_name: { type: string, minLength: 2, maxLength: 100 }
+                role: { type: string, enum: [seeker, employer] }
+                locale: { $ref: "#/components/schemas/Locale" }
+      responses:
+        "201": { $ref: "#/components/responses/Auth" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Sign in with email and password
+      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/google:
+    post:
+      tags: [auth]
+      summary: Sign in with a Google ID token (creates the account on first use)
+      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id_token]
+              properties:
+                id_token: { type: string }
+                role: { type: string, enum: [seeker, employer], description: used only for new accounts }
+                locale: { $ref: "#/components/schemas/Locale" }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the refresh token and get a new access token
+      description: |
+        `refresh_race` (401) means a parallel request already rotated the token: retry once.
+        Reusing an old refresh token later revokes the whole session.
+      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { refresh_token: { type: string, description: mobile only } }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "401": { $ref: "#/components/responses/Error" }
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the session that owns the given refresh token
+      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /auth/logout-all:
+    post:
+      tags: [auth]
+      security: [{ bearer: [] }]
+      summary: Revoke every session of the current user
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /auth/password/forgot:
+    post:
+      tags: [auth]
+      summary: Email a password reset code (always 204, never reveals if the email exists)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [email], properties: { email: { type: string, format: email } } }
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /auth/password/reset:
+    post:
+      tags: [auth]
+      summary: Set a new password with the emailed code; signs out all sessions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, code, password]
+              properties:
+                email: { type: string, format: email }
+                code: { type: string, pattern: "^[0-9]{6}$" }
+                password: { type: string, minLength: 8, maxLength: 72 }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/Error" }
+  /auth/email/send-code:
+    post:
+      tags: [auth]
+      security: [{ bearer: [] }]
+      summary: (Re)send the email verification code (60 s cooldown)
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/email/verify:
+    post:
+      tags: [auth]
+      security: [{ bearer: [] }]
+      summary: Confirm the email with the 6-digit code
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Code" } } } }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+        "400": { $ref: "#/components/responses/Error" }
+  /auth/phone/send-code:
+    post:
+      tags: [auth]
+      security: [{ bearer: [] }]
+      summary: Send a phone verification code through Telegram ("Verification Codes" chat)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [phone], properties: { phone: { type: string, examples: ["+998 90 123 45 67"] } } }
+      responses:
+        "202":
+          description: Code sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      phone: { type: string, description: normalized E.164 }
+                      channel: { type: string, const: telegram }
+                      expires_in: { type: integer, description: seconds }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /auth/phone/verify:
+    post:
+      tags: [auth]
+      security: [{ bearer: [] }]
+      summary: Confirm the phone number with the code from Telegram
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/Code" } } } }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+        "400": { $ref: "#/components/responses/Error" }
+  /me:
+    get:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Current user
+      responses: { "200": { $ref: "#/components/responses/User" } }
+    patch:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Update name or language
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                full_name: { type: string, minLength: 2, maxLength: 100 }
+                locale: { $ref: "#/components/schemas/Locale" }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+        "422": { $ref: "#/components/responses/Error" }
+  /me/password:
+    put:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Change password (signs out other sessions); Google-only accounts may omit current_password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string, minLength: 8, maxLength: 72 }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/Error" }
+  /me/sessions:
+    get:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Active sessions (devices)
+      responses:
+        "200":
+          description: Sessions, most recently used first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties: { data: { type: array, items: { $ref: "#/components/schemas/Session" } } }
+  /me/sessions/{id}:
+    delete:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Sign out one device
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /me/companies:
+    get:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Companies the current user belongs to (with my_role)
+      responses:
+        "200":
+          description: Companies
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Company" } } } }
+
+  /catalog/categories:
+    get:
+      tags: [catalog]
+      summary: Category tree (ETag + Cache-Control; send If-None-Match to get 304)
+      responses:
+        "200":
+          description: Tree
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Category" } } } }
+        "304": { description: Not modified }
+  /catalog/regions:
+    get:
+      tags: [catalog]
+      summary: Regions with their districts (ETag cached)
+      responses:
+        "200":
+          description: Tree
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Region" } } } }
+        "304": { description: Not modified }
+  /catalog/skills:
+    get:
+      tags: [catalog]
+      summary: Skill autocomplete; without q returns the most popular
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 50, default: 15 } }
+      responses:
+        "200":
+          description: Skills
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Skill" } } } }
+
+  /companies:
+    get:
+      tags: [companies]
+      summary: Company directory (verified first, then by open vacancies), 24 per page
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        "200":
+          description: Page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Company" } }
+                  meta: { type: object, properties: { next_page: { type: [integer, "null"] } } }
+    post:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Create a company (employer with a verified email or phone); caller becomes owner
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CompanyInput" } } } }
+      responses:
+        "201": { $ref: "#/components/responses/Company" }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /companies/{company}:
+    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+    get:
+      tags: [companies]
+      summary: Public company profile
+      responses:
+        "200": { $ref: "#/components/responses/Company" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Replace the profile (owner/admin). The slug never changes.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/CompanyInput" } } } }
+      responses:
+        "200": { $ref: "#/components/responses/Company" }
+        "403": { $ref: "#/components/responses/Error" }
+  /companies/{company}/members:
+    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+    get:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Team members (any member)
+      responses: { "200": { description: Members } }
+    post:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Add an existing employer account by email (owner/admin; only the owner grants admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties: { email: { type: string, format: email }, role: { type: string, enum: [admin, recruiter] } }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /companies/{company}/members/{user}:
+    delete:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Remove a member (owner/admin) or leave the company (yourself)
+      parameters:
+        - { $ref: "#/components/parameters/CompanyRef" }
+        - { name: user, in: path, required: true, schema: { type: string, format: uuid } }
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /companies/{company}/vacancies:
+    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+    get:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Employer dashboard — all of the company's vacancies, newest first
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/VacancyStatus" } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses: { "200": { $ref: "#/components/responses/VacancyPage" } }
+    post:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Create a draft vacancy (any member)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/VacancyInput" } } } }
+      responses:
+        "201": { $ref: "#/components/responses/Vacancy" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  /vacancies:
+    get:
+      tags: [vacancies]
+      summary: Search and list published vacancies (keyset pagination)
+      description: |
+        `q` matches across scripts and languages: "dasturchi", "дастурчи" and "Dasturchilar"
+        find the same vacancies; Russian inflections ("продажам") and Uzbek suffixes are
+        handled by prefix-stemming. Title, skills, company, category and region names are all
+        searchable (weighted in that order). If nothing matches exactly, a typo-tolerant title
+        search runs and `meta.fuzzy` is true ("showing similar results").
+
+        Ordering: `relevance` (default with `q`) or `newest` (default without `q`).
+        Multi-value filters accept repeated params or comma lists (work_format=remote,hybrid).
+        A parent category_id includes its subcategories. Results are cached ~30 s.
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, newest] } }
+        - { name: category_id, in: query, schema: { type: integer } }
+        - { name: region_id, in: query, schema: { type: integer } }
+        - { name: district_id, in: query, schema: { type: integer } }
+        - { name: company_id, in: query, schema: { type: string, format: uuid } }
+        - { name: employment_type, in: query, schema: { type: string } }
+        - { name: work_format, in: query, schema: { type: string } }
+        - { name: experience, in: query, schema: { type: string } }
+        - { name: schedule, in: query, schema: { type: string } }
+        - { name: salary_from, in: query, schema: { type: integer } }
+        - { name: currency, in: query, schema: { type: string, enum: [UZS, USD], default: UZS } }
+        - { name: with_salary, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200": { $ref: "#/components/responses/VacancyPage" }
+        "422": { $ref: "#/components/responses/Error" }
+  /vacancies/{vacancy}:
+    parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+    get:
+      tags: [vacancies]
+      summary: Vacancy page. Unpublished vacancies are 404 except for company members.
+      responses:
+        "200": { $ref: "#/components/responses/Vacancy" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Replace a vacancy. A live vacancy of an unverified company goes back to moderation.
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/VacancyInput" } } } }
+      responses: { "200": { $ref: "#/components/responses/Vacancy" } }
+    delete:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Delete a draft (other statuses must be archived)
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "409": { $ref: "#/components/responses/Error" }
+  /vacancies/{vacancy}/submit:
+    post:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Send to moderation (or publish directly for verified companies); also re-publishes archived/expired
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      responses:
+        "200": { $ref: "#/components/responses/Vacancy" }
+        "409": { $ref: "#/components/responses/Error" }
+  /vacancies/{vacancy}/archive:
+    post:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Close the vacancy
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      responses:
+        "200": { $ref: "#/components/responses/Vacancy" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /search/suggest:
+    get:
+      tags: [search]
+      summary: Search box autocomplete — vacancy titles (with counts), companies, skills
+      parameters: [{ name: q, in: query, required: true, schema: { type: string, maxLength: 100 } }]
+      responses:
+        "200":
+          description: Suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      titles:
+                        type: array
+                        items: { type: object, properties: { title: { type: string }, vacancies: { type: integer } } }
+                      companies: { type: array, items: { $ref: "#/components/schemas/CompanySummary" } }
+                      skills: { type: array, items: { $ref: "#/components/schemas/Skill" } }
+  /search/popular:
+    get:
+      tags: [search]
+      summary: Most searched queries of the last 7 days (for the home page)
+      responses:
+        "200":
+          description: Queries
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { type: string } } } }
+
+  /admin/vacancies/moderation:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Moderation queue, oldest submission first
+      parameters: [{ $ref: "#/components/parameters/Cursor" }, { $ref: "#/components/parameters/Limit" }]
+      responses: { "200": { $ref: "#/components/responses/VacancyPage" } }
+  /admin/vacancies/{vacancy}/approve:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Publish for 30 days
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      responses: { "200": { $ref: "#/components/responses/Vacancy" }, "409": { $ref: "#/components/responses/Error" } }
+  /admin/vacancies/{vacancy}/reject:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Reject with a reason shown to the employer
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 5, maxLength: 1000 } } }
+      responses: { "200": { $ref: "#/components/responses/Vacancy" }, "409": { $ref: "#/components/responses/Error" } }
+  /admin/companies/{company}/verification:
+    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Mark verified (badge + publishing without moderation)
+      responses: { "200": { $ref: "#/components/responses/Company" } }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Remove verification
+      responses: { "200": { $ref: "#/components/responses/Company" } }
+
+  /resumes:
+    get:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      summary: Candidate search (employers). Public resumes only; no contacts in results.
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, updated] } }
+        - { name: category_id, in: query, schema: { type: integer } }
+        - { name: region_id, in: query, schema: { type: integer } }
+        - { name: with_relocate, in: query, schema: { type: boolean }, description: also candidates willing to relocate }
+        - { name: experience, in: query, schema: { type: string }, description: "none,1_3,3_6,6_plus (comma list)" }
+        - { name: salary_to, in: query, schema: { type: integer } }
+        - { name: currency, in: query, schema: { type: string, enum: [UZS, USD] } }
+        - { name: employment_type, in: query, schema: { type: string } }
+        - { name: work_format, in: query, schema: { type: string } }
+        - { name: language, in: query, schema: { type: string } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses:
+        "200":
+          description: Page of candidates
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/ResumeCard" } }
+                  meta: { type: object }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      summary: Create a resume (seekers, max 5)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ResumeInput" } } } }
+      responses:
+        "201": { $ref: "#/components/responses/Resume" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /resumes/{resume}:
+    parameters: [{ $ref: "#/components/parameters/ResumeRef" }]
+    get:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      summary: A resume, subject to visibility rules (404 when not visible)
+      responses: { "200": { $ref: "#/components/responses/Resume" }, "404": { $ref: "#/components/responses/Error" } }
+    put:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      summary: Replace a resume (owner)
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ResumeInput" } } } }
+      responses: { "200": { $ref: "#/components/responses/Resume" } }
+    delete:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      summary: Delete (not allowed once sent with an application — hide it instead)
+      responses: { "204": { $ref: "#/components/responses/NoContent" }, "409": { $ref: "#/components/responses/Error" } }
+  /resumes/{resume}/visibility:
+    put:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      parameters: [{ $ref: "#/components/parameters/ResumeRef" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [visibility], properties: { visibility: { $ref: "#/components/schemas/ResumeVisibility" } } } } }
+      responses: { "200": { $ref: "#/components/responses/Resume" } }
+  /resumes/{resume}/pdf:
+    get:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      summary: Download as PDF (contacts only if the viewer may see them)
+      parameters:
+        - { $ref: "#/components/parameters/ResumeRef" }
+        - { name: lang, in: query, schema: { $ref: "#/components/schemas/Locale" } }
+      responses: { "200": { description: PDF, content: { application/pdf: {} } } }
+  /resumes/{resume}/invite:
+    post:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Invite the candidate to one of your company's published vacancies
+      parameters: [{ $ref: "#/components/parameters/ResumeRef" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [vacancy_id], properties: { vacancy_id: { type: string, format: uuid }, message: { type: string, maxLength: 2000 } } }
+      responses:
+        "201": { $ref: "#/components/responses/Application" }
+        "409": { $ref: "#/components/responses/Error" }
+  /me/resumes:
+    get:
+      tags: [resumes]
+      security: [{ bearer: [] }]
+      summary: My resumes
+      responses: { "200": { description: Resumes } }
+
+  /vacancies/{vacancy}/applications:
+    parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+    post:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Apply (seeker with verified email or phone)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [resume_id], properties: { resume_id: { type: string, format: uuid }, cover_letter: { type: string, maxLength: 3000 } } }
+      responses:
+        "201": { $ref: "#/components/responses/Application" }
+        "409": { $ref: "#/components/responses/Error" }
+    get:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Applications for a vacancy (company members), newest first
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ApplicationStatus" } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses: { "200": { description: Page of applications with candidate summaries } }
+  /vacancies/{vacancy}/applications/stats:
+    get:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Count per pipeline column (kanban header)
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      responses: { "200": { description: "{status: count}" } }
+  /applications/{application}:
+    get:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Application with history; the first employer view marks it "viewed"
+      parameters: [{ $ref: "#/components/parameters/ApplicationRef" }]
+      responses: { "200": { $ref: "#/components/responses/Application" }, "404": { $ref: "#/components/responses/Error" } }
+  /applications/{application}/status:
+    put:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Move the card (employer). Withdrawn applications can't be moved.
+      parameters: [{ $ref: "#/components/parameters/ApplicationRef" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [viewed, invited, interview, hired, rejected] }
+                note: { type: string, maxLength: 2000, description: internal to the hiring team }
+      responses: { "200": { $ref: "#/components/responses/Application" }, "409": { $ref: "#/components/responses/Error" } }
+  /applications/{application}/note:
+    put:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Private hiring-team note
+      parameters: [{ $ref: "#/components/parameters/ApplicationRef" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { note: { type: string, maxLength: 5000 } } } } } }
+      responses: { "200": { $ref: "#/components/responses/Application" } }
+  /applications/{application}/withdraw:
+    post:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: Withdraw (seeker)
+      parameters: [{ $ref: "#/components/parameters/ApplicationRef" }]
+      responses: { "200": { $ref: "#/components/responses/Application" }, "409": { $ref: "#/components/responses/Error" } }
+  /me/applications:
+    get:
+      tags: [applications]
+      security: [{ bearer: [] }]
+      summary: My applications with vacancy cards
+      parameters:
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ApplicationStatus" } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/Limit" }
+      responses: { "200": { description: Page } }
+
+  /vacancies/{vacancy}/save:
+    parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+    put:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Bookmark a published vacancy (idempotent)
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+    delete:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Remove bookmark
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /me/saved-vacancies:
+    get:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Bookmarked vacancies, most recent first
+      parameters: [{ $ref: "#/components/parameters/Cursor" }, { $ref: "#/components/parameters/Limit" }]
+      responses: { "200": { $ref: "#/components/responses/VacancyPage" } }
+  /me/saved-vacancies/ids:
+    get:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Ids of bookmarked vacancies (to mark cards in cached listings)
+      responses: { "200": { description: "{data: [uuid]}" } }
+
+  /files:
+    post:
+      tags: [files]
+      security: [{ bearer: [] }]
+      summary: Start an upload (returns a presigned POST; size and type are enforced by storage)
+      description: |
+        Limits: avatar / company_logo — jpeg, png, webp ≤ 5 MB (public URL);
+        chat_image — jpeg, png, webp, gif ≤ 10 MB; chat_voice — webm, ogg, m4a (audio/mp4), mp3, aac ≤ 5 MB;
+        chat_file — pdf, doc(x), xls(x), ppt(x), txt, zip, rar, jpeg, png ≤ 25 MB (private, signed URLs).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [purpose, content_type, size]
+              properties:
+                purpose: { type: string, enum: [avatar, company_logo, chat_image, chat_file, chat_voice] }
+                content_type: { type: string }
+                size: { type: integer }
+                name: { type: string }
+                meta: { type: object, additionalProperties: true, description: "{duration_ms} for voice, {width,height} for images" }
+      responses: { "201": { description: "{file, upload: {url, method, fields}}" }, "422": { $ref: "#/components/responses/Error" } }
+  /files/{file}/complete:
+    post:
+      tags: [files]
+      security: [{ bearer: [] }]
+      summary: Verify the uploaded bytes (type sniffing) and mark the file ready
+      parameters: [{ name: file, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { description: File with url }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /me/avatar:
+    put:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Set (file_id) or remove (null) the avatar
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { file_id: { type: [string, "null"], format: uuid } } } } } }
+      responses: { "200": { $ref: "#/components/responses/User" } }
+  /companies/{company}/logo:
+    put:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Set or remove the company logo (owner/admin)
+      parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { file_id: { type: [string, "null"], format: uuid } } } } } }
+      responses: { "200": { $ref: "#/components/responses/Company" } }
+
+  /me/notifications:
+    get:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      summary: In-app notifications, newest first
+      description: "Types: application.new, application.status, application.invited, vacancy.approved, vacancy.rejected, search.alert"
+      parameters:
+        - { name: unread, in: query, schema: { type: boolean } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 50 } }
+      responses: { "200": { description: Page } }
+  /me/notifications/unread-count:
+    get:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      summary: Badge count
+      responses: { "200": { description: "{unread}" } }
+  /me/notifications/read:
+    post:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      summary: Mark given ids (or all, if empty) as read
+      requestBody: { content: { application/json: { schema: { type: object, properties: { ids: { type: array, items: { type: integer } } } } } } }
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /me/notification-settings:
+    get:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      summary: Delivery channels (email, telegram) and whether Telegram is linked
+      responses: { "200": { description: "{email, telegram, telegram_linked, telegram_bot}" } }
+    put:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { email: { type: boolean }, telegram: { type: boolean } } } } } }
+      responses: { "200": { description: Settings } }
+  /me/telegram/link:
+    post:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      summary: Deep link (t.me/<bot>?start=<token>, 15 min) that connects the user's Telegram
+      responses: { "200": { description: "{url, expires_in}" } }
+  /me/telegram:
+    delete:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      summary: Disconnect Telegram
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /me/devices:
+    post:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      summary: Register a push token (FCM)
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [token, platform], properties: { token: { type: string }, platform: { type: string, enum: [android, ios, web] } } } } } }
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /me/devices/{token}:
+    delete:
+      tags: [notifications]
+      security: [{ bearer: [] }]
+      parameters: [{ name: token, in: path, required: true, schema: { type: string } }]
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /telegram/webhook:
+    post:
+      tags: [notifications]
+      summary: Telegram Bot API webhook (requires X-Telegram-Bot-Api-Secret-Token)
+      responses: { "200": { description: OK }, "401": { $ref: "#/components/responses/Error" } }
+
+  /ws/ticket:
+    post:
+      tags: [realtime]
+      security: [{ bearer: [] }]
+      summary: One-time WebSocket ticket (30 s)
+      responses: { "200": { description: "{ticket, expires_in}" } }
+  /ws:
+    get:
+      tags: [realtime]
+      summary: WebSocket endpoint
+      parameters: [{ name: ticket, in: query, required: true, schema: { type: string } }]
+      responses: { "101": { description: Switching protocols }, "401": { $ref: "#/components/responses/Error" } }
+  /ws/presence:
+    get:
+      tags: [realtime]
+      security: [{ bearer: [] }]
+      summary: Online status of up to 200 users
+      parameters: [{ name: ids, in: query, required: true, schema: { type: string }, description: comma-separated uuids }]
+      responses: { "200": { description: "[{user_id, online, last_seen_at}]" } }
+
+  /applications/{application}/conversation:
+    post:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      summary: Open (or create) the chat of an application — seeker or company member
+      parameters: [{ $ref: "#/components/parameters/ApplicationRef" }]
+      responses: { "200": { description: Conversation }, "404": { $ref: "#/components/responses/Error" } }
+  /conversations:
+    get:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      summary: My conversations, most recent first, with last message and unread count
+      parameters: [{ $ref: "#/components/parameters/Cursor" }, { $ref: "#/components/parameters/Limit" }]
+      responses: { "200": { description: Page } }
+  /conversations/unread-count:
+    get:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      summary: Number of conversations with unread messages
+      responses: { "200": { description: "{conversations}" } }
+  /conversations/{conversation}:
+    get:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      parameters: [{ name: conversation, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { "200": { description: "Conversation (side, unread, read_up_to of the other side)" } }
+  /conversations/{conversation}/messages:
+    parameters: [{ name: conversation, in: path, required: true, schema: { type: string, format: uuid } }]
+    get:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      summary: Messages newest first; ?before=<id> for history, ?after=<id> to catch up
+      parameters:
+        - { name: before, in: query, schema: { type: integer } }
+        - { name: after, in: query, schema: { type: integer } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 100 } }
+      responses: { "200": { description: "Messages; meta.next_before" } }
+    post:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      summary: Send (idempotent by client_id)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [client_id, kind]
+              properties:
+                client_id: { type: string, format: uuid }
+                kind: { type: string, enum: [text, image, file, voice, location] }
+                body: { type: string, maxLength: 4000, description: text, or caption (≤1000) }
+                file_id: { type: string, format: uuid, description: "image: chat_image, file: chat_file, voice: chat_voice" }
+                location: { type: object, properties: { lat: { type: number }, lng: { type: number }, name: { type: string } } }
+      responses: { "201": { description: Message }, "422": { $ref: "#/components/responses/Error" } }
+  /conversations/{conversation}/read:
+    post:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      summary: Move my read position forward (also available as a WebSocket frame)
+      parameters: [{ name: conversation, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [message_id], properties: { message_id: { type: integer } } } } } }
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+  /messages/{message}:
+    delete:
+      tags: [chat]
+      security: [{ bearer: [] }]
+      summary: Delete my message (within 48 h)
+      parameters: [{ name: message, in: path, required: true, schema: { type: integer } }]
+      responses: { "204": { $ref: "#/components/responses/NoContent" }, "409": { $ref: "#/components/responses/Error" } }
+
+  /me/saved-searches:
+    get:
+      tags: [search]
+      security: [{ bearer: [] }]
+      summary: Saved vacancy searches
+      responses: { "200": { description: List } }
+    post:
+      tags: [search]
+      security: [{ bearer: [] }]
+      summary: Save a search (params = /vacancies query string); alerts for new matches every 30 min
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name, params], properties: { name: { type: string }, params: { type: string, examples: ["q=dasturchi&region_id=1&work_format=remote"] }, notify: { type: boolean } } }
+      responses: { "201": { description: Saved search }, "409": { $ref: "#/components/responses/Error" } }
+  /me/saved-searches/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+    put:
+      tags: [search]
+      security: [{ bearer: [] }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { name: { type: string }, notify: { type: boolean } } } } } }
+      responses: { "200": { description: Saved search } }
+    delete:
+      tags: [search]
+      security: [{ bearer: [] }]
+      responses: { "204": { $ref: "#/components/responses/NoContent" } }

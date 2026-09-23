@@ -1,0 +1,41 @@
+name: web
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "backend/api/openapi.yaml", ".github/workflows/web.yml"]
+  pull_request:
+    paths: ["web/**", "backend/api/openapi.yaml", ".github/workflows/web.yml"]
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - name: API types match openapi.yaml
+        run: pnpm api:types && git diff --exit-code app/shared/api/schema.d.ts
+      - run: pnpm typecheck
+      - name: Every t() key exists in all 4 languages
+        run: node --experimental-strip-types --no-warnings test/i18n-keys.mjs | tee /dev/stderr | grep -q "all keys present"
+      - run: pnpm build
+        env: { NODE_ENV: production }
+      - name: Core bundle budget (react, router, root, CSS ≤ 120 KB gzip)
+        run: |
+          total=0
+          for f in build/client/assets/entry.client-*.js build/client/assets/root-*.{js,css} build/client/assets/components-*.js; do
+            total=$((total + $(gzip -9c "$f" | wc -c)))
+          done
+          echo "core bundle: $total bytes gzip"
+          test "$total" -le 120000
