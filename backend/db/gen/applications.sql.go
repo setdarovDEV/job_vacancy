@@ -135,6 +135,25 @@ func (q *Queries) GetApplication(ctx context.Context, id uuid.UUID) (Application
 	return i, err
 }
 
+const getVacancyNoticeInfo = `-- name: GetVacancyNoticeInfo :one
+SELECT v.title, c.name AS company_name
+FROM vacancies v JOIN companies c ON c.id = v.company_id
+WHERE v.id = $1
+`
+
+type GetVacancyNoticeInfoRow struct {
+	Title       string
+	CompanyName string
+}
+
+// What a notification about an application shows: the vacancy title and company name.
+func (q *Queries) GetVacancyNoticeInfo(ctx context.Context, id uuid.UUID) (GetVacancyNoticeInfoRow, error) {
+	row := q.db.QueryRow(ctx, getVacancyNoticeInfo, id)
+	var i GetVacancyNoticeInfoRow
+	err := row.Scan(&i.Title, &i.CompanyName)
+	return i, err
+}
+
 const incrementVacancyApplications = `-- name: IncrementVacancyApplications :exec
 UPDATE vacancies SET applications_count = applications_count + 1 WHERE id = $1
 `

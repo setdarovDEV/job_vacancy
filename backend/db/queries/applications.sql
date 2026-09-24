@@ -68,3 +68,9 @@ SELECT EXISTS (
     JOIN company_members m ON m.company_id = a.company_id
     WHERE a.resume_id = sqlc.arg(resume_id) AND m.user_id = sqlc.arg(member_id)
 );
+
+-- What a notification about an application shows: the vacancy title and company name.
+-- name: GetVacancyNoticeInfo :one
+SELECT v.title, c.name AS company_name
+FROM vacancies v JOIN companies c ON c.id = v.company_id
+WHERE v.id = $1;
