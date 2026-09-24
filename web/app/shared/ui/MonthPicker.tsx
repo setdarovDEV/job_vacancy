@@ -5,7 +5,8 @@ import { useLocale } from "../i18n/hooks";
 import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
 import { monthLabel, monthNames } from "../lib/format";
-import { placeUnder } from "./anchor";
+import { followAnchor, placeUnder } from "./anchor";
+import { popoverPanel } from "./Popover";
 
 type Props = {
   /** "month": value "YYYY-MM" (work experience). "year": value "YYYY" (studies, founding year). */
@@ -30,7 +31,8 @@ const PAGE = 12; // years per page in the year grid
 /**
  * Month or year picker drawn by us: `<input type="month">` is missing in Firefox and Safari
  * and looks different everywhere else. A 3×4 grid of months with year paging (click the
- * year to jump by years), or a grid of years. Arrow keys move, Enter picks, Escape closes.
+ * year to jump by years), or a grid of years. Arrow keys move, Enter picks, Escape closes
+ * (focus returns to the field). Same glass panel as Select and the other popovers.
  */
 export function MonthPicker({
   mode = "month", value, onChange, min, max, placeholder, required, disabled, className, id, ...aria
@@ -61,17 +63,10 @@ export function MonthPicker({
   const label = value ? (mode === "year" ? value : capitalize(monthLabel(value, locale, "long"))) : "";
 
   const place = useCallback(() => {
-    if (pop.current && trigger.current) placeUnder(pop.current, trigger.current, { width: 288, maxHeight: 420 });
+    // ~340px tall with the clear row; estimated until the grid is laid out.
+    if (pop.current && trigger.current) placeUnder(pop.current, trigger.current, { width: 296, maxHeight: 440, height: pop.current.scrollHeight || 340 });
   }, []);
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [open, place]);
+  useEffect(() => (open && pop.current ? followAnchor(pop.current, place) : undefined), [open, place]);
 
   // Roving focus inside the grid.
   useEffect(() => {
@@ -87,7 +82,7 @@ export function MonthPicker({
       setPageStart(pageOf(y));
       setView(mode === "year" ? "years" : "months");
       setFocus(mode === "year" ? y - pageOf(y) : value ? Number(value.slice(5, 7)) - 1 : Math.min(now.getMonth(), 11));
-      requestAnimationFrame(place);
+      place(); // exact now that it's laid out
     } else if (pop.current?.contains(document.activeElement) || document.activeElement === document.body) {
       trigger.current?.focus({ preventScroll: true });
     }
@@ -124,7 +119,11 @@ export function MonthPicker({
     else if (e.key === "End") { e.preventDefault(); setFocus(11); }
   };
 
-  const cell = "h-10 rounded-control text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:text-ink-3/50 disabled:hover:bg-transparent";
+  const cell =
+    "h-10 rounded-control text-md transition-[background-color,scale] duration-150 ease-spring outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-focus " +
+    "active:scale-[0.97] pointer-coarse:h-11 disabled:cursor-not-allowed disabled:text-ink-3/50 disabled:hover:bg-transparent";
+  const navBtn =
+    "grid size-9 place-items-center rounded-pill text-ink-2 transition-colors hover:bg-sunken hover:text-ink pointer-coarse:size-11 disabled:pointer-events-none disabled:opacity-30";
   const title = view === "months" ? String(year) : `${pageStart} – ${pageStart + PAGE - 1}`;
 
   return (
@@ -139,10 +138,12 @@ export function MonthPicker({
         disabled={disabled}
         popoverTarget={popId}
         className={cn(
-          "flex h-11 w-full items-center gap-2 rounded-control border border-line-strong bg-surface pl-3.5 pr-3 text-left text-[0.9375rem] text-ink outline-none",
-          "transition-[border-color,box-shadow] duration-150 hover:border-ink-3 focus-visible:border-lapis focus-visible:shadow-[0_0_0_4px_var(--lapis-soft)]",
-          "aria-[invalid=true]:border-anor disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-3 disabled:hover:border-line-strong",
-          open && "border-lapis shadow-[0_0_0_4px_var(--lapis-soft)]",
+          // Same box and focus treatment as Select and field-shell inputs.
+          "flex h-11 w-full items-center gap-2 rounded-control border border-line-strong bg-surface pl-3.5 pr-3 text-left text-md text-ink",
+          "transition-[border-color,box-shadow] duration-150 hover:border-ink-3 outline-none focus-visible:border-focus focus-visible:shadow-ring",
+          "aria-[invalid=true]:border-anor aria-[invalid=true]:focus-visible:shadow-ring-danger",
+          "disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-3 disabled:hover:border-line-strong",
+          open && "border-focus shadow-ring hover:border-focus",
         )}
       >
         <span className={cn("num min-w-0 flex-1 truncate", !label && "text-ink-3")}>{label || placeholder || (mode === "year" ? t("picker.chooseYear") : t("picker.chooseMonth"))}</span>
@@ -160,26 +161,27 @@ export function MonthPicker({
         popover="auto"
         role="dialog"
         aria-label={aria["aria-label"] ?? (mode === "year" ? t("picker.chooseYear") : t("picker.chooseMonth"))}
+        onBeforeToggle={(e) => e.newState === "open" && place()}
         onToggle={onToggle}
-        className="popover-panel select-panel fixed inset-auto m-0 overflow-y-auto rounded-panel border border-line bg-surface p-3 text-ink shadow-pop"
+        className={cn("popover-panel select-panel fixed inset-auto m-0 overflow-y-auto overscroll-contain", popoverPanel, "p-3")}
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <button type="button" onClick={() => step(-1)} disabled={!canStep(-1)} aria-label={view === "months" ? t("picker.prevYear") : t("picker.prevYears")}
-            className="grid size-9 place-items-center rounded-control text-ink-2 hover:bg-sunken hover:text-ink disabled:opacity-30">
-            <ChevronLeft className="size-4.5" />
+            className={navBtn}>
+            <ChevronLeft className="size-4.5" aria-hidden="true" />
           </button>
           {view === "months" ? (
             <button type="button" onClick={() => { setPageStart(pageOf(year)); setView("years"); setFocus(year - pageOf(year)); }}
               aria-label={t("picker.pickYear")}
-              className="num h-9 rounded-control px-3 font-display text-[0.9375rem] font-semibold tracking-[-0.01em] hover:bg-sunken">
+              className="num h-9 rounded-pill px-3 font-display text-md font-semibold tracking-snug transition-colors hover:bg-sunken pointer-coarse:h-11">
               {title}
             </button>
           ) : (
-            <span className="num font-display text-[0.9375rem] font-semibold tracking-[-0.01em]" aria-live="polite">{title}</span>
+            <span className="num font-display text-md font-semibold tracking-snug" aria-live="polite">{title}</span>
           )}
           <button type="button" onClick={() => step(1)} disabled={!canStep(1)} aria-label={view === "months" ? t("picker.nextYear") : t("picker.nextYears")}
-            className="grid size-9 place-items-center rounded-control text-ink-2 hover:bg-sunken hover:text-ink disabled:opacity-30">
-            <ChevronRight className="size-4.5" />
+            className={navBtn}>
+            <ChevronRight className="size-4.5" aria-hidden="true" />
           </button>
         </div>
 
@@ -191,7 +193,7 @@ export function MonthPicker({
                 return (
                   <button key={m} type="button" data-i={m} tabIndex={focus === m ? 0 : -1} disabled={monthOff(year, m)} aria-pressed={selected}
                     aria-label={capitalize(monthLabel(ym(year, m), locale, "long"))} onClick={() => pickMonth(m)}
-                    className={cn(cell, selected ? "bg-lapis font-semibold text-on-lapis" : "hover:bg-sunken", !selected && current && "ring-1 ring-inset ring-line-strong")}>
+                    className={cn(cell, selected ? "bg-lapis font-semibold text-on-lapis focus-visible:ring-on-lapis" : "hover:bg-sunken", !selected && current && "ring-1 ring-inset ring-line-strong")}>
                     {capitalize(n)}
                   </button>
                 );
@@ -201,7 +203,7 @@ export function MonthPicker({
                 return (
                   <button key={y} type="button" data-i={i} tabIndex={focus === i ? 0 : -1} disabled={yearOff(y)} aria-pressed={selected}
                     onClick={() => pickYear(y)}
-                    className={cn(cell, "num", selected ? "bg-lapis font-semibold text-on-lapis" : "hover:bg-sunken", !selected && y === thisYear && "ring-1 ring-inset ring-line-strong")}>
+                    className={cn(cell, "num", selected ? "bg-lapis font-semibold text-on-lapis focus-visible:ring-on-lapis" : "hover:bg-sunken", !selected && y === thisYear && "ring-1 ring-inset ring-line-strong")}>
                     {y}
                   </button>
                 );
@@ -210,7 +212,7 @@ export function MonthPicker({
 
         {value && !required && (
           <div className="mt-2 border-t border-line pt-2">
-            <button type="button" onClick={() => { onChange(""); close(); }} className="h-9 w-full rounded-control text-sm text-ink-2 hover:bg-sunken hover:text-ink">
+            <button type="button" onClick={() => { onChange(""); close(); }} className="h-10 w-full rounded-control text-md text-ink-2 transition-colors hover:bg-sunken hover:text-ink pointer-coarse:h-11">
               {t("common.clear")}
             </button>
           </div>

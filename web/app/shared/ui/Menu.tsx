@@ -3,20 +3,30 @@ import { Check } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "../lib/cn";
+import { popoverItem, popoverPanel } from "./Popover";
 
 export const MenuRoot = M.Root;
 export const MenuTrigger = M.Trigger;
 
-const panel =
-  "anim-pop z-50 min-w-48 rounded-panel border border-line bg-surface p-1.5 shadow-pop outline-none";
-const item =
-  "flex h-10 cursor-pointer select-none items-center gap-2.5 rounded-[0.625rem] px-2.5 text-sm text-ink outline-none " +
-  "data-[highlighted]:bg-sunken data-[disabled]:pointer-events-none data-[disabled]:opacity-50";
+// Same glass panel and rows as the native Popover; Radix adds roving focus, typeahead and
+// submenus for menus that need real menu keyboard semantics.
+const panel = cn(
+  popoverPanel,
+  "anim-pop z-50 min-w-48 overflow-y-auto overscroll-contain",
+  "max-h-(--radix-dropdown-menu-content-available-height) origin-(--radix-dropdown-menu-content-transform-origin)",
+);
+const item = cn(
+  popoverItem,
+  "data-[highlighted]:bg-sunken data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+);
+const tones = { default: "", danger: "text-anor-ink data-[highlighted]:bg-anor-soft" } as const;
 
-export function MenuContent({ children, align = "end" }: { children: ReactNode; align?: "start" | "end" | "center" }) {
+export function MenuContent({
+  children, align = "end", side, className,
+}: { children: ReactNode; align?: "start" | "end" | "center"; side?: "top" | "bottom"; className?: string }) {
   return (
     <M.Portal>
-      <M.Content align={align} sideOffset={8} className={panel}>
+      <M.Content align={align} side={side} sideOffset={8} collisionPadding={8} className={cn(panel, className)}>
         {children}
       </M.Content>
     </M.Portal>
@@ -24,16 +34,25 @@ export function MenuContent({ children, align = "end" }: { children: ReactNode; 
 }
 
 export function MenuItem({
-  icon, children, onSelect, className, asChild,
-}: { icon?: ReactNode; children: ReactNode; onSelect?: () => void; className?: string; asChild?: boolean }) {
+  icon, children, onSelect, className, asChild, tone = "default", disabled,
+}: {
+  icon?: ReactNode;
+  children: ReactNode;
+  onSelect?: () => void;
+  className?: string;
+  asChild?: boolean;
+  /** "danger" for destructive rows (delete, withdraw). */
+  tone?: keyof typeof tones;
+  disabled?: boolean;
+}) {
   if (asChild) {
     // e.g. a <Link>: keeps arrow-key navigation and typeahead inside the menu
-    return <M.Item asChild onSelect={onSelect} className={cn(item, className)}>{children}</M.Item>;
+    return <M.Item asChild disabled={disabled} onSelect={onSelect} className={cn(item, tones[tone], className)}>{children}</M.Item>;
   }
   return (
-    <M.Item onSelect={onSelect} className={cn(item, className)}>
-      {icon && <span className="flex text-ink-3">{icon}</span>}
-      {children}
+    <M.Item disabled={disabled} onSelect={onSelect} className={cn(item, tones[tone], className)}>
+      {icon && <span className={cn("flex", tone === "danger" ? "text-anor-ink" : "text-ink-3")} aria-hidden="true">{icon}</span>}
+      <span className="min-w-0 flex-1 break-words">{children}</span>
     </M.Item>
   );
 }
@@ -50,18 +69,18 @@ export function MenuRadioGroup<T extends string>({
 
 export function MenuRadioItem({ value, icon, children }: { value: string; icon?: ReactNode; children: ReactNode }) {
   return (
-    <M.RadioItem value={value} className={item}>
-      {icon && <span className="flex text-ink-3">{icon}</span>}
-      <span className="flex-1">{children}</span>
+    <M.RadioItem value={value} className={cn(item, "data-[state=checked]:font-medium")}>
+      {icon && <span className="flex text-ink-3" aria-hidden="true">{icon}</span>}
+      <span className="min-w-0 flex-1 break-words">{children}</span>
       <M.ItemIndicator>
-        <Check className="size-4 text-lapis" strokeWidth={2.5} />
+        <Check className="size-4 text-lapis" strokeWidth={2.5} aria-hidden="true" />
       </M.ItemIndicator>
     </M.RadioItem>
   );
 }
 
 export function MenuLabel({ children }: { children: ReactNode }) {
-  return <M.Label className="px-2.5 pb-1 pt-1.5 text-xs text-ink-3">{children}</M.Label>;
+  return <M.Label className="px-3 pb-1 pt-1.5 text-xs font-medium text-ink-3">{children}</M.Label>;
 }
 
 export function MenuSeparator() {

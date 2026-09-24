@@ -1,38 +1,57 @@
+import { CircleAlert, CircleCheck } from "lucide-react";
 import {
-  cloneElement, forwardRef, isValidElement, useId,
+  cloneElement, forwardRef, isValidElement, useId, useState,
   type InputHTMLAttributes, type ReactElement, type ReactNode, type TextareaHTMLAttributes,
 } from "react";
 
+import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
+import { groupDigits } from "../lib/format";
 
-const control =
-  "w-full rounded-control border border-line-strong bg-surface text-ink placeholder:text-ink-3 transition-[border-color,box-shadow] duration-150 " +
-  "outline-none focus:border-lapis focus:shadow-[0_0_0_4px_var(--lapis-soft)] " +
-  "disabled:cursor-not-allowed disabled:bg-sunken disabled:text-ink-3 " +
-  "aria-[invalid=true]:border-anor aria-[invalid=true]:focus:shadow-[0_0_0_4px_var(--anor-soft)]";
+/**
+ * The box every text-like control sits in. `field-shell` (app.css) owns border, hover, focus ring
+ * and the invalid state (it reacts to an aria-invalid control inside), so controls stay bare.
+ */
+export const fieldShell =
+  "field-shell text-ink has-disabled:cursor-not-allowed has-disabled:bg-sunken has-disabled:opacity-60";
+
+/** The bare control inside a field-shell: transparent, no own outline (the shell shows focus). */
+export const fieldControl =
+  "min-w-0 bg-transparent text-ink outline-hidden placeholder:text-ink-3 disabled:cursor-not-allowed";
+
+const heights = { md: "h-11 text-md", lg: "h-13 text-base" } as const;
+
+const joinIds = (...ids: (string | undefined | false)[]) => ids.filter(Boolean).join(" ") || undefined;
+
+type FieldChildProps = { id?: string; "aria-invalid"?: boolean | "true" | "false"; "aria-describedby"?: string };
 
 type FieldProps = {
   label?: ReactNode;
   hint?: ReactNode;
   error?: ReactNode;
   optional?: string; // e.g. t("common.optional")
+  /** Positive confirmation under the control (e.g. "Available"), shown when there's no error or hint. */
+  success?: ReactNode;
   className?: string;
-  children: ReactElement<{ id?: string; "aria-invalid"?: boolean; "aria-describedby"?: string }>;
+  children: ReactElement<FieldChildProps>;
 };
 
-/** Label + control + hint/error, wired together for screen readers. */
-export function Field({ label, hint, error, optional, className, children }: FieldProps) {
-  const id = useId();
+/** Label + control + hint/error, wired together for screen readers. An error replaces the hint. */
+export function Field({ label, hint, error, optional, success, className, children }: FieldProps) {
+  const genId = useId();
+  const child = isValidElement(children) ? children : null;
+  const id = child?.props.id ?? genId;
   const msgId = `${id}-msg`;
-  const control = isValidElement(children)
-    ? cloneElement(children, {
+  const hasMessage = Boolean(error || hint || success);
+  const control = child
+    ? cloneElement(child, {
         id,
-        "aria-invalid": error ? true : undefined,
-        "aria-describedby": error || hint ? msgId : undefined,
+        "aria-invalid": error ? true : child.props["aria-invalid"],
+        "aria-describedby": joinIds(child.props["aria-describedby"], hasMessage && msgId),
       })
     : children;
   return (
-    <div className={cn("flex flex-col gap-1.5", className)}>
+    <div className={cn("flex min-w-0 flex-col gap-1.5", className)}>
       {label && (
         <label htmlFor={id} className="text-sm font-medium text-ink">
           {label}
@@ -40,48 +59,101 @@ export function Field({ label, hint, error, optional, className, children }: Fie
         </label>
       )}
       {control}
-      {(error || hint) && (
-        <p id={msgId} className={cn("text-xs", error ? "text-anor-ink" : "text-ink-3")} role={error ? "alert" : undefined}>
-          {error || hint}
+      {error ? (
+        <p id={msgId} role="alert" className="anim-fade flex items-start gap-1.5 text-sm text-anor-ink">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{error}</span>
         </p>
-      )}
+      ) : hint ? (
+        <p id={msgId} className="break-words text-sm text-ink-2">{hint}</p>
+      ) : success ? (
+        <p id={msgId} className="anim-fade flex items-start gap-1.5 text-sm text-firuza-ink">
+          <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+          <span className="min-w-0 break-words">{success}</span>
+        </p>
+      ) : null}
     </div>
   );
 }
 
 type InputProps = InputHTMLAttributes<HTMLInputElement> & {
+  /** Decorative icon/text inside the box, before the text (clicks pass through to the input). */
   leading?: ReactNode;
+  /** Interactive slot after the text (a show-password toggle, a unit, a clear button). */
   trailing?: ReactNode;
   inputSize?: "md" | "lg";
+  /** Classes for the <input> itself; `className` styles the field-shell box around it. */
+  inputClassName?: string;
 };
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { leading, trailing, inputSize = "md", className, ...props },
+  { leading, trailing, inputSize = "md", className, inputClassName, ...props },
   ref,
 ) {
-  const h = inputSize === "lg" ? "h-13 text-base" : "h-11 text-[0.9375rem]";
-  if (!leading && !trailing) {
-    return <input ref={ref} className={cn(control, h, "px-3.5", className)} {...props} />;
-  }
   return (
-    <div className={cn("relative flex items-center", className)}>
+    <div className={cn(fieldShell, "relative flex items-center", heights[inputSize], className)}>
       {leading && <span className="pointer-events-none absolute left-3.5 flex text-ink-3">{leading}</span>}
-      <input ref={ref} className={cn(control, h, leading ? "pl-10.5" : "pl-3.5", trailing ? "pr-11" : "pr-3.5")} {...props} />
-      {trailing && <span className="absolute right-1.5 flex">{trailing}</span>}
+      <input
+        ref={ref}
+        className={cn(fieldControl, "h-full flex-1 rounded-control px-3.5", leading && "pl-10.5", trailing && "pr-1", inputClassName)}
+        {...props}
+      />
+      {trailing && <span className="flex h-full shrink-0 items-center pr-1">{trailing}</span>}
     </div>
   );
 });
 
-export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  function Textarea({ className, rows = 4, ...props }, ref) {
-    // field-sizing grows the box with its content where supported; rows is the fallback.
-    return (
+type TextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  /** Classes for the <textarea> itself; `className` styles the field-shell box around it. */
+  textareaClassName?: string;
+  /** "12 / 3 000" counter under the text; on by default whenever maxLength is set. */
+  counter?: boolean;
+};
+
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
+  { className, textareaClassName, rows = 4, counter = true, maxLength, value, defaultValue, onChange, style, ...props },
+  ref,
+) {
+  const { t } = useTranslation();
+  // Uncontrolled textareas still get a live counter.
+  const [typed, setTyped] = useState(() => String(defaultValue ?? "").length);
+  const length = value !== undefined ? String(value ?? "").length : typed;
+  const max = counter && maxLength != null && maxLength > 0 ? maxLength : null;
+  const near = max != null && length >= max * 0.95;
+  return (
+    <div className={cn(fieldShell, "flex flex-col text-md", className)}>
       <textarea
         ref={ref}
         rows={rows}
-        className={cn(control, "min-h-24 resize-y px-3.5 py-2.5 text-[0.9375rem] leading-relaxed [field-sizing:content]", className)}
+        maxLength={maxLength}
+        value={value}
+        defaultValue={defaultValue}
+        onChange={(e) => {
+          if (value === undefined) setTyped(e.target.value.length);
+          onChange?.(e);
+        }}
+        // field-sizing grows the box with its content where supported, starting at `rows`
+        // lines; elsewhere the rows attribute sizes it. Very long text scrolls inside, and
+        // wrap-anywhere keeps an unbroken string (a URL) from widening the layout.
+        style={{ minHeight: `calc(${rows}lh + 1.25rem)`, ...style }}
+        className={cn(
+          fieldControl,
+          "max-h-[70dvh] w-full resize-y rounded-control px-3.5 py-2.5 leading-relaxed wrap-anywhere [field-sizing:content]",
+          textareaClassName,
+        )}
         {...props}
       />
-    );
-  },
-);
+      {max != null && (
+        <>
+          <p aria-hidden="true" className={cn("num -mt-1 px-3.5 pb-2 text-right text-xs transition-colors", near ? "text-anor-ink" : "text-ink-3")}>
+            {groupDigits(length)} / {groupDigits(max)}
+          </p>
+          {/* Screen readers hear the count only when it matters: close to the limit. */}
+          <span className="sr-only" aria-live="polite">
+            {near ? t("inputs.charsLeft", { count: Math.max(0, max - length) }) : ""}
+          </span>
+        </>
+      )}
+    </div>
+  );
+});

@@ -3,7 +3,8 @@ import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState, t
 
 import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
-import { placeUnder } from "./anchor";
+import { followAnchor, placeUnder } from "./anchor";
+import { popoverPanel } from "./Popover";
 
 export type SelectOption = { value: string; label: string };
 export type SelectGroup = { label: string; options: SelectOption[] };
@@ -34,12 +35,14 @@ type Props = {
 type Row = { kind: "group"; label: string } | { kind: "option"; value: string; label: string; index: number };
 
 const SEARCH_FROM = 10; // lists longer than this get a filter field
+const ROW = 44; // option height used to estimate the list before it's shown
 
 /**
  * Dropdown select drawn by us (the browser's native list can't be styled and looked foreign
  * next to the rest of the UI). Built as an ARIA combobox + listbox on the HTML Popover API:
  * top-layer stacking, outside-click and Escape come from the browser. Keyboard: arrows,
- * Home/End, Enter, Escape, type-to-jump; long lists get a filter field.
+ * Home/End, Enter, Escape, type-to-jump; long lists get a filter field. The list is placed
+ * before it paints (beforetoggle) and follows the trigger while the page scrolls.
  */
 export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
   {
@@ -95,19 +98,15 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
     pop.current?.hidePopover();
   };
 
+  // The list scrolls inside the panel, so its natural height is the list's plus the chrome.
+  const chrome = 12 + (searchable ? 44 : 0);
   const place = useCallback(() => {
-    if (pop.current && trigger.current) placeUnder(pop.current, trigger.current, { minWidth: 224 });
-  }, []);
+    if (!pop.current || !trigger.current) return;
+    const natural = list.current?.scrollHeight || rows.length * ROW;
+    placeUnder(pop.current, trigger.current, { minWidth: 224, height: natural + chrome });
+  }, [rows.length, chrome]);
 
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", place);
-    window.addEventListener("scroll", place, true);
-    return () => {
-      window.removeEventListener("resize", place);
-      window.removeEventListener("scroll", place, true);
-    };
-  }, [open, place]);
+  useEffect(() => (open && pop.current ? followAnchor(pop.current, place) : undefined), [open, place]);
 
   // Keep the active option in view.
   useEffect(() => {
@@ -118,7 +117,7 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
     const isOpen = e.newState === "open";
     setOpen(isOpen);
     if (isOpen) {
-      place();
+      place(); // exact now that the list is laid out
       setQuery("");
       setActive(Math.max(0, flat.findIndex((o) => o.value === current)));
       // Phones: don't pop the keyboard up just because the list opened.
@@ -187,21 +186,25 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
         popoverTarget={popId}
         onKeyDown={onTriggerKey}
         className={cn(
-          "flex w-full items-center gap-2 text-left text-ink outline-none transition-[border-color,box-shadow,background-color] duration-150",
-          size === "sm" ? "h-9 text-sm" : "h-11 text-[0.9375rem]",
+          "flex w-full items-center gap-2 rounded-control text-left text-ink transition-[border-color,box-shadow,background-color] duration-150",
+          size === "sm" ? "h-9 text-sm pointer-coarse:h-11" : "h-11 text-md",
           bare
-            ? "h-full bg-transparent"
+            ? // Inside a composite bar: no box until it's focused, then a surface chip with the ring. The
+              // chip reaches 8px left into the gap so the text stays where it was, and never past the right edge.
+              "-ml-2 h-full w-[calc(100%+0.5rem)] bg-transparent pl-2 pr-1 outline-none focus-visible:bg-surface focus-visible:shadow-ring"
             : cn(
-                "rounded-control border border-line-strong bg-surface pl-3.5 pr-3 hover:border-ink-3",
-                "focus-visible:border-lapis focus-visible:shadow-[0_0_0_4px_var(--lapis-soft)] aria-[invalid=true]:border-anor",
-                open && "border-lapis shadow-[0_0_0_4px_var(--lapis-soft)]",
+                // Same box and focus treatment as field-shell inputs.
+                "border border-line-strong bg-surface pl-3.5 pr-3 hover:border-ink-3",
+                "outline-none focus-visible:border-focus focus-visible:shadow-ring",
+                "aria-[invalid=true]:border-anor aria-[invalid=true]:focus-visible:shadow-ring-danger",
+                open && "border-focus shadow-ring hover:border-focus",
                 size === "sm" && "pl-3 pr-2.5",
               ),
-          "disabled:cursor-not-allowed disabled:opacity-60",
+          "disabled:cursor-not-allowed disabled:opacity-50",
         )}
       >
         <span className={cn("min-w-0 flex-1 truncate", !selectedLabel && "text-ink-3")}>{selectedLabel ?? placeholder ?? " "}</span>
-        <ChevronDown className={cn("size-4 shrink-0 text-ink-3 transition-transform duration-200", open && "rotate-180")} aria-hidden="true" />
+        <ChevronDown className={cn("size-4 shrink-0 text-ink-3 transition-transform duration-200 ease-spring", open && "rotate-180")} aria-hidden="true" />
       </button>
 
       {/* Form value + native "required" validation, without a visible native control. */}
@@ -222,13 +225,14 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
         ref={pop}
         id={popId}
         popover="auto"
+        onBeforeToggle={(e) => e.newState === "open" && place()}
         onToggle={onToggle}
         onKeyDown={onListKey}
-        className="popover-panel select-panel fixed inset-auto m-0 flex-col overflow-hidden [&:popover-open]:flex rounded-panel border border-line bg-surface p-1.5 text-ink shadow-pop"
+        className={cn("popover-panel select-panel fixed inset-auto m-0 flex-col overflow-hidden [&:popover-open]:flex", popoverPanel)}
       >
         {searchable && (
-          <label className="mb-1 flex h-10 shrink-0 items-center gap-2 rounded-control bg-sunken px-3">
-            <Search className="size-4 shrink-0 text-ink-3" aria-hidden="true" />
+          <label className="relative mb-1 flex shrink-0 items-center">
+            <Search className="pointer-events-none absolute left-3 size-4 text-ink-3" aria-hidden="true" />
             <span className="sr-only">{t("common.search")}</span>
             <input
               ref={search}
@@ -238,7 +242,7 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
               role="searchbox"
               aria-controls={listId}
               aria-activedescendant={active >= 0 && visible[active] ? `${uid}-o${active}` : undefined}
-              className="h-full w-full bg-transparent text-sm text-ink outline-none placeholder:text-ink-3"
+              className="h-10 w-full rounded-control bg-sunken pl-9 pr-3 text-md text-ink outline-none transition-shadow placeholder:text-ink-3 focus-visible:shadow-ring pointer-coarse:h-11"
             />
           </label>
         )}
@@ -249,11 +253,12 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
           tabIndex={-1}
           aria-label={aria["aria-label"]}
           aria-activedescendant={active >= 0 && visible[active] ? `${uid}-o${active}` : undefined}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none"
+          // The focused list shows focus on its active option (inset ring), not around itself.
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain outline-none focus-visible:[&_[data-active]]:ring-2"
         >
           {rows.map((r) =>
             r.kind === "group" ? (
-              <li key={`g-${r.label}`} role="presentation" className="px-2.5 pb-1 pt-3 text-xs font-semibold text-ink-3 first:pt-1.5">
+              <li key={`g-${r.label}`} role="presentation" className="px-3 pb-1 pt-3 text-xs font-semibold text-ink-3 first:pt-1.5">
                 {r.label}
               </li>
             ) : (
@@ -262,20 +267,23 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
                 id={`${uid}-o${r.index}`}
                 role="option"
                 aria-selected={r.value === current}
+                data-active={r.index === active || undefined}
                 onPointerMove={() => r.index !== active && setActive(r.index)}
                 onClick={() => choose(r.value)}
                 className={cn(
-                  "flex min-h-10 cursor-pointer select-none items-center gap-2 rounded-[0.625rem] px-2.5 py-2 text-sm",
+                  "flex min-h-10 cursor-pointer select-none items-center gap-2 rounded-control px-3 py-2 text-md ring-inset ring-focus pointer-coarse:min-h-11",
                   r.index === active && "bg-sunken",
-                  r.value === current ? "font-medium text-lapis-ink" : r.value === "" ? "text-ink-3" : "text-ink",
+                  r.value === "" ? "text-ink-3" : r.value === current ? "font-medium text-lapis-ink" : "text-ink",
                 )}
               >
-                <span className="min-w-0 flex-1">{r.label}</span>
-                {r.value === current && r.value !== "" && <Check className="size-4 shrink-0" strokeWidth={2.5} aria-hidden="true" />}
+                <span className="min-w-0 flex-1 break-words">{r.label}</span>
+                {r.value === current && r.value !== "" && <Check className="size-4 shrink-0 text-lapis" strokeWidth={2.5} aria-hidden="true" />}
               </li>
             ),
           )}
-          {visible.length === 0 && <li className="px-2.5 py-6 text-center text-sm text-ink-3">{t("common.noResults")}</li>}
+          {visible.length === 0 && (
+            <li role="presentation" aria-live="polite" className="px-3 py-6 text-center text-md text-ink-3">{t("common.noResults")}</li>
+          )}
         </ul>
       </div>
     </div>
