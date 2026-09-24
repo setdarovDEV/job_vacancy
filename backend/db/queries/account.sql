@@ -33,11 +33,12 @@ SET title = '', about = '', category_id = NULL, region_id = NULL, relocate = fal
     visibility = 'hidden', experience_months = 0
 WHERE id IN (SELECT id FROM r);
 
--- The user's uploads (avatar, chat attachments); company logos belong to the company and
--- stay. Chat messages keep their text, their file_id becomes NULL. The objects are
--- removed from storage by a job enqueued in the same transaction.
+-- The user's uploads (avatar, chat attachments); company logos and covers belong to the
+-- company and stay. Chat messages keep their text, their file_id becomes NULL. The objects
+-- are removed from storage by a job enqueued in the same transaction (the published
+-- avatar variants too, see account.Service).
 -- name: DeleteUserFiles :many
-DELETE FROM files WHERE owner_id = $1 AND purpose <> 'company_logo'
+DELETE FROM files WHERE owner_id = $1 AND purpose NOT IN ('company_logo', 'company_cover')
 RETURNING bucket, object_key;
 
 -- name: PurgeUserData :exec
@@ -55,7 +56,7 @@ SELECT 1;
 UPDATE users
 SET email = 'deleted-' || id::text || '@deleted.invalid', email_verified_at = NULL,
     phone = NULL, phone_verified_at = NULL, password_hash = NULL, google_sub = NULL,
-    full_name = '', avatar_url = NULL, telegram_chat_id = NULL,
+    full_name = '', avatar_url = NULL, avatar_file_id = NULL, telegram_chat_id = NULL,
     notify_email = false, notify_telegram = false, hide_online = true, last_seen_at = NULL,
     status = 'deleted', deleted_at = now()
 WHERE id = $1 AND status <> 'deleted';

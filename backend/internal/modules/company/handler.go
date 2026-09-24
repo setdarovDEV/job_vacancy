@@ -14,6 +14,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/cursor"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/platform/respcache"
 	mw "jobvacancy.uz/backend/internal/transport/http/middleware"
@@ -84,9 +85,16 @@ type addMemberRequest struct {
 	Role  string `json:"role" validate:"required,oneof=admin recruiter"`
 }
 
+// ImageSetter applies a new logo or cover (media.Service: the worker publishes WebP sizes,
+// TZ BE-14).
+type ImageSetter interface {
+	SetCompanyImage(ctx context.Context, t imgurl.Target, companyID, uploader uuid.UUID, fileID *uuid.UUID) (gen.Company, error)
+}
+
 type Handler struct {
 	Svc   *Service
 	Files *file.Service
+	Media ImageSetter
 	// Cache serves the public profile page as cached bytes with an ETag (TZ BE-05);
 	// Service.Changed invalidates it. Nil serves it uncached.
 	Cache *respcache.Cache
@@ -100,7 +108,8 @@ func (h *Handler) Routes(r chi.Router, auth *mw.Authenticator) {
 	r.Get("/{company}", h.get)
 	r.With(auth.Require).Post("/", h.create)
 	r.With(auth.Require).Put("/{company}", h.update)
-	r.With(auth.Require).Put("/{company}/logo", h.setLogo)
+	r.With(auth.Require).Put("/{company}/logo", h.setImage(imgurl.Logo))
+	r.With(auth.Require).Put("/{company}/cover", h.setImage(imgurl.Cover))
 	r.With(auth.Require).Get("/{company}/members", h.members)
 	r.With(auth.Require).Post("/{company}/members", h.addMember)
 	r.With(auth.Require).Delete("/{company}/members/{user}", h.removeMember)
@@ -285,33 +294,28 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, ToDTO(c))
 }
 
-func (h *Handler) setLogo(w http.ResponseWriter, r *http.Request) {
-	p := reqctx.MustPrincipal(r.Context())
-	var req file.FileRef
-	if !response.DecodeValid(w, r, &req) {
-		return
-	}
-	c, _, err := h.Svc.Authorize(r.Context(), p, chi.URLParam(r, "company"), gen.CompanyMemberRoleAdmin)
-	if err != nil {
-		response.Error(w, r, err)
-		return
-	}
-	var url *string
-	if req.FileID != nil {
-		f, err := h.Files.Use(r.Context(), p.UserID, *req.FileID, gen.FilePurposeCompanyLogo)
+// setImage chooses an uploaded logo or cover (company admins), or removes it with null.
+// The worker publishes its sizes, usually before this answers (logo_pending/cover_pending
+// say it's still processing).
+func (h *Handler) setImage(t imgurl.Target) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p := reqctx.MustPrincipal(r.Context())
+		var req file.FileRef
+		if !response.DecodeValid(w, r, &req) {
+			return
+		}
+		c, _, err := h.Svc.Authorize(r.Context(), p, chi.URLParam(r, "company"), gen.CompanyMemberRoleAdmin)
 		if err != nil {
 			response.Error(w, r, err)
 			return
 		}
-		u := h.Files.Storage.PublicURL(f.ObjectKey)
-		url = &u
+		c, err = h.Media.SetCompanyImage(r.Context(), t, c.ID, p.UserID, req.FileID)
+		if err != nil {
+			response.Error(w, r, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, ToDTO(c))
 	}
-	c, err = h.Svc.SetLogo(r.Context(), c.ID, url)
-	if err != nil {
-		response.Error(w, r, err)
-		return
-	}
-	response.JSON(w, http.StatusOK, ToDTO(c))
 }
 
 func (h *Handler) mine(w http.ResponseWriter, r *http.Request) {

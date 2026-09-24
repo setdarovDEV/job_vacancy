@@ -1,6 +1,6 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { Ban, Check, CheckCheck, FileText, Image as ImageIcon, Inbox, MapPin, Mic, type LucideIcon } from "lucide-react";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 
 import { counterpart, type Conversation, type Message } from "./types";
 import { api } from "~/shared/api/client";
@@ -51,6 +51,7 @@ export function ConversationList({ activeId }: { activeId?: string }) {
   const items = q.data?.pages.flatMap((p) => p.data) ?? [];
   const loading = useSkeletonHold(q.isPending);
   const typing = useTypingIds(user?.id);
+  const narrow = useNarrow();
   // Only the rows of the first paint get the entrance stagger; later pages and refetches don't.
   const entered = useRef<Set<string> | null>(null);
   if (!entered.current && items.length) entered.current = new Set(items.slice(0, 8).map((c) => c.id));
@@ -107,7 +108,7 @@ export function ConversationList({ activeId }: { activeId?: string }) {
                 const enter = entered.current?.has(c.id);
                 return (
                   <li key={c.id} className={cn("group/item", enter && "anim-enter")} style={enter ? ({ "--i": i } as CSSProperties) : undefined}>
-                    <Row c={c} active={c.id === activeId} typing={typing.has(c.id)} me={user?.id} t={t} locale={locale} />
+                    <Row c={c} active={c.id === activeId} typing={typing.has(c.id)} slide={narrow} me={user?.id} t={t} locale={locale} />
                   </li>
                 );
               })}
@@ -120,8 +121,8 @@ export function ConversationList({ activeId }: { activeId?: string }) {
   );
 }
 
-function Row({ c, active, typing, me, t, locale }: {
-  c: Conversation; active: boolean; typing: boolean; me?: string; t: TFunction; locale: ReturnType<typeof useLocale>;
+function Row({ c, active, typing, slide, me, t, locale }: {
+  c: Conversation; active: boolean; typing: boolean; slide: boolean; me?: string; t: TFunction; locale: ReturnType<typeof useLocale>;
 }) {
   const who = counterpart(c);
   const unread = c.unread > 0;
@@ -133,7 +134,7 @@ function Row({ c, active, typing, me, t, locale }: {
     <LocalizedLink
       to={`/chat/${c.id}`}
       prefetch="intent"
-      viewTransition
+      viewTransition={slide}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex items-center gap-3 pl-4 transition-colors focus-visible:-outline-offset-2 active:bg-sunken",
@@ -226,4 +227,19 @@ function useTypingIds(me?: string): ReadonlySet<string> {
     return () => { off(); timers.forEach(clearTimeout); };
   }, [me]);
   return ids;
+}
+
+// Phones only: there the thread slides in over the list (a view transition). Side by side on
+// wider screens, switching conversations stays instant (a transition would block input briefly).
+const NARROW = "(width < 48rem)";
+function useNarrow(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(NARROW);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(NARROW).matches,
+    () => false,
+  );
 }

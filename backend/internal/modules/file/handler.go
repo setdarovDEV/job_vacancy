@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -12,7 +13,15 @@ import (
 	"jobvacancy.uz/backend/internal/transport/http/response"
 )
 
-type Handler struct{ Svc *Service }
+// AvatarSetter applies a new avatar (media.Service: the worker publishes WebP sizes).
+type AvatarSetter interface {
+	SetAvatar(ctx context.Context, userID uuid.UUID, fileID *uuid.UUID) (gen.User, error)
+}
+
+type Handler struct {
+	Svc     *Service
+	Avatars AvatarSetter
+}
 
 // Routes are mounted under /files behind RequireAuth.
 //
@@ -60,23 +69,15 @@ type FileRef struct {
 	FileID *uuid.UUID `json:"file_id"` // null removes
 }
 
+// setAvatar chooses an uploaded avatar (or removes it with null). The worker publishes
+// its sizes, usually before this answers (avatar_pending says it's still processing).
 func (h *Handler) setAvatar(w http.ResponseWriter, r *http.Request) {
 	p := reqctx.MustPrincipal(r.Context())
 	var req FileRef
 	if !response.DecodeValid(w, r, &req) {
 		return
 	}
-	var url *string
-	if req.FileID != nil {
-		f, err := h.Svc.Use(r.Context(), p.UserID, *req.FileID, gen.FilePurposeAvatar)
-		if err != nil {
-			response.Error(w, r, err)
-			return
-		}
-		u := h.Svc.Storage.PublicURL(f.ObjectKey)
-		url = &u
-	}
-	u, err := h.Svc.Q.SetUserAvatar(r.Context(), gen.SetUserAvatarParams{ID: p.UserID, AvatarUrl: url})
+	u, err := h.Avatars.SetAvatar(r.Context(), p.UserID, req.FileID)
 	if err != nil {
 		response.Error(w, r, err)
 		return

@@ -51,6 +51,7 @@ type Variant struct {
 	FileID uuid.UUID
 	Size   int
 	prefix string // everything up to "<size>.webp"
+	keyDir string // img/<target>/<yyyy>/<mm>/<file id>/
 }
 
 // Parse recognises the URL or key of a processed image; ok is false for legacy uploads
@@ -65,7 +66,18 @@ func Parse(u string) (Variant, bool) {
 		return Variant{}, false
 	}
 	size, _ := strconv.Atoi(m[4])
-	return Variant{Target: Target(m[2]), FileID: id, Size: size, prefix: strings.TrimSuffix(u, m[4]+".webp")}, true
+	match := strings.TrimPrefix(m[0], "/")
+	return Variant{Target: Target(m[2]), FileID: id, Size: size, prefix: strings.TrimSuffix(u, m[4]+".webp"),
+		keyDir: strings.TrimSuffix(match, m[4]+".webp")}, true
+}
+
+// Keys are the object keys of every size (in the public bucket).
+func (v Variant) Keys() []string {
+	out := make([]string, 0, len(Sizes[v.Target]))
+	for _, s := range Sizes[v.Target] {
+		out = append(out, v.keyDir+strconv.Itoa(s)+".webp")
+	}
+	return out
 }
 
 // Of is the same image at another size.

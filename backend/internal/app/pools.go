@@ -15,7 +15,7 @@ import (
 
 // Pool sizes when DB_MAX_CONNS is not set (TZ BE-07). Postgres max_connections=200 has to
 // cover api instances × APIPoolSize + the worker pool + migrate/ctl/exporters:
-// 2 × 20 + 35 + ~15 = ~90.
+// 2 × 20 + 37 + ~15 = ~92.
 const (
 	APIPoolSize = 20
 	// River also holds connections of its own (job fetch, LISTEN, leader election).
@@ -24,7 +24,7 @@ const (
 
 // WorkerPoolSize is the worker's pool: one connection per River worker plus River's own.
 func WorkerPoolSize(w config.Worker) int32 {
-	return int32(w.CriticalWorkers + w.DefaultWorkers + riverOverhead)
+	return int32(w.CriticalWorkers + w.DefaultWorkers + w.MediaWorkers + riverOverhead)
 }
 
 // registerPoolMetrics exports pgxpool.Stat() and Redis PoolStats() to Prometheus and logs

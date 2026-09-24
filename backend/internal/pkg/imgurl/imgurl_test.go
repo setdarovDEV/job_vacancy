@@ -27,6 +27,9 @@ func TestURLs(t *testing.T) {
 	if !ok || v.FileID != id || v.Target != Avatar || v.Size != 256 || len(v.All()) != 3 {
 		t.Fatalf("parse key: %+v %v", v, ok)
 	}
+	if vu, _ := Parse(u); vu.Keys()[0] != "img/avatar/2026/09/01925f1c-7a2b-7c3d-8e4f-0123456789ab/64.webp" || vu.Keys()[2] != key {
+		t.Fatalf("keys from URL: %v", vu.Keys())
+	}
 	cover := "http://localhost:9200/jv-public/img/cover/2026/09/01925f1c-7a2b-7c3d-8e4f-0123456789ab/1280.webp"
 	if c := URLs(&cover); len(c) != 2 || c["640"] == "" {
 		t.Fatalf("cover: %v", c)

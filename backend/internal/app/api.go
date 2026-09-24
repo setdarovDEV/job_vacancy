@@ -21,6 +21,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/chat"
 	"jobvacancy.uz/backend/internal/modules/company"
 	"jobvacancy.uz/backend/internal/modules/file"
+	"jobvacancy.uz/backend/internal/modules/media"
 	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/modules/report"
 	"jobvacancy.uz/backend/internal/modules/resume"
@@ -140,6 +141,9 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 
 	fileSvc := &file.Service{Q: q, Storage: st, Log: log}
+	// TZ BE-14: avatars, logos and covers are published by the worker as WebP variants.
+	mediaSvc := &media.Service{Pool: pool, Q: q, Files: fileSvc, Storage: st, Jobs: enq, RDB: rdb, Log: log,
+		CompanyChanged: func(ctx context.Context, c gen.Company) { publicCache.CompanyChanged(ctx, q, c) }}
 	resumeSvc := &resume.Service{Pool: pool, Q: q, Catalog: catalogSvc}
 	hub := realtime.NewHub(ctx, rdb, log)
 	hub.Audience = realtime.DBAudience{Q: q} // TZ SEC-05: presence only among conversation partners
@@ -156,7 +160,8 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Jobs: enq, Log: log}
 	reportSvc := &report.Service{Pool: pool, Q: q, Limiter: limiter, Vacancies: vacancySvc, Notify: notifySvc,
 		Threshold: cfg.Product.ReportThreshold, Log: log}
-	accountSvc := &account.Service{Pool: pool, Q: q, Limiter: limiter, Revoked: revoked, Jobs: enq, Cache: publicCache, Log: log}
+	accountSvc := &account.Service{Pool: pool, Q: q, Limiter: limiter, Revoked: revoked, Jobs: enq, Cache: publicCache,
+		PublicBucket: st.PublicBucket(), Log: log}
 	if google != nil {
 		accountSvc.Google = google
 	}
@@ -184,9 +189,9 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		ReportHandler:      &report.Handler{Svc: reportSvc},
 		UserHandler:        &user.Handler{Q: q, Presence: hub},
 		CatalogHandler:     &catalog.Handler{Svc: catalogSvc},
-		CompanyHandler: &company.Handler{Svc: companySvc, Files: fileSvc, Cache: publicCache.Company,
+		CompanyHandler: &company.Handler{Svc: companySvc, Files: fileSvc, Media: mediaSvc, Cache: publicCache.Company,
 			Directory: &company.Directory{Q: q, RDB: rdb, Log: log}},
-		FileHandler: &file.Handler{Svc: fileSvc},
+		FileHandler: &file.Handler{Svc: fileSvc, Avatars: mediaSvc},
 		ChatHandler: &chat.Handler{Svc: chatSvc},
 		SavedHandler: &savedsearch.Handler{Svc: &savedsearch.Service{Q: q, Vacancies: vacancySvc,
 			Notify: notifySvc, Log: log}},

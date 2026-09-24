@@ -57,8 +57,8 @@ type HTTP struct {
 
 type DB struct {
 	URL string `env:"DATABASE_URL,required"`
-	// 0 = the process default: api 20, worker = River workers + 5 (35), migrate/ctl pgx's.
-	// Budget: Postgres max_connections=200 ≥ api instances × 20 + worker 35 + tools.
+	// 0 = the process default: api 20, worker = River workers + 5 (37), migrate/ctl pgx's.
+	// Budget: Postgres max_connections=200 ≥ api instances × 20 + worker 37 + tools.
 	MaxConns        int32         `env:"DB_MAX_CONNS" envDefault:"0"`
 	MinConns        int32         `env:"DB_MIN_CONNS" envDefault:"2"`
 	MaxConnLifetime time.Duration `env:"DB_MAX_CONN_LIFETIME" envDefault:"1h"`
@@ -147,8 +147,10 @@ type Log struct {
 // Worker settings (cmd/worker).
 type Worker struct {
 	// River concurrency per queue; the worker's DB pool defaults to their sum + 5.
-	CriticalWorkers int           `env:"WORKER_CRITICAL_WORKERS" envDefault:"10"`
-	DefaultWorkers  int           `env:"WORKER_DEFAULT_WORKERS" envDefault:"20"`
+	CriticalWorkers int `env:"WORKER_CRITICAL_WORKERS" envDefault:"10"`
+	DefaultWorkers  int `env:"WORKER_DEFAULT_WORKERS" envDefault:"20"`
+	// Image processing (TZ BE-14): each job may hold ~160 MB while decoding a large photo.
+	MediaWorkers    int           `env:"WORKER_MEDIA_WORKERS" envDefault:"2"`
 	ShutdownTimeout time.Duration `env:"WORKER_SHUTDOWN_TIMEOUT" envDefault:"30s"`
 	// /metrics and /healthz of the worker process (never exposed through nginx).
 	MetricsAddr string `env:"WORKER_METRICS_ADDR" envDefault:"127.0.0.1:9092"`

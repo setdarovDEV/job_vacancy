@@ -17,6 +17,7 @@ import (
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/file"
+	"jobvacancy.uz/backend/internal/modules/media"
 	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
@@ -270,9 +271,13 @@ type Deps struct {
 	// Vacancies rebuilds search documents (vacancy.reindex jobs).
 	Vacancies *vacancy.Service
 	Log       *slog.Logger
-	// River concurrency per queue (TZ BE-07: critical 10, default 20); 0 uses those.
+	// River concurrency per queue (TZ BE-07: critical 10, default 20; media 2); 0 uses those.
 	CriticalWorkers int
 	DefaultWorkers  int
+	MediaWorkers    int
+	// Register adds workers that live outside this package (the image processor, which
+	// only the worker binary links).
+	Register func(*river.Workers)
 }
 
 func periodic(every time.Duration, args river.JobArgs) *river.PeriodicJob {
@@ -297,12 +302,16 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 	}})
 	river.AddWorker(workers, &SavedSearchAlertsWorker{Svc: d.Saved, Log: d.Log})
 	river.AddWorker(workers, &CleanupUploadsWorker{Files: &file.Service{Q: q, Storage: d.Storage, Log: d.Log}, Log: d.Log})
+	if d.Register != nil {
+		d.Register(workers)
+	}
 
 	return river.NewClient(riverpgxv5.New(d.Pool), &river.Config{
 		Logger: d.Log,
 		Queues: map[string]river.QueueConfig{
 			QueueCritical: {MaxWorkers: orDefault(d.CriticalWorkers, 10)},
 			QueueDefault:  {MaxWorkers: orDefault(d.DefaultWorkers, 20)},
+			media.Queue:   {MaxWorkers: orDefault(d.MediaWorkers, 2)},
 		},
 		// A job whose worker died (SIGKILL after the grace period) is picked up again after
 		// this; it must stay above the longest job timeout (saved-search alerts, 10 min).

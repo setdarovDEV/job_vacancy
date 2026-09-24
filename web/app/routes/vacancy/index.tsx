@@ -101,8 +101,9 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
   const locale = useLocale();
   const catalog = useCatalog();
   const idx = useMemo(() => indexCatalog(catalog), [catalog]);
-  const { user } = useSession();
+  const { user, status } = useSession();
   const [applyOpen, setApplyOpen] = useState(false);
+  useViewBeacon(v.id, status !== "loading");
   // Mounted on first use and kept, so closing plays the exit animation and a reopen keeps the draft.
   const [applyUsed, setApplyUsed] = useState(false);
   const [asideRef, asideFits] = useStickyFit<HTMLElement>();
@@ -391,6 +392,18 @@ function useOwnerView(v: Vacancy): Vacancy {
     };
   }, [employer, v.slug]);
   return own && own.id === v.id ? own : v;
+}
+
+/**
+ * Counts the page view from the browser (TZ FE-02): the SSR request comes from the web server's
+ * IP and a cached page makes none. Sent once the session is known, so a signed-in viewer is
+ * counted per user and the company's own members not at all (the API dedupes per hour).
+ */
+function useViewBeacon(id: string, ready: boolean) {
+  useEffect(() => {
+    if (!ready) return;
+    api.POST("/vacancies/{vacancy}/view", { params: { path: { vacancy: id } } }).catch(() => {});
+  }, [id, ready]);
 }
 
 /**

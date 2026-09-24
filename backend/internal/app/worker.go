@@ -6,10 +6,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
+	"github.com/riverqueue/river"
 
 	"fmt"
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/catalog"
+	"jobvacancy.uz/backend/internal/modules/media/process"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/realtime"
@@ -70,10 +72,16 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 		return err
 	}
 	vacancies := &vacancy.Service{Pool: pool, Q: gen.New(pool), Catalog: cat, Cache: lifecycle.Cache, Log: log}
+	images, err := imageProcessor(pool, rdb, st, lifecycle.Cache, log)
+	if err != nil {
+		return err
+	}
 	client, err := jobs.NewWorkerClient(jobs.Deps{
 		Pool: pool, Redis: rdb, Mailer: m, Storage: st, Bot: bot,
 		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: saved, Lifecycle: lifecycle, Vacancies: vacancies, Log: log,
 		CriticalWorkers: cfg.Worker.CriticalWorkers, DefaultWorkers: cfg.Worker.DefaultWorkers,
+		MediaWorkers: cfg.Worker.MediaWorkers,
+		Register:     func(ws *river.Workers) { process.Register(ws, images) },
 	})
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
@@ -120,6 +128,19 @@ func VacancyLifecycle(pool *pgxpool.Pool, rdb *goredis.Client, log *slog.Logger)
 	}
 	notify := &notification.Service{Pool: pool, Q: gen.New(pool), Publisher: &realtime.Publisher{RDB: rdb}, Jobs: enq, Log: log}
 	return &vacancy.Lifecycle{Pool: pool, Cache: vacancy.NewPublicCache(rdb, log), Notify: notify, Log: log}, nil
+}
+
+// imageProcessor publishes avatar, logo and cover variants (TZ BE-14); the retirement of
+// replaced images is queued through an insert-only client in the publishing transaction.
+func imageProcessor(pool *pgxpool.Pool, rdb *goredis.Client, st *storage.Storage, cache *vacancy.PublicCache, log *slog.Logger) (*process.Processor, error) {
+	enq, err := jobs.NewEnqueuer(pool, log)
+	if err != nil {
+		return nil, err
+	}
+	q := gen.New(pool)
+	return &process.Processor{Pool: pool, Q: q, Storage: st, Jobs: enq, Publisher: &realtime.Publisher{RDB: rdb},
+		RDB: rdb, Log: log,
+		CompanyChanged: func(ctx context.Context, c gen.Company) { cache.CompanyChanged(ctx, q, c) }}, nil
 }
 
 // SavedSearches builds the alert service outside the API: it needs vacancy listing (with

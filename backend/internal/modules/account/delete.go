@@ -33,6 +33,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/hash"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/platform/postgres"
@@ -84,7 +85,16 @@ type Service struct {
 	Google  GoogleVerifier
 	Jobs    Inserter
 	Cache   *vacancy.PublicCache // nil skips cache invalidation
-	Log     *slog.Logger
+	// PublicBucket holds the published avatar sizes, removed with the account.
+	PublicBucket string
+	Log          *slog.Logger
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // DeleteInput confirms the deletion.
@@ -160,6 +170,12 @@ func (s *Service) Delete(ctx context.Context, p reqctx.Principal, in DeleteInput
 		}
 		if _, err := q.AnonymizeUser(ctx, u.ID); err != nil {
 			return err
+		}
+		// The published avatar sizes aren't upload rows (TZ BE-14): remove them too.
+		if v, ok := imgurl.Parse(deref(u.AvatarUrl)); ok && s.PublicBucket != "" {
+			for _, k := range v.Keys() {
+				files = append(files, gen.DeleteUserFilesRow{Bucket: s.PublicBucket, ObjectKey: k})
+			}
 		}
 		return s.purge(ctx, tx, files)
 	})

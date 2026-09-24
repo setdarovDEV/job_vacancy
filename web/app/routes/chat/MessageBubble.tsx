@@ -84,6 +84,12 @@ export function MessageBubble({ m, mine, seen, first = true, onDelete, onRetry }
         ) : <Body m={m} mine={mine} seen={seen} />}
       </div>
 
+      {canRetry && (
+        <button type="button" onClick={onRetry} className="mb-0.5 flex min-h-11 items-center gap-1 rounded-control px-2 text-xs font-medium text-anor-ink hover:bg-anor-soft">
+          <RotateCw className="size-3.5" aria-hidden="true" />{t("chat.retry")}
+        </button>
+      )}
+
       {hasActions && (
         <MenuRoot open={open} onOpenChange={setOpen}>
           <MenuTrigger asChild>
@@ -109,11 +115,6 @@ export function MessageBubble({ m, mine, seen, first = true, onDelete, onRetry }
         </MenuRoot>
       )}
 
-      {canRetry && (
-        <button type="button" onClick={onRetry} className="mb-0.5 flex min-h-11 items-center gap-1 rounded-control px-2 text-xs font-medium text-anor-ink hover:bg-anor-soft">
-          <RotateCw className="size-3.5" aria-hidden="true" />{t("chat.retry")}
-        </button>
-      )}
     </div>
   );
 }
