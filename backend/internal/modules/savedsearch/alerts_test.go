@@ -45,12 +45,12 @@ type sent struct {
 
 type fakeNotifier struct{ sent []sent }
 
-func (n *fakeNotifier) Notify(_ context.Context, users []uuid.UUID, typ string, p notification.Payload, _ bool) {
+func (n *fakeNotifier) NotifyEach(_ context.Context, typ string, to []notification.Recipient, _ bool) {
 	if typ != notification.TypeSearchAlert {
 		panic(typ)
 	}
-	for _, u := range users {
-		n.sent = append(n.sent, sent{u, p})
+	for _, r := range to {
+		n.sent = append(n.sent, sent{r.UserID, r.Payload})
 	}
 }
 

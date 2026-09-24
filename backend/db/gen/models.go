@@ -1400,25 +1400,26 @@ type Category struct {
 }
 
 type Company struct {
-	ID          uuid.UUID
-	OwnerID     uuid.UUID
-	Name        string
-	Slug        string
-	LogoUrl     *string
-	CoverUrl    *string
-	IndustryID  *int32
-	Size        *CompanySize
-	Website     *string
-	Email       *string
-	Phone       *string
-	RegionID    *int32
-	Address     *string
-	About       string
-	FoundedYear *int16
-	VerifiedAt  *time.Time
-	Status      CompanyStatus
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID            uuid.UUID
+	OwnerID       uuid.UUID
+	Name          string
+	Slug          string
+	LogoUrl       *string
+	CoverUrl      *string
+	IndustryID    *int32
+	Size          *CompanySize
+	Website       *string
+	Email         *string
+	Phone         *string
+	RegionID      *int32
+	Address       *string
+	About         string
+	FoundedYear   *int16
+	VerifiedAt    *time.Time
+	Status        CompanyStatus
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	OpenVacancies int32
 }
 
 type CompanyMember struct {
@@ -1443,6 +1444,7 @@ type ConversationRead struct {
 	ConversationID uuid.UUID
 	UserID         uuid.UUID
 	LastReadID     int64
+	UnreadCount    int32
 }
 
 type DeviceToken struct {

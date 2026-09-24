@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
@@ -54,8 +54,43 @@ export function SkeletonRows({
 
 /**
  * Holds loading UI back for 150 ms and then fades it in, so fast responses never flash a
- * skeleton. Pure CSS (anim-delayed); reduced motion shows it immediately.
+ * skeleton. Pure CSS (anim-delayed). Pair it with useSkeletonHold so that, once visible, it also
+ * stays long enough to read as a state rather than a flicker.
  */
 export function SkeletonDelay({ children, className }: { children: ReactNode; className?: string }) {
   return <div className={cn("anim-delayed", className)}>{children}</div>;
+}
+
+const SHOW_AFTER = 150; // SkeletonDelay's CSS delay (anim-delayed)
+const MIN_VISIBLE = 300;
+
+/**
+ * Loading-state timing: a skeleton that became visible (150 ms into the wait) stays at least
+ * 300 ms, so an answer at 170 ms doesn't flash it for a frame; one that never showed goes at once.
+ * Returns whether to keep rendering the loading UI:
+ *   const loading = useSkeletonHold(q.isPending);
+ *   if (loading) return <SkeletonDelay><SkeletonRows /></SkeletonDelay>;
+ */
+export function useSkeletonHold(pending: boolean): boolean {
+  const since = useRef<number | null>(null);
+  const [held, setHeld] = useState(pending);
+  // Layout effect: the verdict lands before paint, so data never shows for a frame and then
+  // flips back to the skeleton.
+  useLayoutEffect(() => {
+    if (pending) {
+      since.current ??= performance.now();
+      setHeld(true);
+      return;
+    }
+    const start = since.current;
+    since.current = null;
+    const visible = start == null ? -1 : performance.now() - start - SHOW_AFTER;
+    if (visible < 0 || visible >= MIN_VISIBLE) {
+      setHeld(false);
+      return;
+    }
+    const timer = setTimeout(() => setHeld(false), MIN_VISIBLE - visible);
+    return () => clearTimeout(timer);
+  }, [pending]);
+  return pending || held;
 }

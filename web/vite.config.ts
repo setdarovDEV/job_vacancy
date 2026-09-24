@@ -24,6 +24,9 @@ function dropShowcaseClasses(): Plugin {
 export default defineConfig({
   plugins: [dropShowcaseClasses(), tailwindcss(), reactRouter()],
   resolve: { tsconfigPaths: true },
+  // Font files are never inlined as data: URIs: the ~1.4 KB Unbounded cyrillic-ext face would ride
+  // in every visitor's core CSS (~1.9 KB gzip) although only uz-Cyrl headings ever need it.
+  build: { assetsInlineLimit: (file) => (file.endsWith(".woff2") ? false : undefined) },
   // Dependencies first imported by lazily loaded routes; pre-bundling them up front avoids
   // Vite's mid-session re-optimization (a full reload) in development.
   optimizeDeps: {

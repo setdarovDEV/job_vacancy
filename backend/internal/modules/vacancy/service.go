@@ -179,7 +179,7 @@ func (s *Service) Submit(ctx context.Context, p reqctx.Principal, id uuid.UUID) 
 		return Detail{}, err
 	}
 	if c.VerifiedAt != nil {
-		v, err = s.publish(ctx, v.ID, resubmittable, nil)
+		v, err = s.publish(ctx, v.ID, resubmittable, nil, nil)
 	} else {
 		v, err = s.Q.SubmitVacancy(ctx, gen.SubmitVacancyParams{ID: v.ID, FromStatuses: resubmittable})
 	}
@@ -227,15 +227,20 @@ func (s *Service) Delete(ctx context.Context, p reqctx.Principal, id uuid.UUID) 
 // ---- moderation (platform admins) --------------------------------------------------------
 
 func (s *Service) Approve(ctx context.Context, admin reqctx.Principal, id uuid.UUID) (Detail, error) {
-	v, err := s.publish(ctx, id, fromModerationSet, &admin.UserID)
+	var sent notification.Sent
+	v, err := s.publish(ctx, id, fromModerationSet, &admin.UserID, func(tx pgx.Tx, v gen.Vacancy) error {
+		var err error
+		sent, err = s.notifyAuthor(ctx, tx, v, notification.TypeVacancyApproved,
+			notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title})
+		return err
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Detail{}, s.missingOr(ctx, id, ErrTransition)
 	}
 	if err != nil {
 		return Detail{}, err
 	}
-	s.Notify.Notify(ctx, []uuid.UUID{v.CreatedBy}, notification.TypeVacancyApproved,
-		notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title}, true)
+	sent.Publish(ctx)
 	return s.afterModeration(ctx, v)
 }
 
@@ -244,21 +249,43 @@ func (s *Service) Reject(ctx context.Context, admin reqctx.Principal, id uuid.UU
 	if len([]rune(reason)) < 5 {
 		return Detail{}, ErrRejectReason
 	}
-	v, err := s.Q.RejectVacancy(ctx, gen.RejectVacancyParams{ID: id, RejectReason: &reason, ModeratedBy: &admin.UserID})
+	var v gen.Vacancy
+	var sent notification.Sent
+	err := postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		var err error
+		v, err = gen.New(tx).RejectVacancy(ctx, gen.RejectVacancyParams{ID: id, RejectReason: &reason, ModeratedBy: &admin.UserID})
+		if err != nil {
+			return err
+		}
+		sent, err = s.notifyAuthor(ctx, tx, v, notification.TypeVacancyRejected,
+			notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title, Reason: reason})
+		return err
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Detail{}, s.missingOr(ctx, id, ErrTransition)
 	}
 	if err != nil {
 		return Detail{}, err
 	}
-	s.Notify.Notify(ctx, []uuid.UUID{v.CreatedBy}, notification.TypeVacancyRejected,
-		notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title, Reason: reason}, true)
+	sent.Publish(ctx)
 	return s.afterModeration(ctx, v)
 }
 
-func (s *Service) publish(ctx context.Context, id uuid.UUID, from []string, moderator *uuid.UUID) (gen.Vacancy, error) {
+// notifyAuthor tells the vacancy's author about a moderation decision, inside the
+// decision's transaction (TZ BE-08).
+func (s *Service) notifyAuthor(ctx context.Context, tx pgx.Tx, v gen.Vacancy, typ string, p notification.Payload) (notification.Sent, error) {
+	if s.Notify == nil {
+		return notification.Sent{}, nil
+	}
+	return s.Notify.NotifyTx(ctx, tx, typ, []notification.Recipient{{UserID: v.CreatedBy, Payload: p}}, true)
+}
+
+// publish moves a vacancy to published; then (optional) runs in the same transaction.
+func (s *Service) publish(ctx context.Context, id uuid.UUID, from []string, moderator *uuid.UUID,
+	then func(tx pgx.Tx, v gen.Vacancy) error) (gen.Vacancy, error) {
 	var v gen.Vacancy
-	err := postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+	err := postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		q := gen.New(tx)
 		var err error
 		v, err = q.PublishVacancy(ctx, gen.PublishVacancyParams{
 			ID: id, FromStatuses: from, TtlDays: PublishDays, ModeratedBy: moderator,
@@ -274,7 +301,13 @@ func (s *Service) publish(ctx context.Context, id uuid.UUID, from []string, mode
 		for i, r := range rows {
 			ids[i] = r.ID
 		}
-		return q.IncrementSkillUsage(ctx, ids)
+		if err := q.IncrementSkillUsage(ctx, ids); err != nil {
+			return err
+		}
+		if then != nil {
+			return then(tx, v)
+		}
+		return nil
 	})
 	return v, err
 }

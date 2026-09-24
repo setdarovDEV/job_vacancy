@@ -88,15 +88,50 @@ func TestPopularSearches(t *testing.T) {
 	}
 }
 
+// Only searches with exact results are recorded; a typo answered with similar results
+// never becomes a "popular search".
+func TestPopularSkipsFuzzyResults(t *testing.T) {
+	f := newFixture(t)
+	word := "zyq" + randWord(10)
+	f.publish(word + " operator")
+	typo := word[:5] + "x" + word[6:]
+	if word[5] == 'x' {
+		typo = word[:5] + "w" + word[6:]
+	}
+	for _, q := range []string{word, typo} {
+		rec := f.do("GET", "/vacancies?q="+q, nil)
+		var env struct {
+			Data []Card `json:"data"`
+			Meta struct {
+				Fuzzy bool `json:"fuzzy"`
+			} `json:"meta"`
+		}
+		if err := json.Unmarshal(body(t, rec), &env); err != nil || len(env.Data) == 0 || env.Meta.Fuzzy != (q == typo) {
+			t.Fatalf("q=%s: %d cards fuzzy=%v err=%v", q, len(env.Data), env.Meta.Fuzzy, err)
+		}
+	}
+	all, err := f.svc.PopularCandidates(context.Background(), popularPool)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range all {
+		got = append(got, e.Query)
+	}
+	if !slices.Contains(got, word) || slices.Contains(got, typo) {
+		t.Fatalf("recorded %v: want the exact query only", got)
+	}
+}
+
 // One IP can add at most popularPerIP queries a day to the statistics.
 func TestPopularPerIPBudget(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	flood := netip.MustParseAddr("203.0.113.99")
 	for i := range popularPerIP {
-		f.svc.Cache.RecordSearch(ctx, fmt.Sprintf("savol %s", randWord(5)+string(rune('a'+i%26))), flood)
+		f.svc.Cache.RecordSearch(ctx, fmt.Sprintf("savol n%03d", i), flood) // never spam-filtered
 	}
-	last := "oxirgi " + randWord(6)
+	last := "oxirgi savol"
 	f.svc.Cache.RecordSearch(ctx, last, flood)
 	all, err := f.svc.PopularCandidates(ctx, popularPool)
 	if err != nil {

@@ -30,12 +30,16 @@ export const primaryNav: readonly MenuNavItem[] = [
 const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /**
- * Sticky glass header. Phones (< md): logo, search, menu — the tab bar carries the main
- * destinations. md–lg: logo mark, nav pills, search, sign-in / messages, menu sheet for the rest.
- * lg+: full set with language, appearance, the "Post a vacancy" CTA and the avatar menu.
- * `mobileHidden` drops it below md for screens with their own top bar (chat thread).
+ * Sticky header that materializes rather than shrinks: clear over the page top, glass once content
+ * scrolls under it (the header-glass layer; always glass where scroll-driven animations are
+ * missing). The height never changes (h-16), so nothing re-lays out while scrolling.
+ * Phones (< md): logo, search, menu — the tab bar carries the main destinations. md–lg: logo
+ * mark, nav pills, search, sign-in / messages, menu sheet for the rest. lg+: full set with
+ * language, appearance, the "Post a vacancy" CTA and the avatar menu.
+ * `mobileHidden` drops it below md for screens with their own top bar (chat thread); `autoHide`
+ * lets it slide away on scroll-down below md (list routes, handle.autoHideHeader).
  */
-export function SiteHeader({ mobileHidden = false }: { mobileHidden?: boolean }) {
+export function SiteHeader({ mobileHidden = false, autoHide = false }: { mobileHidden?: boolean; autoHide?: boolean }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const { user, status } = useSession();
@@ -84,8 +88,11 @@ export function SiteHeader({ mobileHidden = false }: { mobileHidden?: boolean })
     <header
       id="site-header"
       data-mobile-hidden={mobileHidden || undefined}
-      className={cn("glass-bar sticky top-0 z-40 pt-safe", mobileHidden && "max-md:hidden")}
+      className={cn("sticky top-0 z-40 isolate pt-safe", autoHide && "autohide", mobileHidden && "max-md:hidden")}
     >
+      {/* The material lives on a sibling layer: backdrop-filter on the header itself would make it
+          the containing block of fixed descendants. Menus and the palette are top-layer / portals. */}
+      <div aria-hidden="true" className="header-glass glass-bar" />
       <a
         href="#main"
         // Visually hidden in place until focused (no off-screen parking the browser would scroll

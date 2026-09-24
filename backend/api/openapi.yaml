@@ -722,9 +722,18 @@ paths:
     get:
       tags: [companies]
       summary: Company directory (verified first, then by open vacancies), 24 per page
+      description: |
+        Keyset pages (TZ BE-03), never OFFSET. Page either by number (`page`, for numbered
+        pagination: it seeks from a cached page anchor) or by `cursor` (from
+        `meta.next_cursor`, takes precedence over `page`). `meta.total` and
+        `meta.page_count` come from page anchors cached for ~3 minutes, so they (and page
+        boundaries) may lag new companies or ranking changes by that long. A `page` past
+        the last one returns an empty `data`. `open_vacancies` is kept by a database
+        trigger on every vacancy status change.
       parameters:
-        - { name: q, in: query, schema: { type: string } }
+        - { name: q, in: query, description: "Name contains (case-insensitive, max 100 chars)", schema: { type: string } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: cursor, in: query, description: "meta.next_cursor of the previous page", schema: { type: string } }
       responses:
         "200":
           description: Page
@@ -732,9 +741,19 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [data, meta]
                 properties:
                   data: { type: array, items: { $ref: "#/components/schemas/Company" } }
-                  meta: { type: object, properties: { next_page: { type: [integer, "null"] } } }
+                  meta:
+                    type: object
+                    required: [page, next_page, next_cursor, total, page_count]
+                    properties:
+                      page: { type: [integer, "null"], description: "Requested page number; null when paging by cursor" }
+                      next_page: { type: [integer, "null"] }
+                      next_cursor: { type: [string, "null"] }
+                      total: { type: integer, description: "Matching active companies" }
+                      page_count: { type: integer }
+        "400": { $ref: "#/components/responses/Error" }
     post:
       tags: [companies]
       security: [{ bearer: [] }]

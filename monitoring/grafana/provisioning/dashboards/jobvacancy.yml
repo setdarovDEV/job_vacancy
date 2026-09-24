@@ -1,0 +1,12 @@
+# Dashboards from monitoring/grafana/dashboards (read-only in the UI: change the JSON in git).
+apiVersion: 1
+providers:
+  - name: jobvacancy
+    folder: jobvacancy
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

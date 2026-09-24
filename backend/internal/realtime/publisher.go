@@ -43,3 +43,31 @@ func (p *Publisher) ToUsers(ctx context.Context, users []uuid.UUID, ev Event) er
 	})
 	return err
 }
+
+// Targeted is one event for one user.
+type Targeted struct {
+	UserID uuid.UUID
+	Event  Event
+}
+
+// Send publishes a batch of per-user events in a single round trip (TZ BE-08).
+func (p *Publisher) Send(ctx context.Context, evs []Targeted) error {
+	if len(evs) == 0 {
+		return nil
+	}
+	payloads := make([][]byte, len(evs))
+	for i, ev := range evs {
+		b, err := json.Marshal(ev.Event)
+		if err != nil {
+			return err
+		}
+		payloads[i] = b
+	}
+	_, err := p.RDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, ev := range evs {
+			pipe.Publish(ctx, userChannel(ev.UserID), payloads[i])
+		}
+		return nil
+	})
+	return err
+}

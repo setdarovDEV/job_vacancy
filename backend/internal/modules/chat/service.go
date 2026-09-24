@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/redis/go-redis/v9"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -29,7 +30,6 @@ import (
 )
 
 const (
-	participantsTTL  = 30 * time.Second
 	offlineNotifyGap = 10 * time.Minute // at most one "new message" push per conversation per user
 	deleteWindow     = 48 * time.Hour
 )
@@ -58,44 +58,8 @@ type Service struct {
 	RDB       *redis.Client
 	Log       *slog.Logger
 
-	mu    sync.Mutex
-	cache map[uuid.UUID]cachedParticipants
-}
-
-type cachedParticipants struct {
-	conv    gen.Conversation
-	users   []uuid.UUID // seeker + every company member
-	expires time.Time
-}
-
-// participants returns the conversation and everyone on it; membership changes show up
-// within 30 s. Checked on every request and typing frame, so it's cached.
-func (s *Service) participants(ctx context.Context, id uuid.UUID) (gen.Conversation, []uuid.UUID, error) {
-	s.mu.Lock()
-	if c, ok := s.cache[id]; ok && time.Now().Before(c.expires) {
-		s.mu.Unlock()
-		return c.conv, c.users, nil
-	}
-	s.mu.Unlock()
-	conv, err := s.Q.GetConversation(ctx, id)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return conv, nil, ErrNotFound
-	}
-	if err != nil {
-		return conv, nil, err
-	}
-	members, err := s.Q.ListCompanyMemberIDs(ctx, conv.CompanyID)
-	if err != nil {
-		return conv, nil, err
-	}
-	users := append([]uuid.UUID{conv.SeekerID}, members...)
-	s.mu.Lock()
-	if s.cache == nil {
-		s.cache = map[uuid.UUID]cachedParticipants{}
-	}
-	s.cache[id] = cachedParticipants{conv: conv, users: users, expires: time.Now().Add(participantsTTL)}
-	s.mu.Unlock()
-	return conv, users, nil
+	cacheOnce sync.Once
+	cache     *expirable.LRU[uuid.UUID, cachedParticipants]
 }
 
 // access loads a conversation the caller takes part in; others get 404.
@@ -142,6 +106,7 @@ func (s *Service) Send(ctx context.Context, p reqctx.Principal, convID uuid.UUID
 	in.Body = strings.TrimSpace(in.Body)
 	meta := []byte("{}")
 	var fileID *uuid.UUID
+	var fileName string
 	switch in.Kind {
 	case "text":
 		if in.Body == "" {
@@ -158,7 +123,7 @@ func (s *Service) Send(ctx context.Context, p reqctx.Principal, convID uuid.UUID
 		if err != nil {
 			return Message{}, err
 		}
-		fileID = &f.ID
+		fileID, fileName = &f.ID, f.Name
 	case "location":
 		if in.Location == nil || (in.Location.Lat == 0 && in.Location.Lng == 0) {
 			return Message{}, ErrLocation
@@ -167,35 +132,49 @@ func (s *Service) Send(ctx context.Context, p reqctx.Principal, convID uuid.UUID
 		in.Body = ""
 	}
 
+	// Offline participants to push to, decided before the transaction so it holds no
+	// Redis calls: one Presence(ids) call and one pipelined throttle (TZ BE-08).
+	targets := s.offlineTargets(ctx, conv, users, p.UserID)
+
 	var m gen.Message
+	var sent notification.Sent
 	fresh := true
-	err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
-		var err error
-		m, err = q.InsertMessage(ctx, gen.InsertMessageParams{
+	err = postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		q := s.Q.WithTx(tx)
+		row, err := q.SendMessage(ctx, gen.SendMessageParams{
 			ConversationID: conv.ID, SenderID: &p.UserID, Kind: gen.MessageKind(in.Kind),
 			Body: in.Body, FileID: fileID, Meta: meta, ClientID: in.ClientID,
 		})
+		m = gen.Message(row)
 		if errors.Is(err, pgx.ErrNoRows) { // retried send: return the original, publish nothing
 			fresh = false
 			m, err = q.GetMessageByClientID(ctx, gen.GetMessageByClientIDParams{SenderID: &p.UserID, ClientID: in.ClientID})
 			return err
 		}
-		if err != nil {
+		if err != nil || len(targets) == 0 {
 			return err
 		}
-		if err := q.TouchConversation(ctx, gen.TouchConversationParams{ID: conv.ID, LastMessageID: &m.ID, LastMessageAt: &m.CreatedAt}); err != nil {
-			return err
-		}
-		_, err = q.MarkConversationRead(ctx, gen.MarkConversationReadParams{ConversationID: conv.ID, UserID: p.UserID, LastReadID: m.ID})
+		// The push/Telegram jobs commit with the message (TZ BE-08).
+		sent, err = s.notifyOffline(ctx, tx, conv, p.UserID, targets, previewOf(in, fileName))
 		return err
 	})
+	if err != nil || !fresh {
+		s.releaseThrottle(ctx, conv.ID, targets)
+	}
 	if err != nil {
 		return Message{}, err
 	}
 	if m.ConversationID != conv.ID { // client_id reused in another conversation
 		return Message{}, apperr.Conflict("client_id_reused", "client_id already used")
 	}
-	dtos, err := s.messageDTOs(ctx, []gen.Message{m})
+	rows, err := s.Q.GetMessagesWithRefs(ctx, []int64{m.ID})
+	if err != nil {
+		return Message{}, err
+	}
+	if len(rows) == 0 {
+		return Message{}, ErrMsgNotFound
+	}
+	dtos, err := s.joinedDTOs(ctx, rowsOf(rows))
 	if err != nil {
 		return Message{}, err
 	}
@@ -204,39 +183,101 @@ func (s *Service) Send(ctx context.Context, p reqctx.Principal, convID uuid.UUID
 		if err := s.Publisher.ToUsers(ctx, users, realtime.Event{Type: "message.new", Data: out}); err != nil {
 			s.Log.WarnContext(ctx, "publish message", "err", err)
 		}
-		s.notifyOffline(ctx, conv, users, p.UserID, out)
+		sent.Publish(ctx)
 	}
 	return out, nil
 }
 
-// notifyOffline pushes a "new message" notification to participants without an open
-// connection, at most once per conversation per 10 minutes each.
-func (s *Service) notifyOffline(ctx context.Context, conv gen.Conversation, users []uuid.UUID, sender uuid.UUID, m Message) {
-	var targets []uuid.UUID
-	for _, u := range users {
-		if u == sender || s.Hub.IsOnline(ctx, u) {
-			continue
-		}
-		key := "chat:notified:" + conv.ID.String() + ":" + u.String()
-		if ok, err := s.RDB.SetNX(ctx, key, 1, offlineNotifyGap).Result(); err == nil && ok {
-			targets = append(targets, u)
+// offlineTargets returns the participants (other than the sender) with no open
+// connection who haven't been pushed about this conversation in the last 10 minutes,
+// and marks them as pushed. Two Redis round trips whatever the team size: one
+// Presence(ids) and one pipelined SET NX. Redis errors mean no push, never a failed send.
+func (s *Service) offlineTargets(ctx context.Context, conv gen.Conversation, users []uuid.UUID, sender uuid.UUID) []uuid.UUID {
+	others := slices.DeleteFunc(slices.Clone(users), func(u uuid.UUID) bool { return u == sender })
+	if len(others) == 0 || s.Hub == nil || s.RDB == nil {
+		return nil
+	}
+	states, err := s.Hub.Presence(ctx, others)
+	if err != nil {
+		s.Log.WarnContext(ctx, "presence for offline push", "err", err)
+		return nil
+	}
+	var offline []uuid.UUID
+	for _, st := range states {
+		if !st.Online {
+			offline = append(offline, st.UserID)
 		}
 	}
+	if len(offline) == 0 {
+		return nil
+	}
+	cmds := make([]*redis.BoolCmd, len(offline))
+	_, err = s.RDB.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, u := range offline {
+			cmds[i] = pipe.SetNX(ctx, throttleKey(conv.ID, u), 1, offlineNotifyGap)
+		}
+		return nil
+	})
+	if err != nil {
+		s.Log.WarnContext(ctx, "offline push throttle", "err", err)
+		return nil
+	}
+	var targets []uuid.UUID
+	for i, c := range cmds {
+		if c.Val() {
+			targets = append(targets, offline[i])
+		}
+	}
+	return targets
+}
+
+// releaseThrottle undoes offlineTargets when nothing was sent (retry or failed insert).
+func (s *Service) releaseThrottle(ctx context.Context, convID uuid.UUID, targets []uuid.UUID) {
 	if len(targets) == 0 {
 		return
 	}
-	name := ""
-	if m.Sender != nil {
-		name = m.Sender.FullName
+	keys := make([]string, len(targets))
+	for i, u := range targets {
+		keys[i] = throttleKey(convID, u)
 	}
-	if sender != conv.SeekerID { // the company speaks as the company
-		if c, err := s.Q.GetCompanyByID(ctx, conv.CompanyID); err == nil {
-			name = c.Name
-		}
+	if err := s.RDB.Del(context.WithoutCancel(ctx), keys...).Err(); err != nil {
+		s.Log.WarnContext(ctx, "release offline push throttle", "err", err)
 	}
-	s.Notify.Notify(ctx, targets, notification.TypeMessageNew, notification.Payload{
-		ConversationID: conv.ID.String(), SenderName: name, Preview: preview(m),
-	}, false)
+}
+
+func throttleKey(convID, userID uuid.UUID) string {
+	return "chat:notified:" + convID.String() + ":" + userID.String()
+}
+
+// notifyOffline queues the "new message" push (Telegram, mobile) for targets inside the
+// message's transaction.
+func (s *Service) notifyOffline(ctx context.Context, tx pgx.Tx, conv gen.Conversation, sender uuid.UUID, targets []uuid.UUID, text string) (notification.Sent, error) {
+	// The company speaks as the company; the seeker by name.
+	var name string
+	var err error
+	if sender == conv.SeekerID {
+		err = tx.QueryRow(ctx, `SELECT full_name FROM users WHERE id = $1`, sender).Scan(&name)
+	} else {
+		err = tx.QueryRow(ctx, `SELECT name FROM companies WHERE id = $1`, conv.CompanyID).Scan(&name)
+	}
+	if err != nil {
+		return notification.Sent{}, err
+	}
+	p := notification.Payload{ConversationID: conv.ID.String(), SenderName: name, Preview: text}
+	to := make([]notification.Recipient, len(targets))
+	for i, u := range targets {
+		to[i] = notification.Recipient{UserID: u, Payload: p}
+	}
+	return s.Notify.NotifyTx(ctx, tx, notification.TypeMessageNew, to, false)
+}
+
+// previewOf is the notification preview of a message being sent.
+func previewOf(in SendInput, fileName string) string {
+	m := Message{Kind: in.Kind, Body: in.Body}
+	if in.Kind == "file" && fileName != "" {
+		m.File = &file.DTO{Name: fileName}
+	}
+	return preview(m)
 }
 
 func preview(m Message) string {
@@ -275,10 +316,10 @@ func (s *Service) Messages(ctx context.Context, p reqctx.Principal, convID uuid.
 	var next *int64
 	if len(rows) > limit {
 		rows = rows[:limit]
-		id := rows[len(rows)-1].ID
+		id := rows[len(rows)-1].Message.ID
 		next = &id
 	}
-	out, err := s.messageDTOs(ctx, rows)
+	out, err := s.joinedDTOs(ctx, rows)
 	return out, next, err
 }
 
@@ -348,60 +389,4 @@ func (s *Service) HandleFrame(ctx context.Context, userID uuid.UUID, f realtime.
 		return s.MarkRead(ctx, p, f.ConversationID, f.MessageID)
 	}
 	return errors.New("unknown frame type")
-}
-
-// messageDTOs attaches senders and (signed) file URLs to a batch of messages.
-func (s *Service) messageDTOs(ctx context.Context, rows []gen.Message) ([]Message, error) {
-	var userIDs, fileIDs []uuid.UUID
-	for _, m := range rows {
-		if m.SenderID != nil && !slices.Contains(userIDs, *m.SenderID) {
-			userIDs = append(userIDs, *m.SenderID)
-		}
-		if m.FileID != nil {
-			fileIDs = append(fileIDs, *m.FileID)
-		}
-	}
-	people := map[uuid.UUID]*Person{}
-	if len(userIDs) > 0 {
-		us, err := s.Q.GetUsersBrief(ctx, userIDs)
-		if err != nil {
-			return nil, err
-		}
-		for _, u := range us {
-			people[u.ID] = &Person{ID: u.ID, FullName: u.FullName, AvatarURL: u.AvatarUrl}
-		}
-	}
-	files := map[uuid.UUID]*file.DTO{}
-	if len(fileIDs) > 0 {
-		fs, err := s.Q.GetFilesByIDs(ctx, fileIDs)
-		if err != nil {
-			return nil, err
-		}
-		for _, f := range fs {
-			d, err := s.Files.DTO(ctx, f)
-			if err != nil {
-				return nil, err
-			}
-			files[f.ID] = &d
-		}
-	}
-	out := make([]Message, len(rows))
-	for i, m := range rows {
-		d := Message{ID: m.ID, ConversationID: m.ConversationID, Kind: string(m.Kind), Body: m.Body,
-			ClientID: m.ClientID, CreatedAt: m.CreatedAt, Deleted: m.DeletedAt != nil}
-		if m.SenderID != nil {
-			d.Sender = people[*m.SenderID]
-		}
-		if m.FileID != nil {
-			d.File = files[*m.FileID]
-		}
-		if m.Kind == gen.MessageKindLocation && m.DeletedAt == nil {
-			var loc Location
-			if json.Unmarshal(m.Meta, &loc) == nil {
-				d.Location = &loc
-			}
-		}
-		out[i] = d
-	}
-	return out, nil
 }

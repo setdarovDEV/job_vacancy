@@ -274,8 +274,9 @@ func (e *Enqueuer) EnqueueEmailCode(ctx context.Context, a EmailCodeArgs) error 
 	return err
 }
 
-// InsertMany enqueues several jobs in one round trip.
-func (e *Enqueuer) InsertMany(ctx context.Context, args []river.JobArgs) error {
+// InsertManyTx enqueues several jobs inside tx in one round trip, so they commit (or roll
+// back) with the business change that caused them (TZ BE-08).
+func (e *Enqueuer) InsertManyTx(ctx context.Context, tx pgx.Tx, args []river.JobArgs) error {
 	if len(args) == 0 {
 		return nil
 	}
@@ -283,6 +284,6 @@ func (e *Enqueuer) InsertMany(ctx context.Context, args []river.JobArgs) error {
 	for i, a := range args {
 		params[i] = river.InsertManyParams{Args: a}
 	}
-	_, err := e.client.InsertMany(ctx, params)
+	_, err := e.client.InsertManyTx(ctx, tx, params)
 	return err
 }

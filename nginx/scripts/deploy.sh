@@ -9,6 +9,8 @@
 # BUILD=1         build the images here instead of pulling them (a server without CI/GHCR)
 # SKIP_MIGRATE=1  (rollback) don't run migrations: they are additive, old code runs on them
 # SKIP_BACKUP_POINT=1
+# DEPLOY_PROBE_STRICT=1  exit non-zero when the availability probe saw a 5xx during the roll
+#                        (the release stays live either way; CI staging deploys set it)
 #
 # Rolling: each instance is drained in nginx first (bin/jv-upstream), recreated, gated on
 # /readyz, then put back, so the other instance carries all traffic meanwhile. Postgres,
@@ -75,7 +77,18 @@ if [ "${SKIP_MIGRATE:-0}" != 1 ]; then
   dc run --rm migrate || die "migration failed: nothing was restarted, the old release keeps serving"
 fi
 
+# ---- monitoring role grants (idempotent; new tables get their column grants) ---------------
+if psql_super_file "$NGX/postgres/monitoring.sql" >/dev/null; then
+  log "monitoring grants applied (nginx/postgres/monitoring.sql)"
+else
+  warn "monitoring grants failed: dashboards and River/backup alerts may be blind (deploy continues)"
+fi
+
 # ---- rolling restart ------------------------------------------------------------------------
+# A background probe through nginx counts every failed request while instances roll.
+probe_start "$domain"
+trap 'nginx_exec touch /tmp/jv-probe.stop >/dev/null 2>&1 || true' EXIT
+probe_failed=0
 pending_up=""
 roll() { # roll <service> <readiness url seen from nginx>
   local svc=$1 url=$2
@@ -95,6 +108,8 @@ nginx_exec jv-upstream up "$pending_up" >/dev/null
 
 log "worker"
 dc up -d --no-deps --wait --wait-timeout 180 worker
+probe_stop || probe_failed=1
+trap - EXIT
 
 # ---- edge and sidecars ---------------------------------------------------------------------
 want_nginx="$(envget IMAGE_PREFIX ghcr.io/setdarovdev/jobvacancy)-nginx:$NGINX_TAG"
@@ -122,4 +137,7 @@ if [ -w /etc/cron.d ] && ! cmp -s <(sed "s#@ROOT@#$ROOT#g; s#@ENV@#$JV_ENV#g" "$
   log "installed /etc/cron.d/jobvacancy-$JV_ENV"
 fi
 docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
+if [ "$probe_failed" = 1 ] && [ "${DEPLOY_PROBE_STRICT:-0}" = 1 ]; then
+  die "$JV_ENV runs $TAG, but requests failed during the roll (see above): investigate before the next deploy"
+fi
 log "done: $JV_ENV runs $TAG"

@@ -28,6 +28,63 @@ func (q *Queries) AddCompanyMember(ctx context.Context, arg AddCompanyMemberPara
 	return err
 }
 
+const companyDirectoryAnchors = `-- name: CompanyDirectoryAnchors :many
+SELECT s.rn::bigint AS rn, s.total::bigint AS total, s.unverified::boolean AS unverified,
+       s.neg_open::int AS neg_open, s.name::text AS name, s.id::uuid AS id
+FROM (SELECT row_number() OVER (ORDER BY (c.verified_at IS NULL), -c.open_vacancies, c.name, c.id) AS rn,
+             count(*) OVER () AS total,
+             (c.verified_at IS NULL) AS unverified, -c.open_vacancies AS neg_open, c.name, c.id
+      FROM companies c
+      WHERE c.status = 'active'
+        AND ($1::text IS NULL OR lower(c.name) LIKE '%' || $1::text || '%')) s
+WHERE s.rn % $2::bigint = 0 OR s.rn = s.total
+ORDER BY s.rn
+`
+
+type CompanyDirectoryAnchorsParams struct {
+	Q   *string
+	Per int64
+}
+
+type CompanyDirectoryAnchorsRow struct {
+	Rn         int64
+	Total      int64
+	Unverified bool
+	NegOpen    int32
+	Name       string
+	ID         uuid.UUID
+}
+
+// Page anchors for numbered directory pages: the key of every per-th row in directory
+// order (the last row of each page, from which the next page seeks) plus the total. One
+// ordered pass over the index; cached for a few minutes by company.Directory.
+func (q *Queries) CompanyDirectoryAnchors(ctx context.Context, arg CompanyDirectoryAnchorsParams) ([]CompanyDirectoryAnchorsRow, error) {
+	rows, err := q.db.Query(ctx, companyDirectoryAnchors, arg.Q, arg.Per)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CompanyDirectoryAnchorsRow{}
+	for rows.Next() {
+		var i CompanyDirectoryAnchorsRow
+		if err := rows.Scan(
+			&i.Rn,
+			&i.Total,
+			&i.Unverified,
+			&i.NegOpen,
+			&i.Name,
+			&i.ID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const companySlugExists = `-- name: CompanySlugExists :one
 SELECT EXISTS (SELECT 1 FROM companies WHERE slug = $1)
 `
@@ -39,22 +96,11 @@ func (q *Queries) CompanySlugExists(ctx context.Context, slug string) (bool, err
 	return exists, err
 }
 
-const countPublishedVacancies = `-- name: CountPublishedVacancies :one
-SELECT count(*) FROM vacancies WHERE company_id = $1 AND status = 'published'
-`
-
-func (q *Queries) CountPublishedVacancies(ctx context.Context, companyID uuid.UUID) (int64, error) {
-	row := q.db.QueryRow(ctx, countPublishedVacancies, companyID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createCompany = `-- name: CreateCompany :one
 INSERT INTO companies (owner_id, name, slug, industry_id, size, website, email, phone,
                        region_id, address, about, founded_year)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at
+RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
 `
 
 type CreateCompanyParams struct {
@@ -108,12 +154,13 @@ func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (C
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OpenVacancies,
 	)
 	return i, err
 }
 
 const getCompanyByID = `-- name: GetCompanyByID :one
-SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at FROM companies WHERE id = $1
+SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies FROM companies WHERE id = $1
 `
 
 func (q *Queries) GetCompanyByID(ctx context.Context, id uuid.UUID) (Company, error) {
@@ -139,12 +186,13 @@ func (q *Queries) GetCompanyByID(ctx context.Context, id uuid.UUID) (Company, er
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OpenVacancies,
 	)
 	return i, err
 }
 
 const getCompanyBySlug = `-- name: GetCompanyBySlug :one
-SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at FROM companies WHERE slug = $1
+SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies FROM companies WHERE slug = $1
 `
 
 func (q *Queries) GetCompanyBySlug(ctx context.Context, slug string) (Company, error) {
@@ -170,6 +218,7 @@ func (q *Queries) GetCompanyBySlug(ctx context.Context, slug string) (Company, e
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OpenVacancies,
 	)
 	return i, err
 }
@@ -191,30 +240,45 @@ func (q *Queries) GetMemberRole(ctx context.Context, arg GetMemberRoleParams) (C
 }
 
 const listCompaniesDirectory = `-- name: ListCompaniesDirectory :many
-SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at,
-       (SELECT count(*) FROM vacancies v WHERE v.company_id = c.id AND v.status = 'published')::int AS open_vacancies
+SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies
 FROM companies c
 WHERE c.status = 'active'
-  AND ($1::text IS NULL OR lower(c.name) LIKE '%' || lower($1::text) || '%')
-ORDER BY (c.verified_at IS NOT NULL) DESC, open_vacancies DESC, c.name, c.id
-LIMIT $3 OFFSET $2
+  AND ((c.verified_at IS NULL), -c.open_vacancies, c.name, c.id)
+      > ($1::boolean, $2::int,
+         $3::text, $4::uuid)
+  AND ($5::text IS NULL OR lower(c.name) LIKE '%' || $5::text || '%')
+ORDER BY (c.verified_at IS NULL), -c.open_vacancies, c.name, c.id
+LIMIT $6
 `
 
 type ListCompaniesDirectoryParams struct {
-	Q          *string
-	Skip       int32
-	MaxResults int32
+	AfterUnverified bool
+	AfterNegOpen    int32
+	AfterName       string
+	AfterID         uuid.UUID
+	Q               *string
+	MaxResults      int32
 }
 
 type ListCompaniesDirectoryRow struct {
-	Company       Company
-	OpenVacancies int32
+	Company Company
 }
 
-// Public directory: verified first, then by open vacancies. Offset paging is fine here:
-// the directory is small and sorted by a computed count.
+// Company directory page (TZ BE-03): verified first, then by open vacancies, name, id,
+// which is the order of companies_directory_idx. Pages are keyset: the query seeks past the
+// key of the previous page's last row. The first page passes a key below every row
+// (unverified=false, neg_open=-2147483648), so the plan is always one index range scan and
+// a cached generic plan can't degrade into walking the index from the start.
+// q is lower-cased with LIKE wildcards escaped by the caller.
 func (q *Queries) ListCompaniesDirectory(ctx context.Context, arg ListCompaniesDirectoryParams) ([]ListCompaniesDirectoryRow, error) {
-	rows, err := q.db.Query(ctx, listCompaniesDirectory, arg.Q, arg.Skip, arg.MaxResults)
+	rows, err := q.db.Query(ctx, listCompaniesDirectory,
+		arg.AfterUnverified,
+		arg.AfterNegOpen,
+		arg.AfterName,
+		arg.AfterID,
+		arg.Q,
+		arg.MaxResults,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +306,7 @@ func (q *Queries) ListCompaniesDirectory(ctx context.Context, arg ListCompaniesD
 			&i.Company.Status,
 			&i.Company.CreatedAt,
 			&i.Company.UpdatedAt,
-			&i.OpenVacancies,
+			&i.Company.OpenVacancies,
 		); err != nil {
 			return nil, err
 		}
@@ -298,7 +362,7 @@ func (q *Queries) ListCompanyMembers(ctx context.Context, companyID uuid.UUID) (
 }
 
 const listUserCompanies = `-- name: ListUserCompanies :many
-SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, m.role
+SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies, m.role
 FROM company_members m JOIN companies c ON c.id = m.company_id
 WHERE m.user_id = $1
 ORDER BY m.created_at
@@ -338,6 +402,7 @@ func (q *Queries) ListUserCompanies(ctx context.Context, userID uuid.UUID) ([]Li
 			&i.Company.Status,
 			&i.Company.CreatedAt,
 			&i.Company.UpdatedAt,
+			&i.Company.OpenVacancies,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -368,7 +433,7 @@ func (q *Queries) RemoveCompanyMember(ctx context.Context, arg RemoveCompanyMemb
 }
 
 const setCompanyLogo = `-- name: SetCompanyLogo :one
-UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at
+UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
 `
 
 type SetCompanyLogoParams struct {
@@ -399,12 +464,13 @@ func (q *Queries) SetCompanyLogo(ctx context.Context, arg SetCompanyLogoParams) 
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OpenVacancies,
 	)
 	return i, err
 }
 
 const setCompanyLogoURL = `-- name: SetCompanyLogoURL :one
-UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at
+UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
 `
 
 type SetCompanyLogoURLParams struct {
@@ -435,6 +501,7 @@ func (q *Queries) SetCompanyLogoURL(ctx context.Context, arg SetCompanyLogoURLPa
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OpenVacancies,
 	)
 	return i, err
 }
@@ -443,7 +510,7 @@ const setCompanyVerified = `-- name: SetCompanyVerified :one
 UPDATE companies
 SET verified_at = CASE WHEN $2::boolean THEN COALESCE(verified_at, now()) END
 WHERE id = $1
-RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at
+RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
 `
 
 type SetCompanyVerifiedParams struct {
@@ -474,6 +541,7 @@ func (q *Queries) SetCompanyVerified(ctx context.Context, arg SetCompanyVerified
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OpenVacancies,
 	)
 	return i, err
 }
@@ -483,7 +551,7 @@ UPDATE companies
 SET name = $2, industry_id = $3, size = $4, website = $5, email = $6, phone = $7,
     region_id = $8, address = $9, about = $10, founded_year = $11
 WHERE id = $1
-RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at
+RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
 `
 
 type UpdateCompanyParams struct {
@@ -535,6 +603,7 @@ func (q *Queries) UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (C
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.OpenVacancies,
 	)
 	return i, err
 }

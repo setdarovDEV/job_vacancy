@@ -141,10 +141,17 @@ func settle() { time.Sleep(50 * time.Millisecond) }
 
 const letters = "abcdefghijklmnopqrstuvwxyz"
 
+// randWord never repeats a letter back to back (a run like "aaaa" is spam to the
+// popular-search filter) and never starts a stop root (it is used after a fixed prefix).
 func randWord(n int) string {
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = letters[rand.IntN(len(letters))]
+		for {
+			b[i] = letters[rand.IntN(len(letters))]
+			if i == 0 || b[i] != b[i-1] {
+				break
+			}
+		}
 	}
 	return string(b)
 }

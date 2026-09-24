@@ -253,6 +253,136 @@ func (q *Queries) MarkNotificationsRead(ctx context.Context, arg MarkNotificatio
 	return result.RowsAffected(), nil
 }
 
+const notifyCompanyMembers = `-- name: NotifyCompanyMembers :many
+WITH ins AS (
+    INSERT INTO notifications (user_id, type, payload)
+    SELECT m.user_id, $1, $2::jsonb
+    FROM company_members m WHERE m.company_id = $3
+    RETURNING id, user_id, created_at
+)
+SELECT u.id AS user_id, ins.id AS notification_id, ins.created_at AS notified_at,
+       (u.status = 'active' AND u.notify_email AND u.email IS NOT NULL
+        AND u.email_verified_at IS NOT NULL)::boolean AS has_email,
+       (u.status = 'active' AND u.notify_telegram AND u.telegram_chat_id IS NOT NULL)::boolean AS has_telegram,
+       (u.status = 'active' AND EXISTS (SELECT 1 FROM device_tokens d WHERE d.user_id = u.id))::boolean AS has_push
+FROM ins
+JOIN users u ON u.id = ins.user_id
+`
+
+type NotifyCompanyMembersParams struct {
+	Type      string
+	Payload   []byte
+	CompanyID uuid.UUID
+}
+
+type NotifyCompanyMembersRow struct {
+	UserID         uuid.UUID
+	NotificationID int64
+	NotifiedAt     time.Time
+	HasEmail       bool
+	HasTelegram    bool
+	HasPush        bool
+}
+
+// Same for every member of a company, one payload for all.
+func (q *Queries) NotifyCompanyMembers(ctx context.Context, arg NotifyCompanyMembersParams) ([]NotifyCompanyMembersRow, error) {
+	rows, err := q.db.Query(ctx, notifyCompanyMembers, arg.Type, arg.Payload, arg.CompanyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotifyCompanyMembersRow{}
+	for rows.Next() {
+		var i NotifyCompanyMembersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.NotificationID,
+			&i.NotifiedAt,
+			&i.HasEmail,
+			&i.HasTelegram,
+			&i.HasPush,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const notifyUsers = `-- name: NotifyUsers :many
+WITH t AS (
+    SELECT DISTINCT ON (x.user_id) x.user_id, x.payload
+    FROM (SELECT ($1::uuid[])[i] AS user_id, ($2::text[])[i] AS payload
+          FROM generate_subscripts($1::uuid[], 1) AS i) x
+), ins AS (
+    INSERT INTO notifications (user_id, type, payload)
+    SELECT t.user_id, $3, t.payload::jsonb FROM t WHERE $4::boolean
+    RETURNING id, user_id, created_at
+)
+SELECT u.id AS user_id, ins.id AS notification_id, ins.created_at AS notified_at,
+       (u.status = 'active' AND u.notify_email AND u.email IS NOT NULL
+        AND u.email_verified_at IS NOT NULL)::boolean AS has_email,
+       (u.status = 'active' AND u.notify_telegram AND u.telegram_chat_id IS NOT NULL)::boolean AS has_telegram,
+       (u.status = 'active' AND EXISTS (SELECT 1 FROM device_tokens d WHERE d.user_id = u.id))::boolean AS has_push
+FROM t
+JOIN users u ON u.id = t.user_id
+LEFT JOIN ins ON ins.user_id = t.user_id
+`
+
+type NotifyUsersParams struct {
+	UserIds  []uuid.UUID
+	Payloads []string
+	Type     string
+	Store    bool
+}
+
+type NotifyUsersRow struct {
+	UserID         uuid.UUID
+	NotificationID *int64
+	NotifiedAt     *time.Time
+	HasEmail       bool
+	HasTelegram    bool
+	HasPush        bool
+}
+
+// Notifications made inside a business transaction (TZ BE-08): store them (when store),
+// and report which delivery channels each recipient actually has, so jobs are enqueued
+// only for those. One round trip. Payloads are per recipient (JSON text).
+func (q *Queries) NotifyUsers(ctx context.Context, arg NotifyUsersParams) ([]NotifyUsersRow, error) {
+	rows, err := q.db.Query(ctx, notifyUsers,
+		arg.UserIds,
+		arg.Payloads,
+		arg.Type,
+		arg.Store,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []NotifyUsersRow{}
+	for rows.Next() {
+		var i NotifyUsersRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.NotificationID,
+			&i.NotifiedAt,
+			&i.HasEmail,
+			&i.HasTelegram,
+			&i.HasPush,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setNotificationSettings = `-- name: SetNotificationSettings :one
 UPDATE users SET notify_email = $2, notify_telegram = $3 WHERE id = $1
 RETURNING notify_email, notify_telegram, telegram_chat_id

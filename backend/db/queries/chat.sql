@@ -10,36 +10,65 @@ RETURNING *;
 -- name: GetConversation :one
 SELECT * FROM conversations WHERE id = $1;
 
--- Conversations of a seeker, or of every company the user is a member of.
+-- Conversations of a user, most recently active first (TZ BE-04). Two branches, each on
+-- its own index and LIMIT: conversations where the user is the seeker
+-- (conversations_seeker_idx) and conversations of each company the user belongs to
+-- (conversations_company_idx, one LATERAL scan per membership). The first page passes
+-- before_at = far future, before_id = max uuid, so the seek is always an index condition.
+-- Unread counts come from conversation_reads.unread_count (kept by triggers, 00017).
 -- name: ListConversations :many
-SELECT c.*, v.title AS vacancy_title,
+WITH page AS (
+    (SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id,
+            c.last_message_id, c.last_message_at, c.created_at,
+            COALESCE(c.last_message_at, c.created_at) AS sort_at
+     FROM conversations c
+     WHERE c.seeker_id = sqlc.arg(user_id)::uuid
+       AND (COALESCE(c.last_message_at, c.created_at), c.id)
+           < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_id)::uuid)
+     ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
+     LIMIT sqlc.arg(max_results))
+    UNION ALL
+    (SELECT x.id, x.application_id, x.company_id, x.seeker_id, x.vacancy_id,
+            x.last_message_id, x.last_message_at, x.created_at, x.sort_at
+     FROM company_members cm
+     CROSS JOIN LATERAL (
+         SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id,
+                c.last_message_id, c.last_message_at, c.created_at,
+                COALESCE(c.last_message_at, c.created_at) AS sort_at
+         FROM conversations c
+         WHERE c.company_id = cm.company_id AND c.seeker_id <> sqlc.arg(user_id)::uuid
+           AND (COALESCE(c.last_message_at, c.created_at), c.id)
+               < (sqlc.arg(before_at)::timestamptz, sqlc.arg(before_id)::uuid)
+         ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
+         LIMIT sqlc.arg(max_results)) x
+     WHERE cm.user_id = sqlc.arg(user_id)::uuid)
+    ORDER BY sort_at DESC, id DESC
+    LIMIT sqlc.arg(max_results)
+)
+SELECT p.id, p.application_id, p.company_id, p.seeker_id, p.vacancy_id,
+       p.last_message_id, p.last_message_at, p.created_at,
+       v.title AS vacancy_title,
        co.name AS company_name, co.slug AS company_slug, co.logo_url AS company_logo,
        u.full_name AS seeker_name, u.avatar_url AS seeker_avatar,
        COALESCE(r.last_read_id, 0)::bigint AS last_read_id,
-       (SELECT count(*) FROM (SELECT 1 FROM messages m
-            WHERE m.conversation_id = c.id AND m.id > COALESCE(r.last_read_id, 0)
-              AND m.sender_id IS DISTINCT FROM sqlc.arg(user_id)::uuid AND m.deleted_at IS NULL
-            LIMIT 100) x)::int AS unread
-FROM conversations c
-JOIN vacancies v ON v.id = c.vacancy_id
-JOIN companies co ON co.id = c.company_id
-JOIN users u ON u.id = c.seeker_id
-LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.user_id = sqlc.arg(user_id)::uuid
-WHERE (c.seeker_id = sqlc.arg(user_id)::uuid
-       OR c.company_id IN (SELECT company_id FROM company_members WHERE user_id = sqlc.arg(user_id)::uuid))
-  AND (sqlc.narg(before_at)::timestamptz IS NULL
-       OR (COALESCE(c.last_message_at, c.created_at), c.id) < (sqlc.narg(before_at), sqlc.narg(before_id)::uuid))
-ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
-LIMIT sqlc.arg(max_results);
+       LEAST(COALESCE(r.unread_count, 0), 100)::int AS unread
+FROM page p
+JOIN vacancies v ON v.id = p.vacancy_id
+JOIN companies co ON co.id = p.company_id
+JOIN users u ON u.id = p.seeker_id
+LEFT JOIN conversation_reads r ON r.conversation_id = p.id AND r.user_id = sqlc.arg(user_id)::uuid
+ORDER BY p.sort_at DESC, p.id DESC;
 
+-- Conversations with unread messages for the header badge (TZ BE-04): only rows with
+-- unread_count > 0 are in conversation_reads_unread_idx. Rows left from a company the user
+-- no longer belongs to are skipped.
 -- name: CountUnreadConversations :one
-SELECT count(*) FROM conversations c
-LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.user_id = sqlc.arg(user_id)::uuid
-WHERE (c.seeker_id = sqlc.arg(user_id)::uuid
-       OR c.company_id IN (SELECT company_id FROM company_members WHERE user_id = sqlc.arg(user_id)::uuid))
-  AND c.last_message_id > COALESCE(r.last_read_id, 0)
-  AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.id > COALESCE(r.last_read_id, 0)
-              AND m.sender_id IS DISTINCT FROM sqlc.arg(user_id)::uuid AND m.deleted_at IS NULL);
+SELECT count(*) FROM conversation_reads r
+JOIN conversations c ON c.id = r.conversation_id
+WHERE r.user_id = sqlc.arg(user_id)::uuid AND r.unread_count > 0
+  AND (c.seeker_id = sqlc.arg(user_id)::uuid
+       OR EXISTS (SELECT 1 FROM company_members m
+                  WHERE m.company_id = c.company_id AND m.user_id = sqlc.arg(user_id)::uuid));
 
 -- name: InsertMessage :one
 INSERT INTO messages (conversation_id, sender_id, kind, body, file_id, meta, client_id)
@@ -57,13 +86,22 @@ SELECT * FROM messages WHERE id = $1;
 UPDATE conversations SET last_message_id = $2, last_message_at = $3 WHERE id = $1;
 
 -- Pages go backwards from before_id (history) or forwards from after_id (catch-up
--- after a reconnect); results are always newest first.
+-- after a reconnect); results are always newest first. Sender and attachment come in the
+-- same query.
 -- name: ListMessages :many
-SELECT * FROM messages
-WHERE conversation_id = sqlc.arg(conversation_id)
-  AND (sqlc.narg(before_id)::bigint IS NULL OR id < sqlc.narg(before_id))
-  AND (sqlc.narg(after_id)::bigint IS NULL OR id > sqlc.narg(after_id))
-ORDER BY id DESC
+SELECT sqlc.embed(m),
+       u.full_name AS sender_name, u.avatar_url AS sender_avatar,
+       f.id AS file_ref_id, f.owner_id AS file_owner_id, f.purpose AS file_purpose,
+       f.status AS file_status, f.bucket AS file_bucket, f.object_key AS file_object_key,
+       f.content_type AS file_content_type, f.size AS file_size, f.name AS file_name,
+       f.meta AS file_meta, f.created_at AS file_created_at
+FROM messages m
+LEFT JOIN users u ON u.id = m.sender_id
+LEFT JOIN files f ON f.id = m.file_id
+WHERE m.conversation_id = sqlc.arg(conversation_id)
+  AND (sqlc.narg(before_id)::bigint IS NULL OR m.id < sqlc.narg(before_id))
+  AND (sqlc.narg(after_id)::bigint IS NULL OR m.id > sqlc.narg(after_id))
+ORDER BY m.id DESC
 LIMIT sqlc.arg(max_results);
 
 -- name: SoftDeleteMessage :one
@@ -92,14 +130,13 @@ SELECT * FROM messages WHERE id = ANY(sqlc.arg(ids)::bigint[]);
 
 -- Same shape as ListConversations, for one conversation.
 -- name: GetConversationView :one
-SELECT c.*, v.title AS vacancy_title,
+SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id,
+       c.last_message_id, c.last_message_at, c.created_at,
+       v.title AS vacancy_title,
        co.name AS company_name, co.slug AS company_slug, co.logo_url AS company_logo,
        u.full_name AS seeker_name, u.avatar_url AS seeker_avatar,
        COALESCE(r.last_read_id, 0)::bigint AS last_read_id,
-       (SELECT count(*) FROM (SELECT 1 FROM messages m
-            WHERE m.conversation_id = c.id AND m.id > COALESCE(r.last_read_id, 0)
-              AND m.sender_id IS DISTINCT FROM sqlc.arg(user_id)::uuid AND m.deleted_at IS NULL
-            LIMIT 100) x)::int AS unread
+       LEAST(COALESCE(r.unread_count, 0), 100)::int AS unread
 FROM conversations c
 JOIN vacancies v ON v.id = c.vacancy_id
 JOIN companies co ON co.id = c.company_id
@@ -110,3 +147,47 @@ WHERE c.id = sqlc.arg(id);
 -- name: ListReadPositionsFor :many
 SELECT conversation_id, user_id, last_read_id FROM conversation_reads
 WHERE conversation_id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- Messages by id with sender and attachment in one query (last messages of a list page,
+-- a message just sent).
+-- name: GetMessagesWithRefs :many
+SELECT sqlc.embed(m),
+       u.full_name AS sender_name, u.avatar_url AS sender_avatar,
+       f.id AS file_ref_id, f.owner_id AS file_owner_id, f.purpose AS file_purpose,
+       f.status AS file_status, f.bucket AS file_bucket, f.object_key AS file_object_key,
+       f.content_type AS file_content_type, f.size AS file_size, f.name AS file_name,
+       f.meta AS file_meta, f.created_at AS file_created_at
+FROM messages m
+LEFT JOIN users u ON u.id = m.sender_id
+LEFT JOIN files f ON f.id = m.file_id
+WHERE m.id = ANY(sqlc.arg(ids)::bigint[]);
+
+-- Conversations with everyone on the company side, for a page of ids (the participants
+-- cache fills all its misses of a page with this one query).
+-- name: GetConversationsWithMembers :many
+SELECT sqlc.embed(c),
+       ARRAY(SELECT m.user_id FROM company_members m WHERE m.company_id = c.company_id
+             ORDER BY m.user_id)::uuid[] AS members
+FROM conversations c
+WHERE c.id = ANY(sqlc.arg(ids)::uuid[]);
+
+-- Insert a message, move the conversation's last message and the sender's read position
+-- in one statement. No row: the client_id was already used (a retried send). Unread
+-- counters of the other participants are bumped by the messages trigger (00017).
+-- name: SendMessage :one
+WITH m AS (
+    INSERT INTO messages (conversation_id, sender_id, kind, body, file_id, meta, client_id)
+    VALUES (sqlc.arg(conversation_id), sqlc.arg(sender_id), sqlc.arg(kind), sqlc.arg(body),
+            sqlc.narg(file_id), sqlc.arg(meta), sqlc.arg(client_id))
+    ON CONFLICT (sender_id, client_id) DO NOTHING
+    RETURNING *
+), t AS (
+    UPDATE conversations c SET last_message_id = m.id, last_message_at = m.created_at
+    FROM m WHERE c.id = m.conversation_id
+), r AS (
+    INSERT INTO conversation_reads (conversation_id, user_id, last_read_id)
+    SELECT m.conversation_id, m.sender_id, m.id FROM m
+    ON CONFLICT (conversation_id, user_id) DO UPDATE
+    SET last_read_id = GREATEST(conversation_reads.last_read_id, EXCLUDED.last_read_id)
+)
+SELECT * FROM m;

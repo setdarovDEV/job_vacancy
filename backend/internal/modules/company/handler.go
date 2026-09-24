@@ -12,6 +12,8 @@ import (
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/file"
+	"jobvacancy.uz/backend/internal/pkg/apperr"
+	"jobvacancy.uz/backend/internal/pkg/cursor"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/platform/respcache"
 	mw "jobvacancy.uz/backend/internal/transport/http/middleware"
@@ -85,6 +87,8 @@ type Handler struct {
 	// Cache serves the public profile page as cached bytes with an ETag (TZ BE-05);
 	// Service.Changed invalidates it. Nil serves it uncached.
 	Cache *respcache.Cache
+	// Directory serves GET /companies; nil builds an uncached one (tests).
+	Directory *Directory
 }
 
 // Routes are mounted under /companies. Reads are public; writes need a signed-in employer.
@@ -154,48 +158,92 @@ func (h *Handler) profile(ctx context.Context, ref string) (DTO, error) {
 	if c.Status == gen.CompanyStatusBlocked {
 		return DTO{}, ErrNotFound
 	}
-	n, err := h.Svc.Q.CountPublishedVacancies(ctx, c.ID)
-	if err != nil {
-		return DTO{}, err
-	}
 	d := ToDTO(c)
+	n := int64(c.OpenVacancies) // kept by a trigger on vacancies (TZ BE-03)
 	d.OpenVacancies = &n
 	return d, nil
 }
 
-// directory lists active companies (?q=name, ?page=1…), 24 per page.
+// directory lists active companies, verified first, then by open vacancies (TZ BE-03).
+// Two ways to page, both keyset: ?cursor= (from meta.next_cursor) or ?page=N, which seeks
+// from a cached page anchor. meta also carries total and page_count for numbered pages.
 func (h *Handler) directory(w http.ResponseWriter, r *http.Request) {
-	const per = 24
-	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-	page = max(page, 1)
+	qs := r.URL.Query()
 	var q *string
-	if s := strings.TrimSpace(r.URL.Query().Get("q")); s != "" {
+	if s := strings.TrimSpace(qs.Get("q")); s != "" {
 		if len([]rune(s)) > 100 {
 			s = string([]rune(s)[:100])
 		}
-		q = &s
+		p := likePattern(s)
+		q = &p
 	}
-	rows, err := h.Svc.Q.ListCompaniesDirectory(r.Context(), gen.ListCompaniesDirectoryParams{
-		Q: q, MaxResults: per + 1, Skip: int32((page - 1) * per),
-	})
+	page, _ := strconv.ParseInt(qs.Get("page"), 10, 64)
+	page = max(page, 1)
+	var after *DirKey
+	if c := qs.Get("cursor"); c != "" {
+		var k DirKey
+		if err := cursor.Decode(c, &k); err != nil {
+			response.Error(w, r, apperr.BadRequest("invalid_cursor", "cursor is invalid"))
+			return
+		}
+		after = &k
+	}
+	dir := h.dir()
+	anchors, err := dir.Anchors(r.Context(), q, page)
 	if err != nil {
 		response.Error(w, r, err)
 		return
 	}
-	var next *int
-	if len(rows) > per {
-		rows = rows[:per]
-		n := page + 1
-		next = &n
+	meta := directoryMeta{Total: anchors.Total, PageCount: anchors.PageCount()}
+	if after == nil {
+		meta.Page = &page
+		start, ok := anchors.Start(page)
+		if !ok { // past the last page
+			w.Header().Set("Cache-Control", "public, max-age=60")
+			response.List(w, []DTO{}, meta)
+			return
+		}
+		after = &start
 	}
-	out := make([]DTO, len(rows))
-	for i, row := range rows {
-		out[i] = ToDTO(row.Company)
-		n := int64(row.OpenVacancies)
+	res, err := dir.List(r.Context(), q, *after)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	if res.Next != nil {
+		c := cursor.Encode(*res.Next)
+		meta.NextCursor = &c
+		if meta.Page != nil {
+			n := page + 1
+			meta.NextPage = &n
+		}
+	}
+	out := make([]DTO, len(res.Companies))
+	for i, c := range res.Companies {
+		out[i] = ToDTO(c)
+		n := int64(c.OpenVacancies)
 		out[i].OpenVacancies = &n
 	}
 	w.Header().Set("Cache-Control", "public, max-age=60")
-	response.List(w, out, map[string]any{"next_page": next})
+	response.List(w, out, meta)
+}
+
+type directoryMeta struct {
+	// Page is the requested page number (null when paging by cursor).
+	Page       *int64  `json:"page"`
+	NextPage   *int64  `json:"next_page"`
+	NextCursor *string `json:"next_cursor"`
+	// Total and PageCount come from the cached page anchors and may lag new companies or
+	// ranking changes by a few minutes.
+	Total     int64 `json:"total"`
+	PageCount int64 `json:"page_count"`
+}
+
+func (h *Handler) dir() *Directory {
+	if h.Directory != nil {
+		return h.Directory
+	}
+	return &Directory{Q: h.Svc.Q}
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {

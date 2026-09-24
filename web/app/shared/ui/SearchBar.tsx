@@ -73,6 +73,8 @@ export type SearchBarProps = {
  * optional region select and the submit button. One focus ring for the whole bar. With a
  * region it stacks on phones (full-width button); the suggestion list is a top-layer popover,
  * so opening it never moves the page.
+ * Geometry is concentric: the glass and lg bars are capsules around a pill button; stacked on a
+ * phone they are a rounded-sheet p-2 box around rounded-inner (28 − 8 px) children.
  */
 export function SearchBar({
   action, size = "md", material = "solid", defaultQuery = "", defaultRegion, regions, queryName = "q",
@@ -271,6 +273,8 @@ export function SearchBar({
   // The bar's own fields win over same-named extras (the query, the region).
   const hidden = Object.entries(extraParams ?? {}).filter(([k]) => k !== queryName && !(regions && k === regionName));
   const rowH = lg ? "h-13" : "h-11";
+  // Hero-grade bars (glass or lg) are capsules; the md solid bar stays a field-shaped box.
+  const capsule = glass || lg;
   const icon = lg ? "size-5" : "size-4.5";
   let index = -1;
 
@@ -285,7 +289,9 @@ export function SearchBar({
       className={cn(
         "group/search relative flex min-w-0",
         stacked ? "flex-col gap-1 sm:flex-row sm:items-center sm:gap-1" : "items-center gap-1",
-        glass ? "glass-panel rounded-sheet p-2" : cn(fieldShell, lg ? "rounded-panel p-1.5" : "p-1"),
+        glass ? "glass-panel p-2" : cn(fieldShell, lg ? "p-1.5" : "p-1"),
+        capsule && (stacked ? "rounded-sheet p-2 sm:rounded-pill" : "rounded-pill"),
+        capsule && stacked && !glass && "sm:p-1.5",
         className,
       )}
     >
@@ -301,7 +307,7 @@ export function SearchBar({
         <input key={k} type="hidden" name={k} value={v} />
       ))}
 
-      <div ref={rowRef} onMouseDown={focusField} className={cn("flex min-w-0 flex-1 cursor-text items-center gap-2.5 rounded-control pl-3 pr-1", rowH)}>
+      <div ref={rowRef} onMouseDown={focusField} className={cn("flex min-w-0 flex-1 cursor-text items-center gap-2.5 rounded-control pl-3 pr-1", capsule && "sm:pl-4", rowH)}>
         <Search className={cn("shrink-0 text-ink-3", icon)} aria-hidden="true" />
         <label htmlFor={inputId} className="sr-only">{label ?? placeholder ?? t("search.what")}</label>
         <input
@@ -381,7 +387,12 @@ export function SearchBar({
         </>
       )}
 
-      <Button type="submit" size={lg ? "lg" : "md"} className={cn(lg && "px-7", stacked && "w-full sm:w-auto")}>
+      <Button
+        type="submit"
+        size={lg ? "lg" : "md"}
+        shape={capsule && !stacked ? "pill" : "default"}
+        className={cn(lg && "px-7", stacked && "w-full sm:w-auto", capsule && stacked && "rounded-inner sm:rounded-pill")}
+      >
         {submitLabel ?? t("search.submit")}
       </Button>
 

@@ -39,7 +39,7 @@ export function VacancyRow({ v, showStatus }: { v: VacancyCard; showStatus?: boo
       <div className="min-w-0 flex-1">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <h3 className="text-lead font-semibold leading-snug text-ink">
-            <LocalizedLink to={`/vacancies/${v.slug}`} className="outline-none after:absolute after:inset-0 group-hover:text-lapis-ink focus-visible:underline">
+            <LocalizedLink to={`/vacancies/${v.slug}`} className="outline-none after:absolute after:inset-0 visited:text-ink-2 group-hover:text-lapis-ink group-hover:visited:text-lapis-ink focus-visible:underline">
               {v.title}
             </LocalizedLink>
           </h3>

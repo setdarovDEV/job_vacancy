@@ -112,12 +112,13 @@ export function MobileTabBar() {
                   aria-current={on ? "page" : undefined}
                   className={cn(
                     "group flex h-full min-w-0 flex-col items-center justify-center gap-0.5 rounded-panel px-0.5",
-                    "transition-[color,scale] duration-150 ease-spring active:scale-[0.97] focus-visible:-outline-offset-4",
+                    "transition-colors duration-150 focus-visible:-outline-offset-4",
                     on ? "text-lapis-ink" : "text-ink-2",
                   )}
                 >
-                  {/* The pill behind the active icon springs open; others stay collapsed. */}
-                  <span className="relative grid h-7 w-12 place-items-center">
+                  {/* The pill behind the active icon springs open; others stay collapsed. The well
+                      takes the press (the label stays put), like a native tab bar. */}
+                  <span className="relative grid h-7 w-12 place-items-center transition-[scale] duration-150 ease-spring group-active:scale-[0.94]">
                     <span
                       aria-hidden="true"
                       className={cn(
@@ -125,7 +126,15 @@ export function MobileTabBar() {
                         on ? "opacity-100" : "scale-x-50 opacity-0",
                       )}
                     />
-                    <Icon className="relative size-5.5" strokeWidth={on ? 2.25 : 1.9} aria-hidden="true" />
+                    {/* Active: the filled glyph. A tinted fill under the stroke keeps each icon's
+                        inner detail (windows, lens, handle) that a solid fill would swallow. */}
+                    <Icon
+                      className="relative size-5.5"
+                      strokeWidth={on ? 2.25 : 1.9}
+                      fill={on ? "currentColor" : "none"}
+                      fillOpacity={on ? 0.25 : undefined}
+                      aria-hidden="true"
+                    />
                     <CountBadge n={n} className="-right-0.5 -top-1" />
                   </span>
                   <span className={cn("max-w-full truncate text-2xs leading-tight", on ? "font-semibold" : "font-medium")}>

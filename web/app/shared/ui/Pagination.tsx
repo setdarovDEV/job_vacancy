@@ -73,7 +73,7 @@ export function Pagination({ page, pageCount, hrefFor, label, className }: {
     <nav aria-label={label ?? t("states.pagination")} className={cn("flex items-center justify-center gap-1", className)}>
       {edge("prev")}
       {/* Proportional digits: Onest's tabular "1" would open a gap in "12". */}
-      <p className="px-3 text-md text-ink-2 sm:hidden">
+      <p className="num px-3 text-md text-ink-2 sm:hidden">
         <span aria-hidden="true"><span className="font-semibold text-ink">{current}</span> / {pageCount}</span>
         <span className="sr-only">{t("states.pageOf", { page: current, total: pageCount })}</span>
       </p>
@@ -91,6 +91,7 @@ export function Pagination({ page, pageCount, hrefFor, label, className }: {
                 aria-label={t("states.page", { page: p })}
                 className={cn(
                   item,
+                  "num",
                   p === current
                     ? "bg-lapis text-on-lapis shadow-1"
                     : "text-ink-2 hover:bg-sunken hover:text-ink active:scale-[0.97]",

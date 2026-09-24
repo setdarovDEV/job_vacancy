@@ -1,15 +1,53 @@
 @import "tailwindcss";
-@import "@fontsource-variable/onest";
+/* Class detection reads every source file, comments included: this file's own notes and bare
+   words in comments elsewhere ("the transform", "a container", "backdrop-filter") would emit
+   utilities nobody uses (Tailwind's .container with 6 breakpoints, the whole filter chain). The
+   design system never uses these bare names (container-page, glass-*, shadow-1..4). */
+@source not "./app.css";
+@source not inline("container blur filter transform shadow drop-shadow backdrop-filter");
 
 /*
- * Fonts. Onest (text) comes from fontsource; Unbounded (display) is self-hosted as a 500–600
- * weight-range instance of the variable font (the UI only uses semibold for display text), which
- * cuts ~30% off every subset. Fallback faces carry metric overrides computed against Arial /
- * Liberation Sans, so text doesn't reflow when the web font swaps in (CLS 0 from fonts).
+ * Fonts, self-hosted. Onest (text) comes from the fontsource package, but only the four subsets
+ * our locales use (latin, latin-ext, cyrillic, cyrillic-ext; not vietnamese, math or symbols, whose
+ * unicode-range lists alone were ~1 KB gzip of core CSS); anything outside them (→, ≤) falls back to
+ * the metric-matched fallback face. Unbounded (display) is a 500–600 weight-range instance of the
+ * variable font (the UI only uses semibold for display text), which cuts ~30% off every subset.
+ * vite.config keeps font files out of the CSS (no data: URIs). Fallback faces carry metric
+ * overrides computed against Arial / Liberation Sans, so text doesn't reflow when the web font
+ * swaps in (CLS 0 from fonts). The unicode-range values are the package's own.
  */
 @font-face {
+  font-family: "Onest Variable";
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(@fontsource-variable/onest/files/onest-cyrillic-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
+}
+@font-face {
+  font-family: "Onest Variable";
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(@fontsource-variable/onest/files/onest-cyrillic-wght-normal.woff2) format("woff2");
+  unicode-range: U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116;
+}
+@font-face {
+  font-family: "Onest Variable";
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(@fontsource-variable/onest/files/onest-latin-ext-wght-normal.woff2) format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Onest Variable";
+  font-display: swap;
+  font-weight: 100 900;
+  src: url(@fontsource-variable/onest/files/onest-latin-wght-normal.woff2) format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
   font-family: "Unbounded Variable";
-  font-style: normal;
   font-display: swap;
   font-weight: 500 600;
   src: url(./fonts/unbounded-cyrillic-ext-wght-500-600.woff2) format("woff2");
@@ -17,7 +55,6 @@
 }
 @font-face {
   font-family: "Unbounded Variable";
-  font-style: normal;
   font-display: swap;
   font-weight: 500 600;
   src: url(./fonts/unbounded-cyrillic-wght-500-600.woff2) format("woff2");
@@ -25,16 +62,6 @@
 }
 @font-face {
   font-family: "Unbounded Variable";
-  font-style: normal;
-  font-display: swap;
-  font-weight: 500 600;
-  src: url(./fonts/unbounded-vietnamese-wght-500-600.woff2) format("woff2");
-  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301,
-    U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
-}
-@font-face {
-  font-family: "Unbounded Variable";
-  font-style: normal;
   font-display: swap;
   font-weight: 500 600;
   src: url(./fonts/unbounded-latin-ext-wght-500-600.woff2) format("woff2");
@@ -43,7 +70,6 @@
 }
 @font-face {
   font-family: "Unbounded Variable";
-  font-style: normal;
   font-display: swap;
   font-weight: 500 600;
   src: url(./fonts/unbounded-latin-wght-500-600.woff2) format("woff2");
@@ -126,6 +152,8 @@
   --focus: light-dark(#3d6bff, #8ea7ff);
   --overlay: light-dark(rgb(12 16 38 / 0.38), rgb(2 4 12 / 0.62));
   --pattern: light-dark(rgb(29 61 148 / 0.06), rgb(142 167 255 / 0.06));
+  /* Pointer glow on solid interactive cards (the spotlight utility). */
+  --spotlight: light-dark(rgb(29 61 148 / 0.07), rgb(142 167 255 / 0.1));
   /* Media scrims (text over photos, video, image previews): same in both themes. */
   --scrim: rgb(8 12 30 / 0.55);
   --on-scrim: #ffffff;
@@ -207,6 +235,14 @@
   --glass-sheet: light-dark(rgb(255 255 255 / 0.94), rgb(18 25 52 / 0.94));
 }
 
+/* Lite: only the small chrome keeps its blur; sheets (dialogs, menus, toasts) go solid, since at
+   their .94 tint the blur was invisible anyway while costing the most (largest area × radius). */
+:root[data-glass="lite"] .glass-sheet {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  --_glass-tint: var(--raised);
+}
+
 /* Fallback for browsers without light-dark(): light palette only. Keys must mirror :root. */
 @supports not (color: light-dark(#000, #fff)) {
   :root {
@@ -219,6 +255,7 @@
     --anor: #c42841; --anor-hover: #a82035; --anor-soft: #fce6e9; --anor-ink: #a82035; --on-anor: #ffffff;
     --skeleton: #e4e9f2; --skeleton-hi: #f4f6fb;
     --focus: #3d6bff; --overlay: rgb(12 16 38 / 0.38); --pattern: rgb(29 61 148 / 0.06);
+    --spotlight: rgb(29 61 148 / 0.07);
     --scrim: rgb(8 12 30 / 0.55); --on-scrim: #ffffff;
     --glass-chrome: rgb(255 255 255 / 0.9); --glass-panel: rgb(255 255 255 / 0.92);
     --glass-sheet: rgb(255 255 255 / 0.96); --glass-tint-hover: rgb(255 255 255 / 0.96);
@@ -264,6 +301,7 @@
   --color-overlay: var(--overlay);
   --color-scrim: var(--scrim);
   --color-on-scrim: var(--on-scrim);
+  --color-spotlight: var(--spotlight);
   --shadow-1: var(--shadow-1);
   --shadow-2: var(--shadow-2);
   --shadow-3: var(--shadow-3);
@@ -316,16 +354,11 @@
   --radius-control: 0.875rem;
   --radius-panel: 1.375rem;
   --radius-sheet: 1.75rem;
+  /* Concentric child of a rounded-sheet p-2 box (hero search, stacked sheets): 28 − 8 = 20px. */
+  --radius-inner: calc(var(--radius-sheet) - 0.5rem);
   --radius-pill: 999px;
   /* Checkbox box (20px): control radius would round it into a radio-like circle. */
   --radius-check: 0.375rem;
-
-  --animate-shimmer: shimmer 1.6s linear infinite;
-}
-
-@keyframes shimmer {
-  from { background-position: 150% 0; }
-  to { background-position: -50% 0; }
 }
 
 @layer base {
@@ -339,6 +372,14 @@
     -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    /* Native checkboxes, radios, ranges and the text caret in the brand colour (both inherit). */
+    accent-color: var(--lapis);
+    caret-color: var(--lapis);
+  }
+  /* Autofilled fields keep the field's surface instead of Chrome's blue / Safari's yellow fill. */
+  input:-webkit-autofill { /* the prefixed form is the one every engine knows */
+    box-shadow: 0 0 0 100vmax var(--surface) inset;
+    -webkit-text-fill-color: var(--ink);
   }
   /* In-page anchors and focus scrolling land below the sticky glass header. Scoped to the page
      content (not html's scroll-padding): that also scrolled the page whenever a control inside
@@ -429,7 +470,7 @@
    keep it (#mobile-tabbar); without it only the home indicator sits at the bottom, so toasts and
    sticky bars drop down to it. --tabbar-reserve is the same room but 0 without a bar (for heights). */
 :root {
-  --header-h: calc(4rem + 1px + env(safe-area-inset-top)); /* h-16 + the glass-bar hairline */
+  --header-h: calc(4rem + env(safe-area-inset-top)); /* h-16; the glass hairline sits inside it */
   --tabbar-reserve: calc(var(--tabbar-h) + 0.75rem + env(safe-area-inset-bottom));
 }
 :root:not(:has(#mobile-tabbar)) {
@@ -471,7 +512,11 @@
 @utility surface-card-interactive {
   transition: transform var(--dur-2) var(--ease-spring), box-shadow var(--dur-2) var(--ease-out-quint),
     border-color var(--dur-2) ease;
-  &:hover { transform: translateY(-2px); box-shadow: var(--shadow-3); border-color: var(--line-strong); }
+  /* Hover only for real pointers: on touch a tap would leave the card lifted. :active stays
+     unguarded, it is the tap feedback. */
+  @media (hover: hover) and (pointer: fine) {
+    &:hover { transform: translateY(-2px); box-shadow: var(--shadow-3); border-color: var(--line-strong); }
+  }
   &:active { transform: translateY(0) scale(0.995); transition-duration: var(--dur-1); }
 }
 
@@ -541,7 +586,9 @@
 @utility glass-interactive {
   transition: background-color var(--dur-2) ease, transform var(--dur-2) var(--ease-spring),
     box-shadow var(--dur-2) var(--ease-out-quint);
-  &:hover { --_glass-tint: var(--glass-tint-hover); --_glass-elev: var(--shadow-3); }
+  @media (hover: hover) and (pointer: fine) {
+    &:hover { --_glass-tint: var(--glass-tint-hover); --_glass-elev: var(--shadow-3); }
+  }
   &:active { transform: scale(0.97); transition-duration: var(--dur-1); }
 }
 
@@ -588,13 +635,24 @@
   &::after { display: none; }
 }
 
-/* Loading placeholder. Shape it like the real content (same size, radius, layout). */
+/* Loading placeholder. Shape it like the real content (same size, radius, layout). The shimmer is
+   a transform sweep on ::after (composited) rather than an animated background-position (a repaint
+   every frame); under reduced motion it stays parked outside the block, which reads as static. */
 @utility skeleton {
-  background: linear-gradient(90deg, var(--skeleton) 25%, var(--skeleton-hi) 50%, var(--skeleton) 75%);
-  background-size: 200% 100%;
-  animation: var(--animate-shimmer);
+  position: relative;
+  overflow: hidden;
+  background: var(--skeleton);
   border-radius: var(--radius-pill);
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, var(--skeleton-hi), transparent);
+    animation: sweep 1.6s ease-in-out infinite;
+  }
 }
+@keyframes sweep { to { transform: translateX(100%); } }
 
 /* Hero backdrop: the colored light that makes the glass above it read as glass. */
 @utility aurora-hero {
@@ -602,6 +660,139 @@
     radial-gradient(38rem 26rem at 18% 18%, var(--aurora-hero-1), transparent 70%),
     radial-gradient(32rem 24rem at 86% 26%, var(--aurora-hero-2), transparent 70%),
     radial-gradient(30rem 22rem at 56% 98%, var(--aurora-hero-3), transparent 70%);
+}
+
+/* ---- scroll-edge & premium effects --------------------------------------------------------
+ * Opt-in utilities: a class nobody uses costs 0 bytes. Only transform / opacity animate.
+ */
+
+/* Soft end for hero aurora layers — <div aria-hidden className="aurora-hero aurora-fade absolute
+   inset-0 -z-10" />: the colour fades out instead of stopping in a hard edge at the hero's end. */
+@utility aurora-fade {
+  mask-image: linear-gradient(#000 55%, transparent);
+}
+/* Horizontal scrollers (chip rows, logo strips): items fade in at the start edge and out before
+   the end, which also says "there's more". Pair with -mx-4 px-4 so nothing is faded at rest. */
+@utility edge-mask-x {
+  mask-image: linear-gradient(90deg, transparent, #000 1rem, #000 calc(100% - 2rem), transparent);
+}
+/* Scroll-edge scrim under the floating tab bar (site.tsx renders it once, < md): content fades
+   into calm paper before it reaches the glass, so the bar never blurs busy cards. No blur, painted
+   once, never catches taps. Fixed bottom bars above it: z-40 (tab bar level). Like any scroll-edge
+   effect it exists only while content scrolls under: it fades out over the last 5rem of the page,
+   so the footer's end isn't banded with paper. */
+@utility edge-fade-b {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 30;
+  pointer-events: none;
+  height: calc(var(--tabbar-space) + 1.5rem);
+  background: linear-gradient(to top, var(--paper) 40%, transparent);
+  @supports ((animation-timeline: scroll()) and (animation-range: 0% 100%)) {
+    animation: overlay-out linear both;
+    animation-timeline: scroll(root);
+    animation-range: calc(100% - 5rem) 100%;
+  }
+}
+/* Pointer spotlight for SOLID interactive cards: `surface-card surface-card-interactive spotlight
+   relative`, with useSpotlight() (shared/lib/spotlight.ts) on the list writing --mx / --my. The
+   card owns ::before (a stretched link uses the link's ::after). Mouse only: one card repaint per
+   pointer frame, nothing on touch. */
+@utility spotlight {
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, -30%), var(--spotlight), transparent 70%);
+    opacity: 0;
+    transition: opacity var(--dur-2) ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    &:hover::before { opacity: 1; }
+  }
+}
+/* Marketing-only entrance (home / employers below the fold: section headings, bento tiles). Never
+   on lists, forms, app pages or the LCP element. Scroll-driven: no JS, no observers. */
+@utility reveal {
+  @supports ((animation-timeline: view()) and (animation-range: 0% 100%)) {
+    @media (prefers-reduced-motion: no-preference) {
+      animation: fade-up linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 60%;
+    }
+  }
+}
+/* Logo marquee (/employers "trusted by" row only): <div class="marquee-host edge-mask-x
+   overflow-hidden" data-paused?><div class="marquee"><ul>…</ul><ul aria-hidden="true">…</ul></div>.
+   The track holds the list twice; a visible pause button toggles data-paused (WCAG 2.2.2: pausing
+   on hover or focus alone isn't enough). Reduced motion: one static, wrapped list. */
+@utility marquee {
+  display: flex;
+  gap: 3rem;
+  width: max-content;
+  animation: var(--animate-marquee);
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+    width: auto;
+    flex-wrap: wrap;
+    justify-content: center;
+    & > [aria-hidden="true"] { display: none; }
+  }
+}
+@utility marquee-host {
+  &:is(:hover, :focus-within, [data-paused]) .marquee { animation-play-state: paused; }
+}
+@theme {
+  --animate-marquee: marquee 45s linear infinite;
+  @keyframes marquee { to { transform: translateX(calc(-50% - 1.5rem)); } }
+}
+
+/* Site header material (SiteHeader): a sibling layer under the header's content, clear at rest and
+   materializing once content scrolls under it (a scroll-edge effect, compositor-only opacity).
+   Without scroll-driven animations it is simply always glass. A separate layer because
+   backdrop-filter would make the header the containing block of its position: fixed children.
+   Unlayered, so its position beats glass-base's. */
+.header-glass {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+@keyframes materialize { from { opacity: 0; } }
+@supports ((animation-timeline: scroll()) and (animation-range: 0% 100%)) {
+  .header-glass {
+    animation: materialize linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 3rem;
+  }
+}
+
+/* List routes on phones (handle.autoHideHeader, SiteHeader adds `autohide`): the header slides
+   away while scrolling down and returns on the first scroll up; a sticky bar right under it docks
+   to the top with `autohide-follow`. Scroll-state `scrolled` queries (Chrome 144+); elsewhere the
+   header just stays. The root becomes a scroll-state container only on such pages; scroll-state
+   containment is none, and browsers without it drop the declaration, so layout never changes. */
+@utility autohide {
+  :root:has(&) { container-type: scroll-state; }
+  @media (width < 48rem) and (prefers-reduced-motion: no-preference) {
+    transition: translate var(--dur-3) var(--ease-out-quint);
+    @container scroll-state(scrolled: bottom) {
+      &:not(:focus-within) { translate: 0 -100%; }
+    }
+  }
+}
+@utility autohide-follow {
+  @media (width < 48rem) and (prefers-reduced-motion: no-preference) {
+    transition: translate var(--dur-3) var(--ease-out-quint);
+    @container scroll-state(scrolled: bottom) {
+      :root:has(.autohide:not(:focus-within)) & { translate: 0 calc(-1 * var(--header-h)); }
+    }
+  }
 }
 
 /* ---- inputs ------------------------------------------------------------------------- */
@@ -612,7 +803,9 @@
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-control);
   transition: border-color var(--dur-2) ease, box-shadow var(--dur-2) ease;
-  &:hover { border-color: var(--ink-3); }
+  @media (hover: hover) and (pointer: fine) {
+    &:hover { border-color: var(--ink-3); }
+  }
   &:focus-within { border-color: var(--focus); box-shadow: var(--ring); }
   &:has([aria-invalid="true"]) { border-color: var(--anor); }
   &:has([aria-invalid="true"]):focus-within { box-shadow: var(--ring-danger); }

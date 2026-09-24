@@ -13,15 +13,17 @@ import (
 )
 
 const countUnreadConversations = `-- name: CountUnreadConversations :one
-SELECT count(*) FROM conversations c
-LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.user_id = $1::uuid
-WHERE (c.seeker_id = $1::uuid
-       OR c.company_id IN (SELECT company_id FROM company_members WHERE user_id = $1::uuid))
-  AND c.last_message_id > COALESCE(r.last_read_id, 0)
-  AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.id > COALESCE(r.last_read_id, 0)
-              AND m.sender_id IS DISTINCT FROM $1::uuid AND m.deleted_at IS NULL)
+SELECT count(*) FROM conversation_reads r
+JOIN conversations c ON c.id = r.conversation_id
+WHERE r.user_id = $1::uuid AND r.unread_count > 0
+  AND (c.seeker_id = $1::uuid
+       OR EXISTS (SELECT 1 FROM company_members m
+                  WHERE m.company_id = c.company_id AND m.user_id = $1::uuid))
 `
 
+// Conversations with unread messages for the header badge (TZ BE-04): only rows with
+// unread_count > 0 are in conversation_reads_unread_idx. Rows left from a company the user
+// no longer belongs to are skipped.
 func (q *Queries) CountUnreadConversations(ctx context.Context, userID uuid.UUID) (int64, error) {
 	row := q.db.QueryRow(ctx, countUnreadConversations, userID)
 	var count int64
@@ -105,14 +107,13 @@ func (q *Queries) GetConversationByApplication(ctx context.Context, applicationI
 }
 
 const getConversationView = `-- name: GetConversationView :one
-SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id, c.last_message_id, c.last_message_at, c.created_at, v.title AS vacancy_title,
+SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id,
+       c.last_message_id, c.last_message_at, c.created_at,
+       v.title AS vacancy_title,
        co.name AS company_name, co.slug AS company_slug, co.logo_url AS company_logo,
        u.full_name AS seeker_name, u.avatar_url AS seeker_avatar,
        COALESCE(r.last_read_id, 0)::bigint AS last_read_id,
-       (SELECT count(*) FROM (SELECT 1 FROM messages m
-            WHERE m.conversation_id = c.id AND m.id > COALESCE(r.last_read_id, 0)
-              AND m.sender_id IS DISTINCT FROM $1::uuid AND m.deleted_at IS NULL
-            LIMIT 100) x)::int AS unread
+       LEAST(COALESCE(r.unread_count, 0), 100)::int AS unread
 FROM conversations c
 JOIN vacancies v ON v.id = c.vacancy_id
 JOIN companies co ON co.id = c.company_id
@@ -168,6 +169,51 @@ func (q *Queries) GetConversationView(ctx context.Context, arg GetConversationVi
 		&i.Unread,
 	)
 	return i, err
+}
+
+const getConversationsWithMembers = `-- name: GetConversationsWithMembers :many
+SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id, c.last_message_id, c.last_message_at, c.created_at,
+       ARRAY(SELECT m.user_id FROM company_members m WHERE m.company_id = c.company_id
+             ORDER BY m.user_id)::uuid[] AS members
+FROM conversations c
+WHERE c.id = ANY($1::uuid[])
+`
+
+type GetConversationsWithMembersRow struct {
+	Conversation Conversation
+	Members      []uuid.UUID
+}
+
+// Conversations with everyone on the company side, for a page of ids (the participants
+// cache fills all its misses of a page with this one query).
+func (q *Queries) GetConversationsWithMembers(ctx context.Context, ids []uuid.UUID) ([]GetConversationsWithMembersRow, error) {
+	rows, err := q.db.Query(ctx, getConversationsWithMembers, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetConversationsWithMembersRow{}
+	for rows.Next() {
+		var i GetConversationsWithMembersRow
+		if err := rows.Scan(
+			&i.Conversation.ID,
+			&i.Conversation.ApplicationID,
+			&i.Conversation.CompanyID,
+			&i.Conversation.SeekerID,
+			&i.Conversation.VacancyID,
+			&i.Conversation.LastMessageID,
+			&i.Conversation.LastMessageAt,
+			&i.Conversation.CreatedAt,
+			&i.Members,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getFilesByIDs = `-- name: GetFilesByIDs :many
@@ -290,6 +336,82 @@ func (q *Queries) GetMessagesByIDs(ctx context.Context, ids []int64) ([]Message,
 	return items, nil
 }
 
+const getMessagesWithRefs = `-- name: GetMessagesWithRefs :many
+SELECT m.id, m.conversation_id, m.sender_id, m.kind, m.body, m.file_id, m.meta, m.client_id, m.created_at, m.deleted_at,
+       u.full_name AS sender_name, u.avatar_url AS sender_avatar,
+       f.id AS file_ref_id, f.owner_id AS file_owner_id, f.purpose AS file_purpose,
+       f.status AS file_status, f.bucket AS file_bucket, f.object_key AS file_object_key,
+       f.content_type AS file_content_type, f.size AS file_size, f.name AS file_name,
+       f.meta AS file_meta, f.created_at AS file_created_at
+FROM messages m
+LEFT JOIN users u ON u.id = m.sender_id
+LEFT JOIN files f ON f.id = m.file_id
+WHERE m.id = ANY($1::bigint[])
+`
+
+type GetMessagesWithRefsRow struct {
+	Message         Message
+	SenderName      *string
+	SenderAvatar    *string
+	FileRefID       *uuid.UUID
+	FileOwnerID     *uuid.UUID
+	FilePurpose     *FilePurpose
+	FileStatus      *FileStatus
+	FileBucket      *string
+	FileObjectKey   *string
+	FileContentType *string
+	FileSize        *int64
+	FileName        *string
+	FileMeta        []byte
+	FileCreatedAt   *time.Time
+}
+
+// Messages by id with sender and attachment in one query (last messages of a list page,
+// a message just sent).
+func (q *Queries) GetMessagesWithRefs(ctx context.Context, ids []int64) ([]GetMessagesWithRefsRow, error) {
+	rows, err := q.db.Query(ctx, getMessagesWithRefs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetMessagesWithRefsRow{}
+	for rows.Next() {
+		var i GetMessagesWithRefsRow
+		if err := rows.Scan(
+			&i.Message.ID,
+			&i.Message.ConversationID,
+			&i.Message.SenderID,
+			&i.Message.Kind,
+			&i.Message.Body,
+			&i.Message.FileID,
+			&i.Message.Meta,
+			&i.Message.ClientID,
+			&i.Message.CreatedAt,
+			&i.Message.DeletedAt,
+			&i.SenderName,
+			&i.SenderAvatar,
+			&i.FileRefID,
+			&i.FileOwnerID,
+			&i.FilePurpose,
+			&i.FileStatus,
+			&i.FileBucket,
+			&i.FileObjectKey,
+			&i.FileContentType,
+			&i.FileSize,
+			&i.FileName,
+			&i.FileMeta,
+			&i.FileCreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUsersBrief = `-- name: GetUsersBrief :many
 SELECT id, full_name, avatar_url FROM users WHERE id = ANY($1::uuid[])
 `
@@ -364,32 +486,54 @@ func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (M
 }
 
 const listConversations = `-- name: ListConversations :many
-SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id, c.last_message_id, c.last_message_at, c.created_at, v.title AS vacancy_title,
+WITH page AS (
+    (SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id,
+            c.last_message_id, c.last_message_at, c.created_at,
+            COALESCE(c.last_message_at, c.created_at) AS sort_at
+     FROM conversations c
+     WHERE c.seeker_id = $1::uuid
+       AND (COALESCE(c.last_message_at, c.created_at), c.id)
+           < ($3::timestamptz, $4::uuid)
+     ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
+     LIMIT $2)
+    UNION ALL
+    (SELECT x.id, x.application_id, x.company_id, x.seeker_id, x.vacancy_id,
+            x.last_message_id, x.last_message_at, x.created_at, x.sort_at
+     FROM company_members cm
+     CROSS JOIN LATERAL (
+         SELECT c.id, c.application_id, c.company_id, c.seeker_id, c.vacancy_id,
+                c.last_message_id, c.last_message_at, c.created_at,
+                COALESCE(c.last_message_at, c.created_at) AS sort_at
+         FROM conversations c
+         WHERE c.company_id = cm.company_id AND c.seeker_id <> $1::uuid
+           AND (COALESCE(c.last_message_at, c.created_at), c.id)
+               < ($3::timestamptz, $4::uuid)
+         ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
+         LIMIT $2) x
+     WHERE cm.user_id = $1::uuid)
+    ORDER BY sort_at DESC, id DESC
+    LIMIT $2
+)
+SELECT p.id, p.application_id, p.company_id, p.seeker_id, p.vacancy_id,
+       p.last_message_id, p.last_message_at, p.created_at,
+       v.title AS vacancy_title,
        co.name AS company_name, co.slug AS company_slug, co.logo_url AS company_logo,
        u.full_name AS seeker_name, u.avatar_url AS seeker_avatar,
        COALESCE(r.last_read_id, 0)::bigint AS last_read_id,
-       (SELECT count(*) FROM (SELECT 1 FROM messages m
-            WHERE m.conversation_id = c.id AND m.id > COALESCE(r.last_read_id, 0)
-              AND m.sender_id IS DISTINCT FROM $1::uuid AND m.deleted_at IS NULL
-            LIMIT 100) x)::int AS unread
-FROM conversations c
-JOIN vacancies v ON v.id = c.vacancy_id
-JOIN companies co ON co.id = c.company_id
-JOIN users u ON u.id = c.seeker_id
-LEFT JOIN conversation_reads r ON r.conversation_id = c.id AND r.user_id = $1::uuid
-WHERE (c.seeker_id = $1::uuid
-       OR c.company_id IN (SELECT company_id FROM company_members WHERE user_id = $1::uuid))
-  AND ($2::timestamptz IS NULL
-       OR (COALESCE(c.last_message_at, c.created_at), c.id) < ($2, $3::uuid))
-ORDER BY COALESCE(c.last_message_at, c.created_at) DESC, c.id DESC
-LIMIT $4
+       LEAST(COALESCE(r.unread_count, 0), 100)::int AS unread
+FROM page p
+JOIN vacancies v ON v.id = p.vacancy_id
+JOIN companies co ON co.id = p.company_id
+JOIN users u ON u.id = p.seeker_id
+LEFT JOIN conversation_reads r ON r.conversation_id = p.id AND r.user_id = $1::uuid
+ORDER BY p.sort_at DESC, p.id DESC
 `
 
 type ListConversationsParams struct {
 	UserID     uuid.UUID
-	BeforeAt   *time.Time
-	BeforeID   *uuid.UUID
 	MaxResults int32
+	BeforeAt   time.Time
+	BeforeID   uuid.UUID
 }
 
 type ListConversationsRow struct {
@@ -411,13 +555,18 @@ type ListConversationsRow struct {
 	Unread        int32
 }
 
-// Conversations of a seeker, or of every company the user is a member of.
+// Conversations of a user, most recently active first (TZ BE-04). Two branches, each on
+// its own index and LIMIT: conversations where the user is the seeker
+// (conversations_seeker_idx) and conversations of each company the user belongs to
+// (conversations_company_idx, one LATERAL scan per membership). The first page passes
+// before_at = far future, before_id = max uuid, so the seek is always an index condition.
+// Unread counts come from conversation_reads.unread_count (kept by triggers, 00017).
 func (q *Queries) ListConversations(ctx context.Context, arg ListConversationsParams) ([]ListConversationsRow, error) {
 	rows, err := q.db.Query(ctx, listConversations,
 		arg.UserID,
+		arg.MaxResults,
 		arg.BeforeAt,
 		arg.BeforeID,
-		arg.MaxResults,
 	)
 	if err != nil {
 		return nil, err
@@ -455,11 +604,19 @@ func (q *Queries) ListConversations(ctx context.Context, arg ListConversationsPa
 }
 
 const listMessages = `-- name: ListMessages :many
-SELECT id, conversation_id, sender_id, kind, body, file_id, meta, client_id, created_at, deleted_at FROM messages
-WHERE conversation_id = $1
-  AND ($2::bigint IS NULL OR id < $2)
-  AND ($3::bigint IS NULL OR id > $3)
-ORDER BY id DESC
+SELECT m.id, m.conversation_id, m.sender_id, m.kind, m.body, m.file_id, m.meta, m.client_id, m.created_at, m.deleted_at,
+       u.full_name AS sender_name, u.avatar_url AS sender_avatar,
+       f.id AS file_ref_id, f.owner_id AS file_owner_id, f.purpose AS file_purpose,
+       f.status AS file_status, f.bucket AS file_bucket, f.object_key AS file_object_key,
+       f.content_type AS file_content_type, f.size AS file_size, f.name AS file_name,
+       f.meta AS file_meta, f.created_at AS file_created_at
+FROM messages m
+LEFT JOIN users u ON u.id = m.sender_id
+LEFT JOIN files f ON f.id = m.file_id
+WHERE m.conversation_id = $1
+  AND ($2::bigint IS NULL OR m.id < $2)
+  AND ($3::bigint IS NULL OR m.id > $3)
+ORDER BY m.id DESC
 LIMIT $4
 `
 
@@ -470,9 +627,27 @@ type ListMessagesParams struct {
 	MaxResults     int32
 }
 
+type ListMessagesRow struct {
+	Message         Message
+	SenderName      *string
+	SenderAvatar    *string
+	FileRefID       *uuid.UUID
+	FileOwnerID     *uuid.UUID
+	FilePurpose     *FilePurpose
+	FileStatus      *FileStatus
+	FileBucket      *string
+	FileObjectKey   *string
+	FileContentType *string
+	FileSize        *int64
+	FileName        *string
+	FileMeta        []byte
+	FileCreatedAt   *time.Time
+}
+
 // Pages go backwards from before_id (history) or forwards from after_id (catch-up
-// after a reconnect); results are always newest first.
-func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]Message, error) {
+// after a reconnect); results are always newest first. Sender and attachment come in the
+// same query.
+func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]ListMessagesRow, error) {
 	rows, err := q.db.Query(ctx, listMessages,
 		arg.ConversationID,
 		arg.BeforeID,
@@ -483,20 +658,33 @@ func (q *Queries) ListMessages(ctx context.Context, arg ListMessagesParams) ([]M
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Message{}
+	items := []ListMessagesRow{}
 	for rows.Next() {
-		var i Message
+		var i ListMessagesRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.ConversationID,
-			&i.SenderID,
-			&i.Kind,
-			&i.Body,
-			&i.FileID,
-			&i.Meta,
-			&i.ClientID,
-			&i.CreatedAt,
-			&i.DeletedAt,
+			&i.Message.ID,
+			&i.Message.ConversationID,
+			&i.Message.SenderID,
+			&i.Message.Kind,
+			&i.Message.Body,
+			&i.Message.FileID,
+			&i.Message.Meta,
+			&i.Message.ClientID,
+			&i.Message.CreatedAt,
+			&i.Message.DeletedAt,
+			&i.SenderName,
+			&i.SenderAvatar,
+			&i.FileRefID,
+			&i.FileOwnerID,
+			&i.FilePurpose,
+			&i.FileStatus,
+			&i.FileBucket,
+			&i.FileObjectKey,
+			&i.FileContentType,
+			&i.FileSize,
+			&i.FileName,
+			&i.FileMeta,
+			&i.FileCreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -542,15 +730,21 @@ SELECT conversation_id, user_id, last_read_id FROM conversation_reads
 WHERE conversation_id = ANY($1::uuid[])
 `
 
-func (q *Queries) ListReadPositionsFor(ctx context.Context, ids []uuid.UUID) ([]ConversationRead, error) {
+type ListReadPositionsForRow struct {
+	ConversationID uuid.UUID
+	UserID         uuid.UUID
+	LastReadID     int64
+}
+
+func (q *Queries) ListReadPositionsFor(ctx context.Context, ids []uuid.UUID) ([]ListReadPositionsForRow, error) {
 	rows, err := q.db.Query(ctx, listReadPositionsFor, ids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ConversationRead{}
+	items := []ListReadPositionsForRow{}
 	for rows.Next() {
-		var i ConversationRead
+		var i ListReadPositionsForRow
 		if err := rows.Scan(&i.ConversationID, &i.UserID, &i.LastReadID); err != nil {
 			return nil, err
 		}
@@ -581,6 +775,77 @@ func (q *Queries) MarkConversationRead(ctx context.Context, arg MarkConversation
 	var last_read_id int64
 	err := row.Scan(&last_read_id)
 	return last_read_id, err
+}
+
+const sendMessage = `-- name: SendMessage :one
+WITH m AS (
+    INSERT INTO messages (conversation_id, sender_id, kind, body, file_id, meta, client_id)
+    VALUES ($1, $2, $3, $4,
+            $5, $6, $7)
+    ON CONFLICT (sender_id, client_id) DO NOTHING
+    RETURNING id, conversation_id, sender_id, kind, body, file_id, meta, client_id, created_at, deleted_at
+), t AS (
+    UPDATE conversations c SET last_message_id = m.id, last_message_at = m.created_at
+    FROM m WHERE c.id = m.conversation_id
+), r AS (
+    INSERT INTO conversation_reads (conversation_id, user_id, last_read_id)
+    SELECT m.conversation_id, m.sender_id, m.id FROM m
+    ON CONFLICT (conversation_id, user_id) DO UPDATE
+    SET last_read_id = GREATEST(conversation_reads.last_read_id, EXCLUDED.last_read_id)
+)
+SELECT id, conversation_id, sender_id, kind, body, file_id, meta, client_id, created_at, deleted_at FROM m
+`
+
+type SendMessageParams struct {
+	ConversationID uuid.UUID
+	SenderID       *uuid.UUID
+	Kind           MessageKind
+	Body           string
+	FileID         *uuid.UUID
+	Meta           []byte
+	ClientID       uuid.UUID
+}
+
+type SendMessageRow struct {
+	ID             int64
+	ConversationID uuid.UUID
+	SenderID       *uuid.UUID
+	Kind           MessageKind
+	Body           string
+	FileID         *uuid.UUID
+	Meta           []byte
+	ClientID       uuid.UUID
+	CreatedAt      time.Time
+	DeletedAt      *time.Time
+}
+
+// Insert a message, move the conversation's last message and the sender's read position
+// in one statement. No row: the client_id was already used (a retried send). Unread
+// counters of the other participants are bumped by the messages trigger (00017).
+func (q *Queries) SendMessage(ctx context.Context, arg SendMessageParams) (SendMessageRow, error) {
+	row := q.db.QueryRow(ctx, sendMessage,
+		arg.ConversationID,
+		arg.SenderID,
+		arg.Kind,
+		arg.Body,
+		arg.FileID,
+		arg.Meta,
+		arg.ClientID,
+	)
+	var i SendMessageRow
+	err := row.Scan(
+		&i.ID,
+		&i.ConversationID,
+		&i.SenderID,
+		&i.Kind,
+		&i.Body,
+		&i.FileID,
+		&i.Meta,
+		&i.ClientID,
+		&i.CreatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const softDeleteMessage = `-- name: SoftDeleteMessage :one

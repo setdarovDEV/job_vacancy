@@ -29,9 +29,15 @@ import { SearchBar } from "~/shared/ui/SearchBar";
  *     pathname, data, … }) and returns whether to show it, e.g. ({ params }) => !params.id.
  *   mobileHeader?: boolean | ((m: UIMatch) => boolean)
  *     false hides the site header below md (a chat thread with its own glass-bar top bar).
+ *   autoHideHeader?: boolean | ((m: UIMatch) => boolean)
+ *     true on long list routes (vacancies, companies, candidates): below md the header slides away
+ *     while scrolling down and returns on scroll up (app.css `autohide`, Chrome 144+; elsewhere it
+ *     stays). A sticky bar right under the header adds `autohide-follow` to dock with it.
  *
  * While the tab bar shows, the footer carries `pb-tabbar`, so the page end is never under the
- * bar and the footer surface runs on beneath it. app.css derives from the bar's presence:
+ * bar and the footer surface runs on beneath it, and an `edge-fade-b` scrim fades content into
+ * paper under the bar (z-30, no pointer events; fixed bottom bars sit at z-40 like the tab bar, or
+ * z-30 inside <main>, which comes after it). app.css derives from the bar's presence:
  *   --tabbar-space   distance from the bottom edge the bar covers (safe-area inset when hidden)
  *                    → toasts; floating sticky bars use the `bottom-above-tabbar` utility.
  *   --tabbar-reserve the same, but 0 when there's no bar (for height calculations).
@@ -41,20 +47,21 @@ export type ShellHandle = {
   bare?: boolean;
   tabBar?: boolean | ((m: UIMatch) => boolean);
   mobileHeader?: boolean | ((m: UIMatch) => boolean);
+  autoHideHeader?: boolean | ((m: UIMatch) => boolean);
 };
 
 function useShellFlags() {
   const matches = useMatches();
-  const pick = (flag: "tabBar" | "mobileHeader"): boolean => {
+  const pick = (flag: "tabBar" | "mobileHeader" | "autoHideHeader", fallback: boolean): boolean => {
     for (let i = matches.length - 1; i >= 0; i--) {
       const v = (matches[i].handle as ShellHandle | undefined)?.[flag];
       if (v === undefined) continue;
       return typeof v === "function" ? v(matches[i]) : v;
     }
-    return true;
+    return fallback;
   };
   const bare = matches.some((m) => (m.handle as ShellHandle | undefined)?.bare);
-  return { bare, tabBar: pick("tabBar"), mobileHeader: pick("mobileHeader") };
+  return { bare, tabBar: pick("tabBar", true), mobileHeader: pick("mobileHeader", true), autoHideHeader: pick("autoHideHeader", false) };
 }
 
 export function loader({ params, request }: Route.LoaderArgs) {
@@ -69,12 +76,16 @@ export function loader({ params, request }: Route.LoaderArgs) {
   return null;
 }
 
-function Shell({ children, bare = false, tabBar = true, mobileHeader = true }: { children: ReactNode; bare?: boolean; tabBar?: boolean; mobileHeader?: boolean }) {
+function Shell({
+  children, bare = false, tabBar = true, mobileHeader = true, autoHideHeader = false,
+}: { children: ReactNode; bare?: boolean; tabBar?: boolean; mobileHeader?: boolean; autoHideHeader?: boolean }) {
   return (
     <div className="flex min-h-dvh flex-col">
       <NavigationProgress />
       <RouteAnnouncer />
-      <SiteHeader mobileHidden={!mobileHeader} />
+      <SiteHeader mobileHidden={!mobileHeader} autoHide={autoHideHeader} />
+      {/* Before <main>: fixed bars a page renders at the same z-index still paint above it. */}
+      {tabBar && <div aria-hidden="true" className="edge-fade-b md:hidden" />}
       {/* tabIndex -1: the skip link, RouteAnnouncer and the palette move focus here. */}
       <main
         id="main"
@@ -145,7 +156,7 @@ function NotFound() {
   return (
     <section className="relative isolate overflow-hidden">
       {/* Fades out at the bottom so the colour never ends in a hard edge. */}
-      <div aria-hidden="true" className="aurora-hero pointer-events-none absolute inset-0 -z-10 mask-b-from-55%" />
+      <div aria-hidden="true" className="aurora-hero aurora-fade pointer-events-none absolute inset-0 -z-10" />
       <div className="container-page flex flex-col items-center pb-16 pt-12 text-center md:pb-24 md:pt-20">
         <p aria-hidden="true" className="num font-display text-5xl font-semibold tracking-display text-lapis">404</p>
         <h1 className="mt-4 max-w-xl break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">

@@ -17,16 +17,17 @@ export function decimal(n: number, digits: number, locale: Locale): string {
 
 /**
  * Formats an amount the way people say it: sums of a million and up are shortened
- * ("15 mln so'm", "1,5 млн сум"), dollars keep full digits ("$1 200").
+ * ("15 mln so'm", "1,5 млн сум"), dollars keep full digits ("$1 200"). The number and the word
+ * after it are joined with U+00A0, so a line never ends in a bare "15".
  */
 export function money(amount: number, currency: Currency, t: TFunction, locale: Locale): string {
   if (currency === "USD") return `$${groupDigits(amount)}`;
   const unit = t("salary.currency.UZS");
   if (amount >= 1_000_000) {
     const m = amount / 1_000_000;
-    return `${decimal(m, m < 10 ? 1 : 0, locale)} ${t("salary.million")} ${unit}`;
+    return `${decimal(m, m < 10 ? 1 : 0, locale)}\u00a0${t("salary.million")} ${unit}`;
   }
-  return `${groupDigits(amount)} ${unit}`;
+  return `${groupDigits(amount)}\u00a0${unit}`;
 }
 
 /** "5–8 mln so'm", "from $1 200", "Negotiable". */
@@ -42,7 +43,7 @@ export function salary(
     // Share the unit: "5–8 mln so'm" instead of "5 mln so'm – 8 mln so'm".
     const bothMillions = cur === "UZS" && s.min >= 1_000_000;
     if (bothMillions) {
-      return `${decimal(s.min / 1e6, 1, locale)}–${decimal(s.max / 1e6, 1, locale)} ${t("salary.million")} ${t("salary.currency.UZS")}`;
+      return `${decimal(s.min / 1e6, 1, locale)}–${decimal(s.max / 1e6, 1, locale)}\u00a0${t("salary.million")} ${t("salary.currency.UZS")}`;
     }
     return t("salary.range", { min: money(s.min, cur, t, locale), max: money(s.max, cur, t, locale) });
   }

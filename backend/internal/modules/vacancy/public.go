@@ -43,8 +43,10 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		}
 		body, err := response.Encode(res.Cards, listMeta{NextCursor: res.NextCursor, Total: res.Total,
 			TotalCapped: res.TotalCapped, Fuzzy: res.Fuzzy})
+		// Only exact matches feed the popular list: a typo that found "similar results"
+		// is not a search worth suggesting to others.
 		found := byte(0)
-		if len(res.Cards) > 0 {
+		if len(res.Cards) > 0 && !res.Fuzzy {
 			found = 1
 		}
 		return respcache.Loaded{Body: body, Meta: []byte{found}}, err

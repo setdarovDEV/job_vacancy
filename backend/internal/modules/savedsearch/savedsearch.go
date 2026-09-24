@@ -58,9 +58,10 @@ type Service struct {
 	Log    *slog.Logger
 }
 
-// Notifier sends the alert; *notification.Service implements it.
+// Notifier sends the alerts of a group (a payload per user) in one transaction;
+// *notification.Service implements it.
 type Notifier interface {
-	Notify(ctx context.Context, users []uuid.UUID, typ string, p notification.Payload, store bool)
+	NotifyEach(ctx context.Context, typ string, to []notification.Recipient, store bool)
 }
 
 // canonical validates params with the listing parser and normalizes them (sorted keys,
@@ -209,7 +210,7 @@ func (s *Service) checkGroup(ctx context.Context, group []gen.ClaimDueSavedSearc
 		s.Log.WarnContext(ctx, "saved search alert", "search_id", group[0].ID, "group", len(group), "err", err)
 		return 0
 	}
-	alerted := 0
+	var to []notification.Recipient
 	for _, d := range group {
 		// Cards are newest first: this member's new vacancies are a prefix.
 		n := 0
@@ -224,12 +225,16 @@ func (s *Service) checkGroup(ctx context.Context, group []gen.ClaimDueSavedSearc
 		for i, c := range sample {
 			titles[i] = "• " + c.Title + " — " + c.Company.Name
 		}
-		s.Notify.Notify(ctx, []uuid.UUID{d.UserID}, notification.TypeSearchAlert, notification.Payload{
+		to = append(to, notification.Recipient{UserID: d.UserID, Payload: notification.Payload{
 			SearchID: d.ID.String(), SearchName: d.Name, Count: n, Preview: strings.Join(titles, "\n"),
-		}, true)
-		alerted++
+		}})
 	}
-	return alerted
+	// One transaction for the whole group: the stored alerts and their delivery jobs
+	// (only for channels each user has) commit together (TZ BE-08).
+	if len(to) > 0 {
+		s.Notify.NotifyEach(ctx, notification.TypeSearchAlert, to, true)
+	}
+	return len(to)
 }
 
 func (s *Service) lister() Lister {

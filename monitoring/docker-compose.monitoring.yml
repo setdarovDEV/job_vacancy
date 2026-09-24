@@ -182,6 +182,7 @@ services:
     command:
       - --collector.stat_statements
       - --collector.stat_statements.limit=30
+      - --collector.stat_statements.include_query   # normalised text ($1), no parameters
       - --collector.long_running_transactions
       - --collector.database_wraparound
       - --collector.postmaster
