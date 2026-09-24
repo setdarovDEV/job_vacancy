@@ -8,6 +8,7 @@ import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { MobileTabBar } from "~/shared/layout/MobileTabBar";
 import { NavigationProgress } from "~/shared/layout/NavigationProgress";
+import { RouteAnnouncer } from "~/shared/layout/RouteAnnouncer";
 import { SiteFooter } from "~/shared/layout/SiteFooter";
 import { SiteHeader } from "~/shared/layout/SiteHeader";
 import { Button } from "~/shared/ui/Button";
@@ -72,8 +73,16 @@ function Shell({ children, bare = false, tabBar = true, mobileHeader = true }: {
   return (
     <div className="flex min-h-dvh flex-col">
       <NavigationProgress />
+      <RouteAnnouncer />
       <SiteHeader mobileHidden={!mobileHeader} />
-      <main id="main" className="flex-1">{children}</main>
+      {/* tabIndex -1: the skip link, RouteAnnouncer and the palette move focus here. */}
+      <main
+        id="main"
+        tabIndex={-1}
+        className="flex-1 outline-none" // jv-ui-ignore: programmatic focus target, a ring around the whole page would only confuse
+      >
+        {children}
+      </main>
       {!bare && <SiteFooter className={tabBar ? "pb-tabbar" : undefined} />}
       {tabBar && <MobileTabBar />}
     </div>
@@ -135,7 +144,8 @@ function NotFound() {
   ] as const;
   return (
     <section className="relative isolate overflow-hidden">
-      <div aria-hidden="true" className="aurora-hero pointer-events-none absolute inset-0 -z-10" />
+      {/* Fades out at the bottom so the colour never ends in a hard edge. */}
+      <div aria-hidden="true" className="aurora-hero pointer-events-none absolute inset-0 -z-10 mask-b-from-55%" />
       <div className="container-page flex flex-col items-center pb-16 pt-12 text-center md:pb-24 md:pt-20">
         <p aria-hidden="true" className="num font-display text-5xl font-semibold tracking-display text-lapis">404</p>
         <h1 className="mt-4 max-w-xl break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">
@@ -149,7 +159,8 @@ function NotFound() {
               const Icon = l.icon;
               return (
                 <li key={l.to}>
-                  <Button asChild variant="glass" shape="pill" icon={<Icon className="size-4.5" />}>
+                  {/* Solid: the header, the glass search and the tab bar are already three blur layers. */}
+                  <Button asChild variant="secondary" shape="pill" icon={<Icon className="size-4.5" />}>
                     <LocalizedLink to={l.to} prefetch="intent">{t(l.key)}</LocalizedLink>
                   </Button>
                 </li>

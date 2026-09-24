@@ -28,6 +28,7 @@ type Config struct {
 	S3       S3
 	Log      Log
 	Worker   Worker
+	Search   Search
 }
 
 type HTTP struct {
@@ -143,6 +144,14 @@ type Worker struct {
 	ShutdownTimeout time.Duration `env:"WORKER_SHUTDOWN_TIMEOUT" envDefault:"30s"`
 	// /metrics and /healthz of the worker process (never exposed through nginx).
 	MetricsAddr string `env:"WORKER_METRICS_ADDR" envDefault:"127.0.0.1:9092"`
+}
+
+// Search settings.
+type Search struct {
+	// A query appears in the public "popular searches" only after this many different
+	// client IPs ran it within a week (TZ SEC-07). Local development sends everything from
+	// 127.0.0.1, so .env may lower it to 1 there.
+	PopularMinIPs int `env:"SEARCH_POPULAR_MIN_IPS" envDefault:"3"`
 }
 
 // Load reads .env (if present, never in production) and then the process environment.

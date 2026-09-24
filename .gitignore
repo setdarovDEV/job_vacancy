@@ -10,6 +10,8 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+!.env.production.example
+!.env.staging.example
 *.pem
 *.key
 
@@ -37,3 +39,4 @@ mobile/android/.gradle/
 nginx/ssl/live/
 nginx/ssl/archive/
 nginx/backups/
+nginx/.deploy/

@@ -1,7 +1,8 @@
 #!/bin/sh
 # Graceful reload after a certificate renewal or config change; refuses a broken config.
 set -eu
+NGINX_CMD=${NGINX_CMD:-nginx}
 jv-tls >/dev/null
-nginx -t -q
-nginx -s reload
+$NGINX_CMD -t -q
+$NGINX_CMD -s reload
 echo "jv-reload: reloaded"

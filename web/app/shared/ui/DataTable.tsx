@@ -55,7 +55,7 @@ export function DataTable<T>({
         type="button"
         onClick={() => onSortChange({ key: c.key, dir: active && sort.dir === "asc" ? "desc" : "asc" })}
         className={cn(
-          "-mx-2 inline-flex min-h-9 items-center gap-1 rounded-control px-2 font-medium transition-colors duration-150 hover:bg-sunken hover:text-ink",
+          "-mx-2 inline-flex min-h-9 items-center gap-1 rounded-control px-2 font-medium transition-colors duration-150 hover:bg-sunken hover:text-ink pointer-coarse:min-h-11",
           active && "text-ink",
           c.align === "end" && "flex-row-reverse",
         )}
@@ -87,7 +87,7 @@ export function DataTable<T>({
                   scope="col"
                   aria-sort={ariaSort(c)}
                   className={cn(
-                    "sticky top-16 z-10 border-b border-line bg-raised px-4 py-2.5 align-middle text-sm font-medium text-ink-2 first:pl-5 last:pr-5",
+                    "sticky top-(--header-h) z-10 border-b border-line bg-raised px-4 py-2.5 align-middle text-sm font-medium text-ink-2 first:pl-5 last:pr-5",
                     align(c),
                     c.className,
                   )}

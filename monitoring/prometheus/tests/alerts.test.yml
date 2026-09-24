@@ -1,0 +1,185 @@
+# Unit tests for the alert rules (TZ OPS-04): promtool test rules monitoring/prometheus/tests/*.yml
+# Series are sampled every 15 s like the real scrape. Each test says when an alert must
+# (not yet) fire, which is also the check that critical alerts fire within 2 minutes.
+rule_files:
+  - ../rules/recording.yml
+  - ../rules/alerts.yml
+evaluation_interval: 15s
+
+tests:
+  # 5xx: ~4.8 % errors from t=0. Pending at 15 s, firing from 1 m 15 s. 503s of /readyz
+  # during a rolling deploy never count.
+  - name: api 5xx ratio fires within 2 minutes, readyz 503s are ignored
+    interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="api",instance="api-1",route="/api/v1/vacancies",method="GET",status="200"}'
+        values: '0+100x20'
+      - series: 'http_requests_total{job="api",instance="api-1",route="/api/v1/vacancies",method="GET",status="500"}'
+        values: '0+5x20'
+      - series: 'http_requests_total{job="api",instance="api-2",route="/readyz",method="GET",status="503"}'
+        values: '0+50x20'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ApiHigh5xxRate
+        exp_alerts: []
+      - eval_time: 1m30s
+        alertname: ApiHigh5xxRate
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: "API 5xx 4.762% of requests (> 1 %)"
+              description: "Server errors above 1 % for a minute. Grafana → jobvacancy RED → Errors by route; logs: make logs-production s=api-1."
+              runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+  - name: a single 500 on a quiet night does not page
+    interval: 15s
+    input_series:
+      - series: 'http_requests_total{job="api",instance="api-1",route="/api/v1/me",method="GET",status="200"}'
+        values: '0+1x20'
+      - series: 'http_requests_total{job="api",instance="api-1",route="/api/v1/me",method="GET",status="500"}'
+        values: '0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: ApiHigh5xxRate
+        exp_alerts: []
+
+  # p95 above 200 ms must hold for 5 minutes.
+  - name: p95 latency over 200 ms for 5 minutes
+    interval: 15s
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{job="api",instance="api-1",route="/api/v1/vacancies",method="GET",le="0.1"}'
+        values: '0+10x60'
+      - series: 'http_request_duration_seconds_bucket{job="api",instance="api-1",route="/api/v1/vacancies",method="GET",le="0.25"}'
+        values: '0+40x60'
+      - series: 'http_request_duration_seconds_bucket{job="api",instance="api-1",route="/api/v1/vacancies",method="GET",le="0.5"}'
+        values: '0+100x60'
+      - series: 'http_request_duration_seconds_bucket{job="api",instance="api-1",route="/api/v1/vacancies",method="GET",le="+Inf"}'
+        values: '0+100x60'
+      # A WebSocket connection lasting minutes must not count.
+      - series: 'http_request_duration_seconds_bucket{job="api",instance="api-1",route="/api/v1/ws",method="GET",le="+Inf"}'
+        values: '0+1x60'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: ApiLatencyP95High
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: ApiLatencyP95High
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: "API p95 462.5ms (> 200 ms for 5 minutes)"
+              description: "Slowest routes: Grafana → jobvacancy RED → p95 by route. Then pg_stat_statements and the db pool panels."
+              runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+  - name: an API instance that stops answering pages within 2 minutes
+    interval: 15s
+    input_series:
+      - series: 'up{job="api",instance="api-2"}'
+        values: '1 1 0 0 0 0 0 0 0 0'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: ApiInstanceDown
+        exp_alerts: []
+      - eval_time: 1m30s
+        alertname: ApiInstanceDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: api, instance: api-2 }
+            exp_annotations:
+              summary: "api-2 is not answering (metrics scrape failed)"
+              description: "nginx keeps serving from the other instance. make ps-prod; make logs-production s=api-2."
+              runbook: "docs/RUNBOOK.md#92-502503"
+
+  - name: disk above 80 %
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="node",host="app-1",instance="10.250.30.1:9100",device="/dev/vda1",fstype="ext4",mountpoint="/"}'
+        values: '15x10'
+      - series: 'node_filesystem_size_bytes{job="node",host="app-1",instance="10.250.30.1:9100",device="/dev/vda1",fstype="ext4",mountpoint="/"}'
+        values: '100x10'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: DiskSpaceLow
+        exp_alerts:
+          - exp_labels: { severity: warning, host: app-1, instance: "10.250.30.1:9100", device: /dev/vda1, fstype: ext4, mountpoint: /, job: node }
+            exp_annotations:
+              summary: "app-1 / is 85% full (> 80 %)"
+              runbook: "docs/RUNBOOK.md#93-disk-tolmoqda"
+
+  - name: River queue over 1000
+    interval: 1m
+    input_series:
+      - series: 'jv_river_jobs{job="sql",instance="postgres",target="postgres",queue="default",state="available"}'
+        values: '1500x10'
+      - series: 'jv_river_jobs{job="sql",instance="postgres",target="postgres",queue="critical",state="available"}'
+        values: '10x10'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: RiverQueueBacklog
+        exp_alerts:
+          - exp_labels: { severity: critical, queue: default }
+            exp_annotations:
+              summary: "River queue default has 1500 jobs waiting (> 1000)"
+              description: "Worker down or too slow: WorkerDown, Grafana → USE → River, make logs-production s=worker."
+              runbook: "docs/RUNBOOK.md#97-navbat-river"
+
+  - name: certificate with 10 days left
+    interval: 1m
+    input_series:
+      # 10 days after t=0.
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox-origin",instance="https://nginx/"}'
+        values: '864000x20'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: CertificateExpiresSoon
+        exp_alerts:
+          - exp_labels: { severity: warning, job: blackbox-origin, instance: "https://nginx/" }
+            exp_annotations:
+              summary: "TLS certificate of https://nginx/ expires in 10.0 days"
+              description: "certbot renews at 30 days left; this means renewal is failing. docker compose logs certbot."
+              runbook: "docs/RUNBOOK.md#7-sertifikatlar"
+      - eval_time: 15m
+        alertname: CertificateExpiresVerySoon
+        exp_alerts: []
+
+  - name: failed and stale backups
+    interval: 1h
+    input_series:
+      - series: 'jv_backup_last_run_ok{job="sql",instance="postgres",target="postgres"}'
+        values: '1 1 0'
+      # Last success at t=0 (unix 0): 27 h later it is too old.
+      - series: 'jv_backup_last_success_timestamp_seconds{job="sql",instance="postgres",target="postgres"}'
+        values: '0x30'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: BackupFailed
+        exp_alerts:
+          - exp_labels: { severity: critical, job: sql, instance: postgres, target: postgres }
+            exp_annotations:
+              summary: "The last full backup (wal-g backup-push) failed"
+              description: "make logs-production s=pg-backup; make backup to retry now."
+              runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"
+      - eval_time: 25h
+        alertname: BackupTooOld
+        exp_alerts: []
+      - eval_time: 27h
+        alertname: BackupTooOld
+        exp_alerts:
+          - exp_labels: { severity: critical, job: sql, instance: postgres, target: postgres }
+            exp_annotations:
+              summary: "Newest full backup is 1d 3h 0m 0s old (daily at 21:00 UTC)"
+              runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"
+
+  - name: WAL archiving failures
+    interval: 1m
+    input_series:
+      - series: 'pg_stat_archiver_failed_count{job="postgres",instance="postgres"}'
+        values: '0 0 0 1 2 3 4 5 6 7'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: WalArchiveFailing
+        exp_alerts:
+          - exp_labels: { severity: critical, job: postgres, instance: postgres }
+            exp_annotations:
+              summary: "WAL archiving to offsite S3 is failing: point-in-time recovery is falling behind and pg_wal grows"
+              description: "make backup-status; S3 credentials, network, bucket. Never delete files in pg_wal by hand."
+              runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"

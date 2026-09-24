@@ -132,8 +132,6 @@ export function ThemeMenu() {
     </Popover>
   );
 }
-/** Alias with the name the settings page may look for. */
-export const AppearanceMenu = ThemeMenu;
 
 export function LanguageMenu() {
   const { t } = useTranslation();

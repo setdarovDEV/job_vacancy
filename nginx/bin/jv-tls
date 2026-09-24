@@ -4,8 +4,8 @@
 # issued (scripts/cert.sh) and ACME http-01 challenges can be answered on port 80.
 set -eu
 name=${CERT_NAME:-jobvacancy}
-le=/etc/letsencrypt/live/$name
-tls=/etc/nginx/tls
+le=${LETSENCRYPT_DIR:-/etc/letsencrypt}/live/$name
+tls=${NGINX_ETC:-/etc/nginx}/tls
 mkdir -p "$tls"
 if [ -s "$le/fullchain.pem" ] && [ -s "$le/privkey.pem" ]; then
   ln -sfn "$le/fullchain.pem" "$tls/fullchain.pem"

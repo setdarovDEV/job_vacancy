@@ -48,6 +48,8 @@ type Filter struct {
 	// Fuzzy switches matching from full-text to typo-tolerant title similarity. It is set
 	// internally when the exact search finds nothing, and carried in the cursor.
 	Fuzzy bool `json:"fuzzy,omitempty"`
+	// SkipTotal leaves meta.total out (saved-search alerts don't need the count).
+	SkipTotal bool `json:"-"`
 }
 
 // listCursor is the keyset position. For relevance it also freezes the reference time
@@ -94,6 +96,15 @@ func (s *Service) List(ctx context.Context, f Filter) (ListResult, error) {
 	}
 	// Nothing matched exactly: retry forgiving typos ("dasturchy" → "dasturchi").
 	f.Fuzzy = true
+	return s.list(ctx, f)
+}
+
+// ListNew is the listing for saved-search alerts (TZ BE-11): exact matches only, newest
+// first, no total. The typo-tolerant fallback is never used here: "showing similar
+// results" is fine on a page the user is looking at, but an alert about vacancies the
+// user didn't search for is wrong.
+func (s *Service) ListNew(ctx context.Context, f Filter) (ListResult, error) {
+	f.Fuzzy, f.After, f.SkipTotal, f.Sort = false, nil, true, SortNewest
 	return s.list(ctx, f)
 }
 
@@ -214,15 +225,22 @@ func (s *Service) list(ctx context.Context, f Filter) (ListResult, error) {
 	}
 	res := ListResult{Cards: cards, NextCursor: next, Fuzzy: f.Fuzzy}
 
-	// Only the first page reports a total, computed with the same filters.
-	if f.After == nil {
+	// Only the first page reports a total, computed with the same filters. A full page
+	// needs a count query; its result is cached apart for longer than the page (TZ BE-11).
+	if f.After == nil && !f.SkipTotal {
 		n := len(cards)
 		if next != nil {
-			countSQL := fmt.Sprintf(`SELECT count(*) FROM (SELECT 1 FROM %s WHERE %s LIMIT %d) t`,
-				countFrom, b.SQL(), totalCap+1)
-			args := append([]any{pgx.QueryExecModeExec}, b.Args[:countArgs]...)
-			if err := s.Pool.QueryRow(ctx, countSQL, args...).Scan(&n); err != nil {
-				return ListResult{}, fmt.Errorf("count vacancies: %w", err)
+			key := totalKey(f)
+			if cached, ok := s.Cache.cachedTotal(ctx, key); ok {
+				n = max(cached, len(cards)+1) // there is a next page, whatever the old count says
+			} else {
+				countSQL := fmt.Sprintf(`SELECT count(*) FROM (SELECT 1 FROM %s WHERE %s LIMIT %d) t`,
+					countFrom, b.SQL(), totalCap+1)
+				args := append([]any{pgx.QueryExecModeExec}, b.Args[:countArgs]...)
+				if err := s.Pool.QueryRow(ctx, countSQL, args...).Scan(&n); err != nil {
+					return ListResult{}, fmt.Errorf("count vacancies: %w", err)
+				}
+				s.Cache.storeTotal(ctx, key, n)
 			}
 		}
 		if n > totalCap {

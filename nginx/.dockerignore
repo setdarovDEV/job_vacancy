@@ -1,0 +1,9 @@
+# The nginx image only needs its own config (see Dockerfile).
+*
+!Dockerfile
+!nginx.conf
+!conf.d/
+!snippets/
+!html/
+!bin/
+!entrypoint.d/

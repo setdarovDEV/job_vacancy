@@ -4,7 +4,7 @@
 # Refuses suspicious answers (too few ranges, anything that isn't a CIDR) and keeps the old
 # file when the new one fails `nginx -t`.
 set -eu
-NGINX=${NGINX:-nginx}   # overridable for tests
+NGINX_CMD=${NGINX_CMD:-nginx}   # overridable for tests
 out=${NGINX_ETC:-/etc/nginx}/snippets/cloudflare-real-ip.conf
 tmp=$(mktemp)
 fetch() { curl -fsS --max-time 20 --retry 3 "https://www.cloudflare.com/$1"; echo; }
@@ -27,8 +27,8 @@ if [ "$(grep -v '^#' "$tmp")" = "$(grep -v '^#' "$out")" ]; then rm -f "$tmp"; e
 cp "$out" "$out.bak"
 cat "$tmp" >"$out"
 rm -f "$tmp"
-if $NGINX -t -q; then
-  $NGINX -s reload
+if $NGINX_CMD -t -q; then
+  $NGINX_CMD -s reload
   echo "update-cloudflare-ips: updated ($n4 IPv4, $n6 IPv6 ranges)"
 else
   cat "$out.bak" >"$out"

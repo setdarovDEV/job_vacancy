@@ -4,7 +4,15 @@ import { api, setTokenGetter, type Schemas } from "../api/client";
 
 export type User = Schemas["User"];
 type Status = "loading" | "anon" | "authed";
-type State = { status: Status; user: User | null };
+type State = {
+  status: Status;
+  user: User | null;
+  /**
+   * With status "anon": a session probably exists (marker cookie) but couldn't be restored
+   * because the network or the API is down. Private pages offer a retry instead of the login.
+   */
+  offline?: boolean;
+};
 
 // Session state for the browser. The access token (15 min) is kept only in memory, the
 // refresh token in an HttpOnly cookie the API sets. A readable marker cookie (jv_auth=1)
@@ -24,6 +32,8 @@ function set(next: State) {
 }
 
 setTokenGetter(() => token);
+
+const hasMarker = () => document.cookie.split("; ").some((c) => c === `${MARKER}=1`);
 
 function setMarker(on: boolean) {
   document.cookie = on
@@ -69,8 +79,9 @@ export function refresh(): Promise<boolean> {
       signedOutLocally();
       return false;
     } catch {
-      // Network failure: keep what we have; the next request will try again.
-      if (!token) set({ status: "anon", user: null });
+      // Network failure: keep what we have; the next request will try again. Not the same as
+      // signed out: without a token yet, say so (offline) instead of sending people to log in.
+      if (!token) set({ status: "anon", user: null, offline: hasMarker() });
       return false;
     } finally {
       inflight = null;
@@ -84,7 +95,7 @@ let booted = false;
 export function bootstrapSession() {
   if (booted) return;
   booted = true;
-  if (document.cookie.split("; ").some((c) => c === `${MARKER}=1`)) void refresh();
+  if (hasMarker()) void refresh();
   else set({ status: "anon", user: null });
 }
 

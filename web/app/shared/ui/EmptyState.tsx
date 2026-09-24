@@ -34,7 +34,6 @@ export function EmptyState({
           {icon}
         </div>
       )}
-      {/* Plain template strings: tailwind-merge would drop text-lead next to a text color. */}
       <Heading className={`max-w-md break-words ${s.title}`}>{title}</Heading>
       {body && <p className={`max-w-sm break-words text-ink-2 ${s.body}`}>{body}</p>}
       {(action || secondaryAction) && (

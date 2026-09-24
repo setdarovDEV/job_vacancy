@@ -47,6 +47,18 @@ check "alerts run" "$($CTL run-alerts | grep -oE 'alerted [0-9]+' | awk '{print 
 check "seeker got an alert" "$(req $API/me/notifications -H "$(A $TS)")$(J '.data[0] | "\(.type)/\(.payload.count)/\(.payload.search_name)"')" "200search.alert/1/Golang Toshkentda"
 check "alert lists the new vacancy" "$(J '.data[0].payload.preview' | grep -c "Senior Golang $R developer — Alert Co $R")" 1
 check "re-run: no repeat alert" "$($CTL run-alerts >/dev/null; curl -s $API/me/notifications -H "$(A $TS)" | jq '[.data[] | select(.type=="search.alert")] | length')" 1
+
+echo "== alerts never use the typo-tolerant fallback (TZ BE-11)"
+W=zyq$(tr -dc a-z </dev/urandom | head -c 9); SWAP=x; [ "${W:5:1}" = x ] && SWAP=w
+TYPO="${W:0:5}$SWAP${W:6}"                        # one wrong letter in a 12-letter word
+check "typo search saved" "$(req -X POST $API/me/saved-searches -H "$(A $TS)" -H "$H" -d "{\"name\":\"Typo $R\",\"params\":\"q=$TYPO\"}")" 201
+TID=$(J .data.id)
+$PSQL -c "UPDATE saved_searches SET last_checked_at = now() - interval '1 hour' WHERE id = '$TID'" >/dev/null
+post "Operator $W" $TASH
+check "public search shows it as a similar result" "$(req "$API/vacancies?q=$TYPO")$(J '.meta.fuzzy')$(J '[.data[].title] | index("Operator '$W'") != null')" "200truetrue"
+$CTL run-alerts >/dev/null
+check "no alert from a similar result" "$(curl -s $API/me/notifications -H "$(A $TS)" | jq "[.data[] | select(.type==\"search.alert\" and .payload.search_name==\"Typo $R\")] | length")" 0
+req -X DELETE $API/me/saved-searches/$TID -H "$(A $TS)" >/dev/null
 check "mute" "$(req -X PUT $API/me/saved-searches/$SID -H "$(A $TS)" -H "$H" -d '{"name":"Golang","notify":false}')$(J .data.notify)" "200false"
 $PSQL -c "UPDATE saved_searches SET last_checked_at = now() - interval '1 hour' WHERE id = '$SID'" >/dev/null
 post "Golang $R team lead" $TASH

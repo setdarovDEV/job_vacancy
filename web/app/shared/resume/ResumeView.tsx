@@ -53,7 +53,7 @@ export function ResumeView({ r, embedded }: { r: Detail; embedded?: boolean }) {
         <Avatar name={r.person.full_name ?? ""} src={r.person.avatar_url} size="xl" />
         <div className="min-w-0 flex-1">
           <p className="text-ink-2">{r.person.full_name}</p>
-          <h1 className="mt-1 font-display text-2xl font-semibold tracking-[-0.03em] text-ink md:text-3xl">{r.title}</h1>
+          <h1 className="mt-1 font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">{r.title}</h1>
           <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-ink-2">
             {region && <span className="flex items-center gap-1.5"><MapPin className="size-4 text-ink-3" />{region}{r.relocate && `, ${t("resume.relocateShort")}`}</span>}
             <span>{t("resume.experienceTotal", { value: experienceText(r.experience_months, t) })}</span>
@@ -145,7 +145,7 @@ export function ResumeView({ r, embedded }: { r: Detail; embedded?: boolean }) {
 function Block({ title, children, small }: { title: string; children: React.ReactNode; small?: boolean }) {
   return (
     <section>
-      <h2 className={small ? "mb-2.5 text-sm font-semibold text-ink" : "mb-4 font-display text-lg font-semibold tracking-[-0.01em] text-ink"}>{title}</h2>
+      <h2 className={small ? "mb-2.5 text-sm font-semibold text-ink" : "mb-4 font-display text-lg font-semibold tracking-snug text-ink"}>{title}</h2>
       {children}
     </section>
   );

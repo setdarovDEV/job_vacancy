@@ -189,9 +189,10 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
           "flex w-full items-center gap-2 rounded-control text-left text-ink transition-[border-color,box-shadow,background-color] duration-150",
           size === "sm" ? "h-9 text-sm pointer-coarse:h-11" : "h-11 text-md",
           bare
-            ? // Inside a composite bar: no box until it's focused, then a surface chip with the ring. The
-              // chip reaches 8px left into the gap so the text stays where it was, and never past the right edge.
-              "-ml-2 h-full w-[calc(100%+0.5rem)] bg-transparent pl-2 pr-1 outline-none focus-visible:bg-surface focus-visible:shadow-ring"
+            ? // Inside a composite bar: no box until it's focused, then a surface chip with an inset
+              // focus outline (the bar's own ring says "the bar", this one says "this field"). The chip
+              // reaches 8px left into the gap so the text stays where it was, never past the right edge.
+              "-ml-2 h-full w-[calc(100%+0.5rem)] bg-transparent pl-2 pr-1 focus-visible:bg-surface focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
             : cn(
                 // Same box and focus treatment as field-shell inputs.
                 "border border-line-strong bg-surface pl-3.5 pr-3 hover:border-ink-3",

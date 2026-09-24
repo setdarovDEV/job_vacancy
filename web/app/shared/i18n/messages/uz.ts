@@ -199,6 +199,10 @@ const uz = {
     company_not_found: "Kompaniya topilmadi.", application_not_found: "Ariza topilmadi.",
     conversation_not_found: "Suhbat topilmadi.",
     internal_error: "Serverda xatolik yuz berdi. Birozdan keyin qayta urinib ko'ring.",
+    service_unavailable: "Xizmat vaqtincha ishlamayapti. Bir daqiqadan so'ng qayta urinib ko'ring.",
+    timeout: "Server javob berishga ulgurmadi. Yana bir bor urinib ko'ring.",
+    invalid_request: "So'rovda noto'g'ri belgilar bor. Havolani tekshirib, qayta urinib ko'ring.",
+    hidden_term_not_found: "Bu so'z yashirilganlar ro'yxatida yo'q.",
   },
   jobs: {
     title: "Vakansiyalar",

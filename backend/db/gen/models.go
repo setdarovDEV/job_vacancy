@@ -1588,6 +1588,12 @@ type SavedVacancy struct {
 	CreatedAt time.Time
 }
 
+type SearchHiddenTerm struct {
+	Term      string
+	HiddenBy  *uuid.UUID
+	CreatedAt time.Time
+}
+
 type Skill struct {
 	ID         int32
 	Name       string
@@ -1686,6 +1692,7 @@ type VacancySearch struct {
 	Meta           string
 	Body           string
 	Document       interface{}
+	DisplayTitle   *string
 }
 
 type VacancySkill struct {

@@ -110,16 +110,27 @@ func (ExpireVacanciesArgs) Kind() string { return "vacancy.expire" }
 
 type ExpireVacanciesWorker struct {
 	river.WorkerDefaults[ExpireVacanciesArgs]
-	Q   *gen.Queries
-	Log *slog.Logger
+	Q *gen.Queries
+	// Cache drops the expired vacancies' public pages (TZ BE-05); nil skips that.
+	Cache *vacancy.PublicCache
+	Log   *slog.Logger
 }
 
 func (w *ExpireVacanciesWorker) Work(ctx context.Context, _ *river.Job[ExpireVacanciesArgs]) error {
-	n, err := w.Q.ExpireVacancies(ctx)
-	if n > 0 {
-		w.Log.Info("vacancies expired", "count", n)
+	rows, err := w.Q.ExpireVacancies(ctx)
+	if err != nil {
+		return err
 	}
-	return err
+	if len(rows) == 0 {
+		return nil
+	}
+	refs := make([]vacancy.VacancyRef, len(rows))
+	for i, r := range rows {
+		refs[i] = vacancy.VacancyRef{ID: r.ID, Slug: r.Slug, CompanyID: r.CompanyID, CompanySlug: r.CompanySlug}
+	}
+	w.Cache.VacanciesChanged(ctx, refs...)
+	w.Log.Info("vacancies expired", "count", len(rows))
+	return nil
 }
 
 // ---- files -------------------------------------------------------------------------------
@@ -211,7 +222,7 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 	q := gen.New(d.Pool)
 	river.AddWorker(workers, &CleanupSessionsWorker{Q: q, Log: d.Log})
 	river.AddWorker(workers, &FlushViewsWorker{Views: &vacancy.ViewCounter{RDB: d.Redis}, Q: q})
-	river.AddWorker(workers, &ExpireVacanciesWorker{Q: q, Log: d.Log})
+	river.AddWorker(workers, &ExpireVacanciesWorker{Q: q, Cache: vacancy.NewPublicCache(d.Redis, d.Log), Log: d.Log})
 	river.AddWorker(workers, &DeliverWorker{D: &notification.Deliverer{
 		Q: q, Mailer: d.Mailer, Bot: d.Bot, Push: d.Push, WebURL: d.WebURL, Log: d.Log,
 	}})

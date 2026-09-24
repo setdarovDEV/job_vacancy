@@ -1,0 +1,71 @@
+# Staging (TZ OPS-08): the production stack, smaller, on its own VPS (2 vCPU / 4 GB), at
+# staging.jobvacancy.uz. Merged on top of docker-compose.prod.yml with .env.staging:
+#
+#   make deploy-staging        # nginx/scripts/deploy.sh staging
+#   make staging-refresh       # production backup → staging, anonymized (= restore drill)
+#
+# What differs from production:
+#   - APP_ENV=staging (.env.staging): production-only config checks are off
+#   - nginx: noindex header + Disallow-all robots.txt by host name, optional basic auth
+#     (STAGING_BASIC_AUTH)
+#   - every e-mail lands in Mailpit (UI on 127.0.0.1:8025, reach it over SSH), Telegram
+#     tokens empty (codes/messages go to the log)
+#   - no backups of its own (COMPOSE_PROFILES=db); data comes from production, anonymized
+#   - smaller resource limits
+name: ${COMPOSE_PROJECT_NAME:-jobvacancy-staging}
+
+x-small-api: &small-api
+  environment:
+    GOMEMLIMIT: 300MiB
+  deploy:
+    resources:
+      limits: { cpus: "0.75", memory: 384M }
+
+x-small-web: &small-web
+  environment:
+    NODE_OPTIONS: --max-old-space-size=256
+  deploy:
+    resources:
+      limits: { cpus: "0.5", memory: 384M }
+
+services:
+  nginx:
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+  web-1: *small-web
+  web-2: *small-web
+  api-1: *small-api
+  api-2: *small-api
+  worker:
+    environment:
+      GOMEMLIMIT: 400MiB
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+  redis-cache:
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 256M }
+  redis-state:
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 256M }
+  minio:
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M }
+
+  mailpit:
+    image: axllent/mailpit:v1.31.2@sha256:74d609a42ec279aa63c6b4622a6fa9b5408d1ad5b1d76a1c4be40a265ce0863d
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      MP_MAX_MESSAGES: "5000"
+    ports:
+      - "127.0.0.1:8025:8025"
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
+    networks: [back]

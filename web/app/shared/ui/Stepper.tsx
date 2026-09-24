@@ -151,7 +151,7 @@ export function Stepper({ steps, current, onStepChange, orientation = "horizonta
             aria-current={isCurrent ? "step" : undefined}
             onClick={() => onStepChange(s.id)}
             className={cn(
-              "flex min-h-11 w-full min-w-0 items-center gap-2.5 py-1.5 pl-1.5 pr-3 text-start transition-[background-color,transform] duration-150 hover:bg-sunken active:scale-[0.98]",
+              "flex min-h-11 w-full min-w-0 items-center gap-2.5 py-1.5 pl-1.5 pr-3 text-start transition-[background-color,scale] duration-150 hover:bg-sunken active:scale-[0.98]",
               L.button,
             )}
           >

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	goredis "github.com/redis/go-redis/v9"
 
@@ -44,6 +45,9 @@ func serveWorkerOps(ctx context.Context, addr string, pool *pgxpool.Pool, rdb *g
 // images have no curl, so Docker runs `/app/api healthcheck` (TZ OPS-07). It GETs
 // http://127.0.0.1:<port of addrEnv><path> and returns the process exit code.
 func Healthcheck(addrEnv, defaultAddr, path string) int {
+	if os.Getenv("APP_ENV") != "production" {
+		_ = godotenv.Load() // dev: HTTP_ADDR may come from .env, like config.Load
+	}
 	addr := os.Getenv(addrEnv)
 	if addr == "" {
 		addr = defaultAddr

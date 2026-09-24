@@ -1,0 +1,29 @@
+# Full base backups (wal-g, TZ OPS-03/04): written by the pg-backup container after every
+# run (nginx/postgres/bin/walg-backup-now) into jv_ops.backup_runs, a tiny table
+# (backup_runs_finished_idx). No rows (backups disabled, e.g. staging) → no series.
+# Continuous WAL archiving is watched through postgres_exporter (pg_stat_archiver_*).
+collector_name: backup
+
+metrics:
+  - metric_name: jv_backup_last_success_timestamp_seconds
+    type: gauge
+    help: "Unix time when the newest successful full backup finished."
+    values: [ts]
+    query: |
+      SELECT EXTRACT(EPOCH FROM max(finished_at))::float8 AS ts
+      FROM jv_ops.backup_runs WHERE ok HAVING count(*) > 0
+  - metric_name: jv_backup_last_run_ok
+    type: gauge
+    help: "1 when the most recent full backup run succeeded, 0 when it failed."
+    values: [ok]
+    query: |
+      SELECT CASE WHEN ok THEN 1 ELSE 0 END AS ok
+      FROM jv_ops.backup_runs ORDER BY finished_at DESC LIMIT 1
+  - metric_name: jv_backup_last_size_bytes
+    type: gauge
+    help: "Compressed size of the newest successful full backup."
+    values: [bytes]
+    query: |
+      SELECT compressed_bytes::float8 AS bytes
+      FROM jv_ops.backup_runs WHERE ok AND compressed_bytes IS NOT NULL
+      ORDER BY finished_at DESC LIMIT 1

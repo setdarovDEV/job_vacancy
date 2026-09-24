@@ -5,6 +5,7 @@ import type { Schemas } from "../api/client";
 import { indexCatalog, nameOf, useCatalog } from "../catalog/catalog";
 import { LocalizedLink, useLocale } from "../i18n/hooks";
 import { useTranslation } from "../i18n/i18n";
+import { cn } from "../lib/cn";
 import { salary } from "../lib/format";
 import { Avatar } from "../ui/Avatar";
 import { Badge } from "../ui/Badge";
@@ -25,17 +26,24 @@ export function VacancyRow({ v, showStatus }: { v: VacancyCard; showStatus?: boo
   const idx = useMemo(() => indexCatalog(catalog), [catalog]);
   const region = nameOf(idx.regions.get(v.district_id ?? v.region_id)?.name ?? idx.regions.get(v.region_id)?.name, locale);
   return (
-    <article className="group relative flex gap-4 px-4 py-5 transition-colors hover:bg-sunken/60 sm:px-5">
+    // The stretched title link makes the whole row the target, so keyboard focus outlines the row
+    // (inset: rows are divided by hairlines); the title underline stays as a second cue.
+    <article
+      className={cn(
+        "group relative flex gap-4 px-4 py-5 transition-colors hover:bg-sunken/60 sm:px-5",
+        "has-[a[href]:focus-visible]:outline-2 has-[a[href]:focus-visible]:-outline-offset-2 has-[a[href]:focus-visible]:outline-focus",
+      )}
+    >
       {v.is_featured && <span className="absolute inset-y-3 left-0 w-[3px] rounded-r-full bg-zafaron" aria-hidden="true" />}
       <Avatar name={v.company.name} src={v.company.logo_url} square size="md" className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
-          <h3 className="text-[1.0625rem] font-semibold leading-snug text-ink">
+          <h3 className="text-lead font-semibold leading-snug text-ink">
             <LocalizedLink to={`/vacancies/${v.slug}`} className="outline-none after:absolute after:inset-0 group-hover:text-lapis-ink focus-visible:underline">
               {v.title}
             </LocalizedLink>
           </h3>
-          <p className="num shrink-0 font-display text-[1.0625rem] font-semibold tracking-[-0.02em] text-firuza-ink">
+          <p className="num shrink-0 font-display text-lead font-semibold tracking-heading text-firuza-ink">
             {salary(v.salary, t, locale)}
           </p>
         </div>
@@ -57,7 +65,8 @@ export function VacancyRow({ v, showStatus }: { v: VacancyCard; showStatus?: boo
           </div>
         )}
       </div>
-      <div className="relative z-10 -mr-2 -mt-1 self-start">
+      {/* Pulled into the corner by the button's padding, so the heart lines up with the title. */}
+      <div className="relative z-10 -mr-2 -mt-1 self-start pointer-coarse:-mr-2.5 pointer-coarse:-mt-1.5">
         <SaveButton id={v.id} />
       </div>
     </article>
@@ -67,7 +76,7 @@ export function VacancyRow({ v, showStatus }: { v: VacancyCard; showStatus?: boo
 export function VacancyRowSkeleton() {
   return (
     <div className="flex gap-4 px-4 py-5 sm:px-5" aria-hidden="true">
-      <Skeleton className="size-10 rounded-[28%]" />
+      <Skeleton className="size-10 rounded-control" />
       <div className="flex-1 space-y-2.5">
         <Skeleton className="h-4 w-1/2" />
         <Skeleton className="h-3 w-1/3" />

@@ -20,6 +20,22 @@ info:
     translate it into uz / uz-Cyrl / ru / en. `fields` maps a JSON field to the failing
     rule (`required`, `email`, `min=8`, `password`, `oneof=...`).
 
+    **Deadlines.** Every request runs under a server deadline (8 s; PDF export 25 s;
+    the WebSocket is exempt) and each database statement under 5 s. When one is exceeded
+    the API answers `503` with code `timeout` and `Retry-After: 1`; the call is safe to
+    retry. Rate limits answer `429` with code `rate_limited` and `retry_after`.
+
+    **Compression.** Send `Accept-Encoding: gzip` (browsers do); JSON responses shrink
+    by ~80 %. In production nginx also offers brotli.
+
+    **Caching.** Public reads (vacancy list and page, company page, search suggest and
+    popular) are served from cached response bytes. They carry an `ETag`; send it back in
+    `If-None-Match` to get `304 Not Modified` with no body. `X-Cache` says `HIT`, `STALE`
+    (an older copy served while it refreshes in the background) or `MISS`. Edits drop the
+    affected pages at once; listings may show the previous state for one more request.
+    Vacancy views are counted by `POST /vacancies/{vacancy}/view`, sent by the page after
+    it rendered.
+
     **Tokens.** The access token (JWT, 15 min) goes in `Authorization: Bearer`.
     Web: the refresh token lives in the HttpOnly cookie `jv_refresh` (path `/api/v1/auth`).
     Mobile: send `X-Client-Type: android|ios`; the refresh token is returned in and read
@@ -38,6 +54,11 @@ components:
     ResumeRef: { name: resume, in: path, required: true, schema: { type: string, format: uuid } }
     ApplicationRef: { name: application, in: path, required: true, schema: { type: string, format: uuid } }
     CompanyRef: { name: company, in: path, required: true, schema: { type: string }, description: uuid or slug }
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: { type: string }
+      description: ETag of a copy the client has; unchanged content answers 304 with no body.
     ClientType:
       name: X-Client-Type
       in: header
@@ -347,10 +368,33 @@ components:
     ApplicationResponse:
       type: object
       properties: { data: { $ref: "#/components/schemas/Application" } }
+    PopularSearch:
+      type: object
+      required: [query, score, ips, spam, hidden, shown]
+      properties:
+        query: { type: string }
+        score: { type: integer, description: new client IPs per day, summed over 7 days }
+        ips: { type: integer, description: different client IPs over 7 days (estimate) }
+        spam: { type: boolean, description: caught by the automatic filter (links, contacts, profanity…) }
+        hidden: { type: boolean, description: contains a term hidden by an admin }
+        shown: { type: boolean, description: on the public list (3+ IPs, not spam, not hidden) }
+    HiddenSearchTerm:
+      type: object
+      required: [term, created_at]
+      properties:
+        term: { type: string, description: stored folded to Latin lower case ("казино" → "kazino") }
+        created_at: { type: string, format: date-time }
     ResumeResponse:
       type: object
       properties: { data: { $ref: "#/components/schemas/ResumeDetail" } }
+  headers:
+    ETag: { description: Validator of the response body (weak), for If-None-Match, schema: { type: string } }
+    XCache: { description: "HIT | STALE | MISS: how the cached response was served", schema: { type: string, enum: [HIT, STALE, MISS] } }
   responses:
+    NotModified:
+      description: Not modified (the If-None-Match ETag is current); no body
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
     Error:
       description: Error
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
@@ -372,6 +416,18 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/VacancyResponse" } } }
     VacancyPage:
       description: Page of vacancies
+      content: { application/json: { schema: { $ref: "#/components/schemas/VacancyPage" } } }
+    CachedVacancy:
+      description: Vacancy (cached public page for everyone but company members)
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+        X-Cache: { $ref: "#/components/headers/XCache" }
+      content: { application/json: { schema: { $ref: "#/components/schemas/VacancyResponse" } } }
+    CachedVacancyPage:
+      description: Page of vacancies (cached)
+      headers:
+        ETag: { $ref: "#/components/headers/ETag" }
+        X-Cache: { $ref: "#/components/headers/XCache" }
       content: { application/json: { schema: { $ref: "#/components/schemas/VacancyPage" } } }
     Company:
       description: Company
@@ -693,8 +749,11 @@ paths:
     get:
       tags: [companies]
       summary: Public company profile
+      description: Cached (~60 s, dropped on every profile, logo, verification or vacancy status change); ETag, 304.
+      parameters: [{ $ref: "#/components/parameters/IfNoneMatch" }]
       responses:
         "200": { $ref: "#/components/responses/Company" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "404": { $ref: "#/components/responses/Error" }
     put:
       tags: [companies]
@@ -769,8 +828,10 @@ paths:
 
         Ordering: `relevance` (default with `q`) or `newest` (default without `q`).
         Multi-value filters accept repeated params or comma lists (work_format=remote,hybrid).
-        A parent category_id includes its subcategories. Results are cached ~30 s.
+        A parent category_id includes its subcategories. Results are cached ~30 s (a
+        publish or edit refreshes them on the next request); `meta.total` up to 2 minutes.
       parameters:
+        - { $ref: "#/components/parameters/IfNoneMatch" }
         - { name: q, in: query, schema: { type: string, maxLength: 200 } }
         - { name: sort, in: query, schema: { type: string, enum: [relevance, newest] } }
         - { name: category_id, in: query, schema: { type: integer } }
@@ -787,15 +848,23 @@ paths:
         - { $ref: "#/components/parameters/Cursor" }
         - { $ref: "#/components/parameters/Limit" }
       responses:
-        "200": { $ref: "#/components/responses/VacancyPage" }
+        "200": { $ref: "#/components/responses/CachedVacancyPage" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "422": { $ref: "#/components/responses/Error" }
   /vacancies/{vacancy}:
     parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
     get:
       tags: [vacancies]
       summary: Vacancy page. Unpublished vacancies are 404 except for company members.
+      description: |
+        Anonymous visitors and job seekers get the cached public page
+        (`Cache-Control: public, max-age=60` without a token, `private, no-cache` with one).
+        Employers and admins get a fresh copy: company members also see drafts,
+        `can_edit`, `reject_reason` and `submitted_at`. Edits are visible on the next request.
+      parameters: [{ $ref: "#/components/parameters/IfNoneMatch" }]
       responses:
-        "200": { $ref: "#/components/responses/Vacancy" }
+        "200": { $ref: "#/components/responses/CachedVacancy" }
+        "304": { $ref: "#/components/responses/NotModified" }
         "404": { $ref: "#/components/responses/Error" }
     put:
       tags: [vacancies]
@@ -828,13 +897,32 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Vacancy" }
         "409": { $ref: "#/components/responses/Error" }
+  /vacancies/{vacancy}/view:
+    post:
+      tags: [vacancies]
+      security: [{}, { bearer: [] }]
+      summary: Count a page view (beacon, sent by the page after it rendered)
+      description: |
+        No body. Send it once per page view from the browser (`navigator.sendBeacon` or
+        `fetch(…, {method: "POST", keepalive: true})`); with a token the view is counted
+        per user, otherwise per client IP, at most once per vacancy per hour. Bots and
+        non-browser clients (by User-Agent) and the company's own members are not counted.
+        Counts reach `views_count` within about a minute.
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "404": { $ref: "#/components/responses/Error" }
 
   /search/suggest:
     get:
       tags: [search]
       summary: Search box autocomplete — vacancy titles (with counts), companies, skills
-      parameters: [{ name: q, in: query, required: true, schema: { type: string, maxLength: 100 } }]
+      description: Cached per folded prefix for ~5 minutes (ETag, 304).
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, maxLength: 100 } }
+        - { $ref: "#/components/parameters/IfNoneMatch" }
       responses:
+        "304": { $ref: "#/components/responses/NotModified" }
         "200":
           description: Suggestions
           content:
@@ -854,13 +942,67 @@ paths:
     get:
       tags: [search]
       summary: Most searched queries of the last 7 days (for the home page)
+      description: |
+        Up to 10 queries that returned results and were run from at least 3 different
+        client IPs in the last 7 days, minus spam (links, contacts, phone numbers,
+        profanity) and anything an admin hid. Cached ~10 minutes (ETag, 304).
+      parameters: [{ $ref: "#/components/parameters/IfNoneMatch" }]
       responses:
+        "304": { $ref: "#/components/responses/NotModified" }
         "200":
           description: Queries
           content:
             application/json:
               schema: { type: object, properties: { data: { type: array, items: { type: string } } } }
 
+  /admin/search/popular:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Popular-search candidates with the numbers and flags that decide what is public
+      parameters: [{ name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }]
+      responses:
+        "200":
+          description: Most searched first
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/PopularSearch" } } } }
+  /admin/search/hidden-terms:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Terms hidden from the popular list
+      responses:
+        "200":
+          description: Hidden terms
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/HiddenSearchTerm" } } } }
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Hide a word or phrase — every popular query containing it (as whole words, any script) disappears
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [term], properties: { term: { type: string, minLength: 1, maxLength: 100 } } }
+      responses:
+        "200":
+          description: Hidden (idempotent)
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { $ref: "#/components/schemas/HiddenSearchTerm" } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/search/hidden-terms/{term}:
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Show a hidden term again
+      parameters: [{ name: term, in: path, required: true, schema: { type: string } }]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "404": { $ref: "#/components/responses/Error" }
   /admin/vacancies/moderation:
     get:
       tags: [admin]

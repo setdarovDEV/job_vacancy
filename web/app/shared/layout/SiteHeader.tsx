@@ -1,5 +1,5 @@
 import { Briefcase, Building2, Handshake, Menu as MenuIcon, Plus, Search } from "lucide-react";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router";
 
 import { useSession } from "../auth/session";
@@ -47,11 +47,16 @@ export function SiteHeader({ mobileHidden = false }: { mobileHidden?: boolean })
   // ⌘K on Apple devices, Ctrl K elsewhere. Unknown on the server: the hint appears after mount
   // inside a fixed-size slot, so nothing moves.
   const [mac, setMac] = useState<boolean | null>(null);
+  const searchBtn = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     setMac(isMac());
     const onKey = (e: KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.repeat) return;
+      // The typed letter on Latin layouts (Colemak's K key types "e", so no Ctrl+E theft); the
+      // physical key on others (Cyrillic). Autofill fires keydowns without a key.
+      const key = e.key?.toLowerCase() ?? "";
+      const k = /^[a-z]$/.test(key) ? key === "k" : e.code === "KeyK";
+      if (!k || e.defaultPrevented || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.repeat) return;
       e.preventDefault();
       setPaletteWanted(true);
       setPaletteOpen((o) => !o);
@@ -83,7 +88,9 @@ export function SiteHeader({ mobileHidden = false }: { mobileHidden?: boolean })
     >
       <a
         href="#main"
-        className="sr-only rounded-pill bg-raised px-4 py-2.5 text-md font-medium text-ink shadow-3 focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50"
+        // Visually hidden in place until focused (no off-screen parking the browser would scroll
+        // to, nothing to reveal on overscroll); fades in below the notch. Opacity only.
+        className="absolute left-3 top-[calc(env(safe-area-inset-top)+0.75rem)] z-50 rounded-pill bg-raised px-4 py-2.5 text-md font-medium text-ink shadow-3 not-focus:sr-only focus:anim-fade"
       >
         {t("nav.skipToContent")}
       </a>
@@ -114,6 +121,7 @@ export function SiteHeader({ mobileHidden = false }: { mobileHidden?: boolean })
             }
           >
             <button
+              ref={searchBtn}
               type="button"
               onPointerEnter={() => void loadPalette()}
               onPointerDown={() => setPaletteWanted(true)}
@@ -175,7 +183,7 @@ export function SiteHeader({ mobileHidden = false }: { mobileHidden?: boolean })
       )}
       {paletteWanted && (
         <Suspense fallback={null}>
-          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} returnFocus={searchBtn} />
         </Suspense>
       )}
     </header>

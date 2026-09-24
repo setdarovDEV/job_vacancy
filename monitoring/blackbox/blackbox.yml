@@ -1,0 +1,50 @@
+# blackbox_exporter modules (TZ OPS-04). Prometheus picks the module per target
+# (monitoring/prometheus/entrypoint.sh writes the target lists).
+#
+# origin_<env>: straight to nginx:443 on the app's front network with the site's host name,
+# so the probe sees our own Let's Encrypt certificate (probe_ssl_earliest_cert_expiry → the
+# "certificate < 14 days" alert), nginx, SSR and the API, independent of Cloudflare.
+# public_https: the public URL through Cloudflare, as a visitor sees it.
+modules:
+  origin_production:
+    prober: http
+    timeout: 8s
+    http: &origin
+      method: GET
+      preferred_ip_protocol: ip4
+      valid_status_codes: [200]
+      fail_if_not_ssl: true
+      follow_redirects: false
+      headers:
+        Host: jobvacancy.uz
+        User-Agent: jobvacancy-blackbox/1.0 (+monitoring)
+        Accept-Encoding: gzip
+      tls_config:
+        server_name: jobvacancy.uz
+
+  origin_staging:
+    prober: http
+    timeout: 8s
+    http:
+      <<: *origin
+      headers:
+        Host: staging.jobvacancy.uz
+        User-Agent: jobvacancy-blackbox/1.0 (+monitoring)
+        Accept-Encoding: gzip
+      # Staging may sit behind basic auth (STAGING_BASIC_AUTH): 401 still proves nginx,
+      # TLS and routing work.
+      valid_status_codes: [200, 401]
+      tls_config:
+        server_name: staging.jobvacancy.uz
+
+  public_https:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      valid_status_codes: [200, 401]
+      fail_if_not_ssl: true
+      follow_redirects: true
+      headers:
+        User-Agent: jobvacancy-blackbox/1.0 (+monitoring)

@@ -9,6 +9,7 @@ pass=0; fail=0
 check() { if [ "$2" == "$3" ]; then echo "  ✔ $1"; pass=$((pass+1)); else echo "  ✘ $1 (got '$2', want '$3')"; fail=$((fail+1)); fi; }
 req() { curl -s -o $SP/body.json -w '%{http_code}' "$@"; }
 J() { jq -r "$1" $SP/body.json; }
+hdr() { local k=$1; shift; curl -s -o /dev/null -D - "$@" | tr -d '\r' | grep -i "^$k:" | head -1 | cut -d' ' -f2-; }
 H='Content-Type: application/json'
 enc() { jq -rn --arg v "$1" '$v|@uri'; }
 mailcode() { sleep 1.5; curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
@@ -91,7 +92,11 @@ req "$U" >/dev/null; A1=$(ids)
 U2="$S&q=dasturchi&work_format=office,hybrid"   # same filter, different order
 req "$U2" >/dev/null
 check "canonical cache key (param order)" "$(ids)" "$A1"
-check "cached pages in Redis" "$(docker exec jobvacancy-dev-redis-1 redis-cli --scan --pattern 'vacancy:list:*' | head -1 | cut -c1-13)" "vacancy:list:"
+check "second request served from cache" "$(hdr x-cache "$U2")" HIT
+LE=$(hdr etag "$U2")
+check "list ETag → 304" $(req -H "If-None-Match: $LE" "$U2") 304
+PLAIN=$(curl -s -o /dev/null -w '%{size_download}' "$S&limit=20"); GZ=$(curl -s -H 'Accept-Encoding: gzip' -o /dev/null -w '%{size_download}' "$S&limit=20")
+check "gzip bytes ≥ 50% smaller" "$([ $((GZ * 2)) -le $PLAIN ] && echo ok || echo "$GZ vs $PLAIN")" ok
 
 echo "== suggest & popular"
 check "suggest titles" "$(req "$API/search/suggest?q=dastur")$(J '[.data.titles[].title] | index("Backend dasturchi (Go)") != null')" "200true"
@@ -99,8 +104,24 @@ check "suggest cyrillic prefix" "$(req "$API/search/suggest?q=$(enc ҳисоб)"
 check "suggest companies" "$(req "$API/search/suggest?q=$(enc "zarafshon texnologiyalari $R")")$(J '[.data.companies[].id] | index("'$CID'") != null')" "200true"
 check "suggest skills" "$(req "$API/search/suggest?q=flut")$(J '.data.skills[0].name')" "200Flutter"
 check "suggest empty q" "$(req "$API/search/suggest?q=")$(J '.data.titles | length')" "2000"
-docker exec jobvacancy-dev-redis-1 redis-cli del search:popular:top >/dev/null
-check "popular searches recorded" "$(req $API/search/popular)$(J '.data | index("dasturchi") != null')" "200true"
+check "suggest served from cache (ETag)" "$(x=$(hdr x-cache "$API/search/suggest?q=dastur"); [ "$x" != MISS ] && echo cached)$([ -n "$(hdr etag "$API/search/suggest?q=dastur")" ] && echo +etag)" "cached+etag"
+
+# Popular list (TZ SEC-07): counted once per client IP, shown from SEARCH_POPULAR_MIN_IPS IPs
+# (3 in production, 1 in the dev .env since everything here comes from 127.0.0.1).
+MIN_IPS=${POPULAR_MIN_IPS:-1}
+req "$API/vacancies?q=$(enc "t.me/jobs_$R")" >/dev/null                 # spam: never recorded
+check "admin candidates: non-admin 403" $(req $API/admin/search/popular -H "Authorization: Bearer $T") 403
+check "admin candidates" "$(req "$API/admin/search/popular?limit=200" -H "Authorization: Bearer $TA")$(J '[.data[] | select(.query=="dasturchi")][0].ips >= 1')" "200true"
+check "spam never recorded" "$(J '[.data[] | select(.query | test("t.me"))] | length')" 0
+SHOWN=$(J '[.data[] | select(.query=="dasturchi")][0].shown')
+check "shown iff ≥ $MIN_IPS IPs" "$SHOWN" "$(J "[.data[] | select(.query==\"dasturchi\")][0].ips >= $MIN_IPS")"
+check "hide a term 200" "$(req -X POST $API/admin/search/hidden-terms -H "Authorization: Bearer $TA" -H "$H" -d '{"term":"ДАСТУРЧИ"}')$(J .data.term)" "200dasturchi"
+check "hidden term not public" "$(req $API/search/popular)$(J 'index("dasturchi") == null')" "200true"
+check "candidate marked hidden" "$(req "$API/admin/search/popular?limit=200" -H "Authorization: Bearer $TA")$(J '[.data[] | select(.query=="dasturchi")][0] | "\(.hidden)/\(.shown)"')" "200true/false"
+check "listed as hidden" "$(req $API/admin/search/hidden-terms -H "Authorization: Bearer $TA")$(J '[.data[].term] | index("dasturchi") != null')" "200true"
+check "unhide 204" $(req -X DELETE $API/admin/search/hidden-terms/dasturchi -H "Authorization: Bearer $TA") 204
+check "unhide again 404" "$(req -X DELETE $API/admin/search/hidden-terms/dasturchi -H "Authorization: Bearer $TA")$(J .error.code)" "404hidden_term_not_found"
+check "shown again after unhide" "$(req "$API/admin/search/popular?limit=200" -H "Authorization: Bearer $TA")$(J '[.data[] | select(.query=="dasturchi")][0] | "\(.hidden)/\(.shown)"')" "200false/$SHOWN"
 
 echo
 echo "passed: $pass  failed: $fail"

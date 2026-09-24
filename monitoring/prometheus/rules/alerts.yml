@@ -1,0 +1,279 @@
+# Alerts for jobvacancy.uz (TZ OPS-04). Every alert reaches Telegram through Alertmanager
+# (monitoring/alertmanager/alertmanager.yml). severity=critical pages at once (group_wait
+# 10 s) and repeats hourly; warning waits 1 m and repeats every 4 h.
+#
+# The TZ list: 5xx > 1 %, p95 > 200 ms for 5 minutes, disk > 80 %, replication or backup
+# failed, River queue > 1000, certificate < 14 days. The rest catch the causes early.
+# Each alert has a runbook section (docs/RUNBOOK.md) in its runbook annotation.
+groups:
+  - name: jobvacancy.api
+    rules:
+      - alert: ApiHigh5xxRate
+        # At least 3 failed requests, so a lone 500 on a quiet night doesn't page anyone.
+        expr: >
+          jv:api_errors_5xx:ratio_rate2m > 0.01
+          and on() sum(increase(http_requests_total{job="api", route!~"/healthz|/readyz", status=~"5.."}[2m])) >= 3
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "API 5xx {{ $value | humanizePercentage }} of requests (> 1 %)"
+          description: "Server errors above 1 % for a minute. Grafana → jobvacancy RED → Errors by route; logs: make logs-production s=api-1."
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+      - alert: ApiLatencyP95High
+        expr: jv:api_request_duration_seconds:p95_5m > 0.2
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 {{ $value | humanizeDuration }} (> 200 ms for 5 minutes)"
+          description: "Slowest routes: Grafana → jobvacancy RED → p95 by route. Then pg_stat_statements and the db pool panels."
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+      - alert: ApiInstanceDown
+        expr: up{job="api"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} is not answering (metrics scrape failed)"
+          description: "nginx keeps serving from the other instance. make ps-prod; make logs-production s={{ $labels.instance }}."
+          runbook: "docs/RUNBOOK.md#92-502503"
+
+      - alert: WorkerDown
+        expr: up{job="worker"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "River worker is down: e-mails, notifications and alerts are not sent"
+          runbook: "docs/RUNBOOK.md#92-502503"
+
+      - alert: DbPoolSaturated
+        expr: pool:db_pool_utilisation:ratio > 0.9
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.instance }} db pool {{ $value | humanizePercentage }} in use"
+          description: "Requests wait for a Postgres connection. Look for slow queries (pg_stat_statements) before raising DB_MAX_CONNS."
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+  - name: jobvacancy.site
+    rules:
+      - alert: SiteProbeFailed
+        expr: probe_success{job="blackbox-origin"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} fails through nginx (status {{ with printf `probe_http_status_code{instance=\"%s\"}` $labels.instance | query }}{{ . | first | value }}{{ end }})"
+          runbook: "docs/RUNBOOK.md#92-502503"
+
+      - alert: SitePublicProbeFailed
+        expr: probe_success{job="blackbox-public"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} fails through Cloudflare (DNS, edge, firewall or origin)"
+          runbook: "docs/RUNBOOK.md#92-502503"
+
+      - alert: CertificateExpiresSoon
+        expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-.*"} - time()) / 86400 < 14
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "TLS certificate of {{ $labels.instance }} expires in {{ $value | printf \"%.1f\" }} days"
+          description: "certbot renews at 30 days left; this means renewal is failing. docker compose logs certbot."
+          runbook: "docs/RUNBOOK.md#7-sertifikatlar"
+      - alert: CertificateExpiresVerySoon
+        expr: (probe_ssl_earliest_cert_expiry{job=~"blackbox-.*"} - time()) / 86400 < 5
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "TLS certificate of {{ $labels.instance }} expires in {{ $value | printf \"%.1f\" }} days"
+          runbook: "docs/RUNBOOK.md#7-sertifikatlar"
+
+      - alert: NginxDown
+        expr: nginx_up == 0 or up{job="nginx"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "nginx stub_status is not answering"
+          runbook: "docs/RUNBOOK.md#92-502503"
+
+  - name: jobvacancy.host
+    rules:
+      - alert: DiskSpaceLow
+        expr: instance:node_filesystem_used:ratio > 0.80
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.host }} {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full (> 80 %)"
+          runbook: "docs/RUNBOOK.md#93-disk-tolmoqda"
+      - alert: DiskSpaceCritical
+        expr: instance:node_filesystem_used:ratio > 0.90
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.host }} {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full (> 90 %)"
+          runbook: "docs/RUNBOOK.md#93-disk-tolmoqda"
+      - alert: DiskWillFillIn24h
+        expr: >
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|nsfs|ramfs"}[6h], 24 * 3600) < 0
+          and instance:node_filesystem_used:ratio > 0.5
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.host }} {{ $labels.mountpoint }} will be full within 24 h at the current rate"
+          runbook: "docs/RUNBOOK.md#93-disk-tolmoqda"
+
+      - alert: HostCpuHigh
+        expr: instance:node_cpu_utilisation:ratio > 0.85
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.host }} CPU {{ $value | humanizePercentage }} for 15 minutes (target < 70 % at peak)"
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+      - alert: HostMemoryLow
+        expr: instance:node_memory_utilisation:ratio > 0.92
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.host }} memory {{ $value | humanizePercentage }} used"
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+      - alert: ContainerOomKilled
+        expr: increase(container_oom_events_total{container_label_com_docker_compose_service!=""}[10m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.container_label_com_docker_compose_service }} was OOM-killed (memory limit too low or a leak)"
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+  - name: jobvacancy.postgres
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0 or up{job="postgres"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Postgres is not reachable from the exporter"
+          runbook: "docs/RUNBOOK.md#96-postgres-ishga-tushmayapti"
+
+      # Continuous backup = WAL archiving (RPO ≤ 5 min). A failed push leaves WAL on disk.
+      - alert: WalArchiveFailing
+        expr: increase(pg_stat_archiver_failed_count[10m]) > 0
+        labels: { severity: critical }
+        annotations:
+          summary: "WAL archiving to offsite S3 is failing: point-in-time recovery is falling behind and pg_wal grows"
+          description: "make backup-status; S3 credentials, network, bucket. Never delete files in pg_wal by hand."
+          runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"
+      - alert: WalArchiveStalled
+        expr: pg_stat_archiver_last_archive_age > 900 and on() increase(pg_stat_archiver_archived_count[1d]) > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "No WAL segment archived for {{ $value | humanizeDuration }} (archive_timeout is 60 s)"
+          runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"
+
+      - alert: BackupFailed
+        expr: jv_backup_last_run_ok == 0
+        labels: { severity: critical }
+        annotations:
+          summary: "The last full backup (wal-g backup-push) failed"
+          description: "make logs-production s=pg-backup; make backup to retry now."
+          runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"
+      - alert: BackupTooOld
+        expr: time() - jv_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Newest full backup is {{ $value | humanizeDuration }} old (daily at 21:00 UTC)"
+          runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"
+      - alert: BackupNeverRecorded
+        # No row in jv_ops.backup_runs while the SQL exporter works: pg-backup isn't running or
+        # can't write (monitoring.sql not applied). Staging (no backups) is muted in Alertmanager.
+        expr: absent(jv_backup_last_success_timestamp_seconds) and on() (up{job="sql"} == 1)
+        for: 26h
+        labels: { severity: warning }
+        annotations:
+          summary: "No successful full backup has been recorded in 26 h"
+          runbook: "docs/RUNBOOK.md#5-backup-va-tiklash-ops-03"
+
+      - alert: ReplicationLagging
+        expr: pg_replication_lag_seconds > 60
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Replica {{ $labels.instance }} is {{ $value | humanizeDuration }} behind"
+          runbook: "docs/RUNBOOK.md#96-postgres-ishga-tushmayapti"
+
+      - alert: PostgresConnectionsHigh
+        expr: sum by (instance) (pg_stat_activity_count) / on(instance) max by (instance) (pg_settings_max_connections) > 0.8
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Postgres uses {{ $value | humanizePercentage }} of max_connections"
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+      - alert: PostgresLongTransaction
+        expr: pg_long_running_transactions_oldest_timestamp_seconds > 0 and (time() - pg_long_running_transactions_oldest_timestamp_seconds) > 600
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "A transaction has been open for over 10 minutes (blocks vacuum, may hold locks)"
+          runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
+
+  - name: jobvacancy.queue
+    rules:
+      - alert: RiverQueueBacklog
+        expr: sum by (queue) (jv_river_jobs{state="available"}) > 1000
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "River queue {{ $labels.queue }} has {{ $value }} jobs waiting (> 1000)"
+          description: "Worker down or too slow: WorkerDown, Grafana → USE → River, make logs-production s=worker."
+          runbook: "docs/RUNBOOK.md#97-navbat-river"
+      - alert: RiverQueueStuck
+        expr: max by (queue) (jv_river_queue_wait_seconds) > 600
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Oldest runnable job in {{ $labels.queue }} has waited {{ $value | humanizeDuration }}"
+          runbook: "docs/RUNBOOK.md#97-navbat-river"
+      - alert: RiverJobsDiscarded
+        expr: sum by (kind) (jv_river_jobs_discarded_1h) >= 10
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} {{ $labels.kind }} jobs gave up after all retries in the last hour"
+          runbook: "docs/RUNBOOK.md#97-navbat-river"
+
+  - name: jobvacancy.redis
+    rules:
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.instance }} is down"
+          description: "redis-state: sign-in, codes, rate limits and WebSocket stop working. redis-cache: slower, but the site works."
+          runbook: "docs/RUNBOOK.md#94-redis-yiqildi"
+      - alert: RedisStateMemoryHigh
+        # noeviction: when it is full, writes (sessions, rate limits, OTP) fail.
+        expr: redis_memory_used_bytes{instance="redis-state"} / (redis_memory_max_bytes{instance="redis-state"} > 0) > 0.85
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "redis-state uses {{ $value | humanizePercentage }} of maxmemory (noeviction: writes fail when full)"
+          runbook: "docs/RUNBOOK.md#94-redis-yiqildi"
+
+  - name: jobvacancy.meta
+    rules:
+      - alert: ExporterDown
+        expr: up{job=~"node|cadvisor|sql|redis|minio|postgres|nginx"} == 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Scrape of {{ $labels.job }} ({{ $labels.instance }}) fails: its dashboards and alerts are blind"
+          runbook: "docs/RUNBOOK.md#10-monitoring-va-alertlar"
+      # Always firing. Alertmanager sends it to ALERT_WATCHDOG_URL (healthchecks.io), which
+      # alerts from outside when the pings stop: the monitoring itself is down.
+      - alert: Watchdog
+        expr: vector(1)
+        labels: { severity: none }
+        annotations:
+          summary: "Monitoring pipeline heartbeat (always firing)"

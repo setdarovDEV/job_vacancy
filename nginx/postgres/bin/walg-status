@@ -1,0 +1,15 @@
+#!/bin/bash
+# Backup health: newest base backup and its age; exits 1 when it is older than
+# BACKUP_MAX_AGE_HOURS (26). Used as the pg-backup healthcheck and by `make backup-status`.
+set -euo pipefail
+. "$(dirname "$0")/walg-env"
+max=${BACKUP_MAX_AGE_HOURS:-26}
+if [ "${BACKUP_ENABLED:-true}" != "true" ]; then echo "backups disabled on this host"; exit 0; fi
+json=$("$WALG" backup-list --detail --json 2>/dev/null) || { echo "cannot list backups in $WALG_S3_PREFIX"; exit 1; }
+count=$(jq 'length' <<<"$json")
+[ "$count" -gt 0 ] || { echo "no backups yet"; exit 1; }
+last=$(jq -r 'sort_by(.finish_time) | last | "\(.backup_name) \(.finish_time) \(.compressed_size)"' <<<"$json")
+read -r name finished size <<<"$last"
+age_h=$(( ( $(date -u +%s) - $(date -u -d "$finished" +%s) ) / 3600 ))
+echo "backups: $count, newest: $name finished $finished (${age_h}h ago, $(numfmt --to=iec "$size" 2>/dev/null || echo "$size") compressed)"
+[ "$age_h" -lt "$max" ] || { echo "newest backup is older than ${max}h"; exit 1; }

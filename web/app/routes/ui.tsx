@@ -3,7 +3,7 @@ import {
   Eye, FileText, Heart, Inbox, LayoutGrid, Link2, List, Map as MapIcon, MessageSquare, Pencil, Play, Plus, RotateCcw,
   Search, Send, Share2, SlidersHorizontal, Star, Trash2, UserCheck, Users,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useRouteLoaderData, useSearchParams } from "react-router";
 
 import { GirihPattern } from "~/shared/brand/GirihPattern";
@@ -125,7 +125,7 @@ function MobileNav({ active }: { active: string }) {
   const strip = useRef<HTMLDivElement>(null);
   useEffect(() => keepInView(strip.current, strip.current?.querySelector<HTMLElement>(`[data-id="${active}"]`) ?? null, "x"), [active]);
   return (
-    <nav aria-label="Bo'limlar" className="glass-bar sticky top-16 z-30 -mx-4 mt-6 md:-mx-6 lg:hidden">
+    <nav aria-label="Bo'limlar" className="glass-bar sticky top-(--header-h) z-30 -mx-4 mt-6 md:-mx-6 lg:hidden">
       <div ref={strip} className="relative flex gap-1 overflow-x-auto px-4 py-1.5 scrollbar-none md:px-6">
         {NAV_ITEMS.map(([id, label]) => (
           <a
@@ -310,7 +310,7 @@ function AuroraStage({ children, className, shapes }: { children: ReactNode; cla
 /** Stable "now" (floored to the hour) so server and client render the same timestamps. */
 function useIsoAgo() {
   const [base] = useState(() => Math.floor(Date.now() / 3_600_000) * 3_600_000);
-  return (hours: number) => new Date(base - hours * 3_600_000).toISOString();
+  return useCallback((hours: number) => new Date(base - hours * 3_600_000).toISOString(), [base]);
 }
 
 // ---- foundations ------------------------------------------------------------------------------
@@ -1368,8 +1368,8 @@ function PaginationSection() {
   };
   return (
     <Block id="pagination" title="Sahifalash" api="Pagination" lead="Haqiqiy havolalar: JavaScript'siz ishlaydi va qidiruv tizimlari kuzatadi. Telefonda «‹ 3 / 12 ›».">
-      <Demo title="12 sahifa"><Pagination page={Number(sp.get("page")) || 4} pageCount={12} hrefFor={href("page")} /></Demo>
-      <Demo title="3 sahifa"><Pagination page={Number(sp.get("p")) || 1} pageCount={3} hrefFor={href("p")} /></Demo>
+      <Demo title="12 sahifa"><Pagination label="Sahifalar · 12" page={Number(sp.get("page")) || 4} pageCount={12} hrefFor={href("page")} /></Demo>
+      <Demo title="3 sahifa"><Pagination label="Sahifalar · 3" page={Number(sp.get("p")) || 1} pageCount={3} hrefFor={href("p")} /></Demo>
     </Block>
   );
 }

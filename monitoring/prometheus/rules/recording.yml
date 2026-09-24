@@ -1,0 +1,70 @@
+# Recording rules (TZ OPS-04): the RED numbers the dashboards and alerts share, so a panel
+# and the alert about it always agree. Validated by `promtool check rules` and exercised by
+# tests/alerts.test.yml.
+groups:
+  - name: jobvacancy.red
+    interval: 15s
+    rules:
+      # Requests the API served, excluding probes (/healthz, /readyz: they answer 503 on
+      # purpose while an instance drains during a rolling deploy).
+      - record: jv:api_requests:rate2m
+        expr: sum(rate(http_requests_total{job="api", route!~"/healthz|/readyz"}[2m]))
+      - record: jv:api_errors_5xx:rate2m
+        expr: sum(rate(http_requests_total{job="api", route!~"/healthz|/readyz", status=~"5.."}[2m])) or vector(0)
+      - record: jv:api_errors_5xx:ratio_rate2m
+        expr: jv:api_errors_5xx:rate2m / (jv:api_requests:rate2m > 0)
+
+      - record: jv:api_requests:rate5m
+        expr: sum(rate(http_requests_total{job="api", route!~"/healthz|/readyz"}[5m]))
+      - record: jv:api_errors_5xx:ratio_rate5m
+        expr: >
+          (sum(rate(http_requests_total{job="api", route!~"/healthz|/readyz", status=~"5.."}[5m])) or vector(0))
+          / (jv:api_requests:rate5m > 0)
+
+      # Latency of ordinary requests. Long-lived or intentionally slow routes are excluded:
+      # the WebSocket (a connection lasts hours) and PDF export (own 25 s deadline).
+      - record: jv:api_request_duration_seconds:p95_5m
+        expr: >
+          histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{job="api",
+            route!~"/healthz|/readyz|/api/v1/ws.*|.*/pdf"}[5m])))
+      - record: jv:api_request_duration_seconds:p50_5m
+        expr: >
+          histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{job="api",
+            route!~"/healthz|/readyz|/api/v1/ws.*|.*/pdf"}[5m])))
+      - record: jv:api_request_duration_seconds:p99_5m
+        expr: >
+          histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{job="api",
+            route!~"/healthz|/readyz|/api/v1/ws.*|.*/pdf"}[5m])))
+      # Per route, for the "slowest routes" panel.
+      - record: route:api_request_duration_seconds:p95_5m
+        expr: >
+          histogram_quantile(0.95, sum by (le, route, method) (rate(http_request_duration_seconds_bucket{job="api",
+            route!~"/healthz|/readyz|/api/v1/ws.*"}[5m])))
+
+      # Response cache effectiveness (respcache_requests_total{result=hit|stale|miss|error}).
+      - record: jv:respcache_hit:ratio_rate5m
+        expr: >
+          sum by (cache) (rate(respcache_requests_total{result=~"hit|stale"}[5m]))
+          / (sum by (cache) (rate(respcache_requests_total[5m])) > 0)
+
+  - name: jobvacancy.use
+    interval: 30s
+    rules:
+      - record: instance:node_cpu_utilisation:ratio
+        expr: 1 - avg by (instance, host) (rate(node_cpu_seconds_total{mode="idle"}[2m]))
+      - record: instance:node_memory_utilisation:ratio
+        expr: 1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes
+      - record: instance:node_filesystem_used:ratio
+        expr: >
+          1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs|nsfs|ramfs"}
+          / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs|nsfs|ramfs"}
+      - record: service:container_cpu_usage:rate2m
+        expr: >
+          sum by (container_label_com_docker_compose_project, container_label_com_docker_compose_service)
+          (rate(container_cpu_usage_seconds_total[2m]))
+      - record: service:container_memory_working_set:bytes
+        expr: >
+          sum by (container_label_com_docker_compose_project, container_label_com_docker_compose_service)
+          (container_memory_working_set_bytes)
+      - record: pool:db_pool_utilisation:ratio
+        expr: sum by (job, instance, pool) (db_pool_acquired_conns) / sum by (job, instance, pool) (db_pool_max_conns)

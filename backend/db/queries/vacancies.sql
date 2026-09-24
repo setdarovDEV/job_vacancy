@@ -68,9 +68,20 @@ RETURNING *;
 -- name: DeleteDraftVacancy :execrows
 DELETE FROM vacancies WHERE id = $1 AND status = 'draft';
 
--- name: ExpireVacancies :execrows
-UPDATE vacancies SET status = 'expired'
-WHERE status = 'published' AND expires_at < now();
+-- Returns what the response caches need to drop (TZ BE-05). Only vacancy rows are locked.
+-- name: ExpireVacancies :many
+UPDATE vacancies v SET status = 'expired'
+FROM companies c
+WHERE c.id = v.company_id AND v.status = 'published' AND v.expires_at < now()
+RETURNING v.id, v.slug, v.company_id, c.slug AS company_slug;
+
+-- A company's live vacancies, whose cached pages show the company (name, logo, badge).
+-- Served by vacancies_company_pub_idx.
+-- name: ListPublishedVacancyRefs :many
+SELECT id, slug FROM vacancies
+WHERE company_id = $1 AND status = 'published'
+ORDER BY published_at DESC, id DESC
+LIMIT 1000;
 
 -- name: AddVacancyViews :exec
 UPDATE vacancies v SET views_count = v.views_count + d.n

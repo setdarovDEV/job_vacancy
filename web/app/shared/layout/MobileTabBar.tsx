@@ -86,9 +86,7 @@ export function MobileTabBar() {
     <nav
       id="mobile-tabbar"
       aria-label={t("shell.tabBar")}
-      className={cn(
-        "mobile-tabbar glass-chrome fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 h-(--tabbar-h) rounded-sheet md:hidden",
-      )}
+      className="glass-chrome fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-40 h-(--tabbar-h) rounded-sheet md:hidden"
     >
       {restoring ? (
         <ul aria-hidden="true" className="grid h-full grid-cols-5 px-1.5">

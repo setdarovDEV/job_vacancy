@@ -1,0 +1,22 @@
+# sql_exporter (burningalchemist/sql_exporter) for jobvacancy.uz (TZ OPS-04). One target:
+# the app database, as the read-only "monitoring" role (nginx/postgres/monitoring.sql).
+# The DSN comes from SQLEXPORTER_TARGET_DSN (monitoring/docker-compose.monitoring.yml).
+#
+# Every query is index-served or reads a tiny table; the plans are noted next to each query.
+# Prometheus scrapes every 60 s; min_interval caches results in between, so a burst of
+# scrapes (two Prometheus, a curl) never multiplies the load.
+global:
+  scrape_timeout: 20s
+  scrape_timeout_offset: 500ms
+  min_interval: 55s
+  max_connections: 2
+  max_idle_connections: 1
+  max_connection_lifetime: 10m
+
+target:
+  name: postgres
+  data_source_name: "postgres://monitoring@postgres:5432/jobvacancy?sslmode=disable"
+  collectors: [river, business, business_totals, backup]
+
+collector_files:
+  - "*.collector.yml"

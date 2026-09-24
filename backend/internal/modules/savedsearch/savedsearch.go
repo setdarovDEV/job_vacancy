@@ -52,8 +52,15 @@ func toDTO(s gen.SavedSearch) DTO {
 type Service struct {
 	Q         *gen.Queries
 	Vacancies *vacancy.Service
-	Notify    *notification.Service
-	Log       *slog.Logger
+	// List overrides Vacancies for the alert query (tests).
+	List   Lister
+	Notify Notifier
+	Log    *slog.Logger
+}
+
+// Notifier sends the alert; *notification.Service implements it.
+type Notifier interface {
+	Notify(ctx context.Context, users []uuid.UUID, typ string, p notification.Payload, store bool)
 }
 
 // canonical validates params with the listing parser and normalizes them (sorted keys,
@@ -137,6 +144,15 @@ func (s *Service) Create(ctx context.Context, p reqctx.Principal, in Input) (DTO
 
 // ---- alerts (worker) ---------------------------------------------------------------------
 
+// Lister runs the alert query; *vacancy.Service implements it (ListNew).
+type Lister interface {
+	ListNew(ctx context.Context, f vacancy.Filter) (vacancy.ListResult, error)
+}
+
+// alertFetch caps the new vacancies read per group of identical searches: the alert
+// shows 3 titles and a count, and "50 new vacancies" is plenty for a 30-minute window.
+const alertFetch = 50
+
 // RunAlerts checks due saved searches for vacancies published since their last check.
 // Claiming moves last_checked_at forward first, so a crash never causes repeated alerts.
 func (s *Service) RunAlerts(ctx context.Context) (checked, alerted int, err error) {
@@ -147,43 +163,80 @@ func (s *Service) RunAlerts(ctx context.Context) (checked, alerted int, err erro
 		if err != nil || len(due) == 0 {
 			return checked, alerted, err
 		}
-		for _, d := range due {
-			checked++
-			if ok := s.check(ctx, d); ok {
-				alerted++
-			}
+		for _, group := range groupByParams(due) {
+			checked += len(group)
+			alerted += s.checkGroup(ctx, group)
 		}
 	}
 }
 
-func (s *Service) check(ctx context.Context, d gen.ClaimDueSavedSearchesRow) bool {
-	q, _ := url.ParseQuery(d.Params)
+// groupByParams puts saved searches with identical (canonical) params together: popular
+// searches ("dasturchi", "Toshkent") are saved by many users and need one query, not one
+// per user (TZ BE-11). Order follows the first appearance.
+func groupByParams(due []gen.ClaimDueSavedSearchesRow) [][]gen.ClaimDueSavedSearchesRow {
+	idx := map[string]int{}
+	var groups [][]gen.ClaimDueSavedSearchesRow
+	for _, d := range due {
+		i, ok := idx[d.Params]
+		if !ok {
+			i = len(groups)
+			idx[d.Params] = i
+			groups = append(groups, nil)
+		}
+		groups[i] = append(groups[i], d)
+	}
+	return groups
+}
+
+// checkGroup runs one query for a group of identical searches, from the oldest "since"
+// of the group, and alerts every member about the vacancies newer than its own last
+// check. It returns how many members were alerted.
+func (s *Service) checkGroup(ctx context.Context, group []gen.ClaimDueSavedSearchesRow) int {
+	q, _ := url.ParseQuery(group[0].Params)
 	f, err := vacancy.ParseFilter(q)
 	if err != nil { // filters that became invalid (e.g. removed category): skip quietly
-		return false
+		return 0
 	}
-	since := d.Since
-	f.PublishedAfter, f.Sort, f.Limit = &since, vacancy.SortNewest, alertSample
-	res, err := s.Vacancies.List(ctx, f)
+	since := group[0].Since
+	for _, d := range group[1:] {
+		if d.Since.Before(since) {
+			since = d.Since
+		}
+	}
+	f.PublishedAfter, f.Limit = &since, alertFetch
+	res, err := s.lister().ListNew(ctx, f)
 	if err != nil {
-		s.Log.WarnContext(ctx, "saved search alert", "search_id", d.ID, "err", err)
-		return false
+		s.Log.WarnContext(ctx, "saved search alert", "search_id", group[0].ID, "group", len(group), "err", err)
+		return 0
 	}
-	if len(res.Cards) == 0 {
-		return false
+	alerted := 0
+	for _, d := range group {
+		// Cards are newest first: this member's new vacancies are a prefix.
+		n := 0
+		for n < len(res.Cards) && res.Cards[n].PublishedAt != nil && res.Cards[n].PublishedAt.After(d.Since) {
+			n++
+		}
+		if n == 0 {
+			continue
+		}
+		sample := res.Cards[:min(n, alertSample)]
+		titles := make([]string, len(sample))
+		for i, c := range sample {
+			titles[i] = "• " + c.Title + " — " + c.Company.Name
+		}
+		s.Notify.Notify(ctx, []uuid.UUID{d.UserID}, notification.TypeSearchAlert, notification.Payload{
+			SearchID: d.ID.String(), SearchName: d.Name, Count: n, Preview: strings.Join(titles, "\n"),
+		}, true)
+		alerted++
 	}
-	count := len(res.Cards)
-	if res.Total != nil {
-		count = *res.Total
+	return alerted
+}
+
+func (s *Service) lister() Lister {
+	if s.List != nil {
+		return s.List
 	}
-	titles := make([]string, len(res.Cards))
-	for i, c := range res.Cards {
-		titles[i] = "• " + c.Title + " — " + c.Company.Name
-	}
-	s.Notify.Notify(ctx, []uuid.UUID{d.UserID}, notification.TypeSearchAlert, notification.Payload{
-		SearchID: d.ID.String(), SearchName: d.Name, Count: count, Preview: strings.Join(titles, "\n"),
-	}, true)
-	return true
+	return s.Vacancies
 }
 
 // ---- HTTP --------------------------------------------------------------------------------

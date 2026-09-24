@@ -1,0 +1,45 @@
+#!/bin/bash
+# Full base backup to offsite S3, then retention: keep BACKUP_RETAIN_FULL (14) full backups
+# and the WAL needed to restore to any moment since the oldest of them (TZ OPS-03).
+# Runs in the pg-backup container (same image, data volume mounted read-only).
+set -euo pipefail
+. "$(dirname "$0")/walg-env"
+: "${WALG_S3_PREFIX:?BACKUP_S3_PREFIX is not set}"
+: "${PGDATA:?PGDATA is not set}"
+retain=${BACKUP_RETAIN_FULL:-14}
+beat=${BACKUP_HEARTBEAT_URL:-}
+log() { echo "$(date -u +%FT%TZ) walg-backup: $*"; }
+
+# record true|false <message>: one row in jv_ops.backup_runs on the app database, read by the
+# monitoring stack (jv_backup_* metrics, BackupFailed / BackupTooOld alerts, TZ OPS-04).
+# The table and grants come from nginx/postgres/monitoring.sql (run by every deploy). A
+# failure to record never fails the backup itself.
+record() {
+  local name="" size=""
+  if [ "$1" = true ]; then
+    read -r name size < <("$WALG" backup-list --detail --json 2>/dev/null \
+      | jq -r 'sort_by(.finish_time) | last | "\(.backup_name) \(.compressed_size)"' 2>/dev/null) || true
+  fi
+  psql -XAtq -v ON_ERROR_STOP=1 -d "${POSTGRES_DB:-jobvacancy}" -v started="$(date -u -d "@$started" +%FT%TZ)" \
+    -v ok="$1" -v name="$name" -v size="$size" -v msg="$2" >/dev/null 2>&1 <<'SQL' \
+    || log "could not record this run in jv_ops.backup_runs (apply nginx/postgres/monitoring.sql)"
+INSERT INTO jv_ops.backup_runs (started_at, ok, backup_name, compressed_bytes, message)
+VALUES (:'started', :'ok', NULLIF(:'name', ''), NULLIF(NULLIF(:'size', ''), 'null')::bigint, NULLIF(:'msg', ''));
+DELETE FROM jv_ops.backup_runs WHERE finished_at < now() - interval '400 days';
+SQL
+}
+
+started=$(date +%s)
+log "backup-push started ($PGDATA)"
+if ! "$WALG" backup-push "$PGDATA"; then
+  log "backup-push FAILED"
+  record false "backup-push failed"
+  [ -n "$beat" ] && curl -fsS -m 10 --retry 3 "$beat/fail" >/dev/null 2>&1 || true
+  exit 1
+fi
+log "backup-push finished in $(( $(date +%s) - started ))s"
+"$WALG" delete retain FULL "$retain" --confirm 2>&1 | sed 's/^/  delete: /' || log "retention cleanup failed (backups are intact)"
+mkdir -p /tmp/walg && date -u +%s >/tmp/walg/last-success
+record true ""
+[ -n "$beat" ] && curl -fsS -m 10 --retry 3 "$beat" >/dev/null 2>&1 || true
+log "ok"

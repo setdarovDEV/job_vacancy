@@ -5,6 +5,7 @@
 package response
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -34,6 +35,14 @@ func List(w http.ResponseWriter, data, meta any) {
 }
 
 func NoContent(w http.ResponseWriter) { w.WriteHeader(http.StatusNoContent) }
+
+// Encode returns the success envelope exactly as JSON (meta nil) or List would write it,
+// for handlers that cache the bytes (package respcache).
+func Encode(data, meta any) ([]byte, error) {
+	var buf bytes.Buffer
+	err := json.NewEncoder(&buf).Encode(envelope{Data: data, Meta: meta})
+	return buf.Bytes(), err
+}
 
 // Error writes err as an API error. Anything that isn't an *apperr.Error is logged and
 // reported as a generic 500 so internals never leak to clients.

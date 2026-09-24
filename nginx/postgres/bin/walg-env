@@ -1,0 +1,28 @@
+# shellcheck shell=bash
+# Sourced by the walg-* scripts. Maps the project's BACKUP_* settings (.env.production) to
+# WAL-G's own variable names, so the rest of the stack never sees AWS_* credentials.
+#   BACKUP_S3_PREFIX      s3://bucket/path            (offsite: a different provider/region)
+#   BACKUP_S3_ENDPOINT    https://s3.example.com      (empty for AWS)
+#   BACKUP_S3_REGION      region name
+#   BACKUP_S3_ACCESS_KEY / BACKUP_S3_SECRET_KEY
+#   BACKUP_ENCRYPTION_KEY 64 hex chars (openssl rand -hex 32): client-side libsodium
+#                         encryption, the storage provider never sees plaintext PII
+# BACKUP_* win over anything WAL-G-specific already in the environment.
+export WALG_S3_PREFIX=${BACKUP_S3_PREFIX:-${WALG_S3_PREFIX:-}}
+export AWS_ACCESS_KEY_ID=${BACKUP_S3_ACCESS_KEY:-${AWS_ACCESS_KEY_ID:-}}
+export AWS_SECRET_ACCESS_KEY=${BACKUP_S3_SECRET_KEY:-${AWS_SECRET_ACCESS_KEY:-}}
+export AWS_REGION=${BACKUP_S3_REGION:-${AWS_REGION:-us-east-1}}
+if [ -n "${BACKUP_S3_ENDPOINT:-}" ]; then
+  export AWS_ENDPOINT=$BACKUP_S3_ENDPOINT
+  export AWS_S3_FORCE_PATH_STYLE=${AWS_S3_FORCE_PATH_STYLE:-true}
+fi
+if [ -n "${BACKUP_ENCRYPTION_KEY:-}" ]; then
+  export WALG_LIBSODIUM_KEY=$BACKUP_ENCRYPTION_KEY
+  export WALG_LIBSODIUM_KEY_TRANSFORM=hex
+fi
+export WALG_COMPRESSION_METHOD=${WALG_COMPRESSION_METHOD:-zstd}
+export WALG_UPLOAD_CONCURRENCY=${WALG_UPLOAD_CONCURRENCY:-4}
+export WALG_DOWNLOAD_CONCURRENCY=${WALG_DOWNLOAD_CONCURRENCY:-4}
+export WALG_PREFETCH_DIR=${WALG_PREFETCH_DIR:-/tmp/walg-prefetch}
+# shellcheck disable=SC2034  # used by the scripts that source this file
+WALG=${WALG_BIN:-wal-g}

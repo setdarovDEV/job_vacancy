@@ -1,0 +1,25 @@
+#!/bin/bash
+# pg-backup container entrypoint: a full backup every day at BACKUP_HOUR_UTC (default 21:00
+# UTC = 02:00 Tashkent), plus one right away when the archive has none yet, so PITR works
+# from the first deploy. WAL itself is shipped continuously by archive_command.
+set -uo pipefail
+. "$(dirname "$0")/walg-env"
+hour=${BACKUP_HOUR_UTC:-21}
+log() { echo "$(date -u +%FT%TZ) walg-backup-loop: $*"; }
+
+until pg_isready -q; do log "waiting for postgres"; sleep 5; done
+if [ "${BACKUP_ENABLED:-true}" != "true" ]; then
+  log "BACKUP_ENABLED=false: no backups on this host"; exec sleep infinity
+fi
+if ! "$WALG" backup-list >/dev/null 2>&1 || [ "$("$WALG" backup-list --json 2>/dev/null | jq 'length' 2>/dev/null || echo 0)" = 0 ]; then
+  log "no base backup in $WALG_S3_PREFIX yet: taking the first one now"
+  walg-backup-now || log "first backup failed; retrying at the next slot"
+fi
+while :; do
+  now=$(date -u +%s)
+  next=$(date -u -d "today ${hour}:00" +%s)
+  [ "$next" -le "$now" ] && next=$(date -u -d "tomorrow ${hour}:00" +%s)
+  log "next full backup at $(date -u -d "@$next" +%FT%TZ)"
+  sleep $(( next - now ))
+  walg-backup-now || log "backup failed (alert via BACKUP_HEARTBEAT_URL); next try tomorrow"
+done

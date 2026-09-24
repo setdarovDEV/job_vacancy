@@ -64,7 +64,7 @@ export function SelectableCard({
         // 1px border + 15px padding (unselected) = 2px border + 14px padding (selected).
         "border border-line-strong bg-surface p-[0.9375rem]",
         "data-[state=checked]:border-2 data-[state=checked]:border-lapis data-[state=checked]:bg-lapis-soft data-[state=checked]:p-3.5",
-        "transition-[border-color,background-color,transform] duration-150 hover:border-ink-3 data-[state=checked]:hover:border-lapis",
+        "transition-[border-color,background-color,scale] duration-150 hover:border-ink-3 data-[state=checked]:hover:border-lapis",
         "active:scale-[0.99] disabled:pointer-events-none disabled:opacity-50",
         stack ? "flex-col items-start gap-2" : "items-center gap-3",
         className,

@@ -339,8 +339,12 @@
     -webkit-tap-highlight-color: transparent;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-    /* In-page anchors and focus scrolling land below the sticky glass header. */
-    scroll-padding-top: 5.5rem;
+  }
+  /* In-page anchors and focus scrolling land below the sticky glass header. Scoped to the page
+     content (not html's scroll-padding): that also scrolled the page whenever a control inside
+     the sticky header itself took focus. Listbox options scroll inside their own popover. */
+  #main, main :is(a, button, input, select, textarea, summary, [tabindex], [id]):not([role="option"]) {
+    scroll-margin-top: calc(var(--header-h, 4rem) + 1.5rem);
   }
   /* No double-tap-to-zoom delay on controls: taps feel instant on phones. */
   a, button, input, label, select, summary, textarea, [role="button"], [role="tab"], [role="option"] {
@@ -564,6 +568,24 @@
   }
   .glass-chrome::after, .glass-panel::after, .glass-sheet::after, .glass-base::after { display: none; }
   body::before { display: none; }
+}
+/* glass-bar (site header, sticky filter bars) gets its glass through @apply, so the fallbacks
+   above, which match class names, miss it: the same three cases, by name. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-bar { --_glass-tint: var(--surface) !important; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .glass-bar {
+    --_glass-tint: var(--surface) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+:root[data-glass="off"] .glass-bar {
+  --_glass-tint: var(--surface) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  &::after { display: none; }
 }
 
 /* Loading placeholder. Shape it like the real content (same size, radius, layout). */

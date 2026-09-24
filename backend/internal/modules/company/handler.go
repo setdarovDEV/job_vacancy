@@ -1,6 +1,7 @@
 package company
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
+	"jobvacancy.uz/backend/internal/platform/respcache"
 	mw "jobvacancy.uz/backend/internal/transport/http/middleware"
 	"jobvacancy.uz/backend/internal/transport/http/response"
 )
@@ -80,6 +82,9 @@ type addMemberRequest struct {
 type Handler struct {
 	Svc   *Service
 	Files *file.Service
+	// Cache serves the public profile page as cached bytes with an ETag (TZ BE-05);
+	// Service.Changed invalidates it. Nil serves it uncached.
+	Cache *respcache.Cache
 }
 
 // Routes are mounted under /companies. Reads are public; writes need a signed-in employer.
@@ -106,23 +111,56 @@ func (h *Handler) AdminRoutes(r chi.Router) {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	c, err := h.Svc.Resolve(r.Context(), chi.URLParam(r, "company"))
+	ref := chi.URLParam(r, "company")
+	if h.Cache == nil {
+		d, err := h.profile(r.Context(), ref)
+		if err != nil {
+			response.Error(w, r, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, d)
+		return
+	}
+	e, st, err := h.Cache.Get(r.Context(), cacheKey(ref), func(ctx context.Context) (respcache.Loaded, error) {
+		d, err := h.profile(ctx, ref)
+		if err != nil {
+			return respcache.Loaded{}, err
+		}
+		body, err := response.Encode(d, nil)
+		return respcache.Loaded{Body: body}, err
+	})
 	if err != nil {
 		response.Error(w, r, err)
 		return
+	}
+	h.Cache.Serve(w, r, e, st, "public, max-age=60")
+}
+
+// cacheKey matches vacancy.RefKey: uuid and slug spellings are cached apart and
+// invalidated together.
+func cacheKey(ref string) string {
+	if id, err := uuid.Parse(ref); err == nil {
+		return "id:" + id.String()
+	}
+	return "slug:" + strings.ToLower(ref)
+}
+
+// profile is the public company page: the profile plus its open vacancy count.
+func (h *Handler) profile(ctx context.Context, ref string) (DTO, error) {
+	c, err := h.Svc.Resolve(ctx, ref)
+	if err != nil {
+		return DTO{}, err
 	}
 	if c.Status == gen.CompanyStatusBlocked {
-		response.Error(w, r, ErrNotFound)
-		return
+		return DTO{}, ErrNotFound
 	}
-	n, err := h.Svc.Q.CountPublishedVacancies(r.Context(), c.ID)
+	n, err := h.Svc.Q.CountPublishedVacancies(ctx, c.ID)
 	if err != nil {
-		response.Error(w, r, err)
-		return
+		return DTO{}, err
 	}
 	d := ToDTO(c)
 	d.OpenVacancies = &n
-	response.JSON(w, http.StatusOK, d)
+	return d, nil
 }
 
 // directory lists active companies (?q=name, ?page=1…), 24 per page.
@@ -209,7 +247,7 @@ func (h *Handler) setLogo(w http.ResponseWriter, r *http.Request) {
 		u := h.Files.Storage.PublicURL(f.ObjectKey)
 		url = &u
 	}
-	c, err = h.Svc.Q.SetCompanyLogoURL(r.Context(), gen.SetCompanyLogoURLParams{ID: c.ID, LogoUrl: url})
+	c, err = h.Svc.SetLogo(r.Context(), c.ID, url)
 	if err != nil {
 		response.Error(w, r, err)
 		return

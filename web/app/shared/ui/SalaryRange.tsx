@@ -34,7 +34,7 @@ export type SalaryRangeProps = {
 
 /**
  * Salary from–to: two MoneyInputs side by side (stacked when the container is narrower than
- * 20rem), an inline "from ≤ to" check and optional currency switch.
+ * 28rem), an inline "from ≤ to" check and optional currency switch.
  */
 export function SalaryRange({
   from, to, onChange, onCommit, currency = "UZS", onCurrencyChange, nameFrom, nameTo, nameCurrency,
@@ -63,9 +63,10 @@ export function SalaryRange({
           )}
         </div>
       )}
-      {/* Container query: stacks in narrow sidebars / phones under 360px, side by side otherwise. */}
+      {/* Container query: each half needs room for the prefix, a 10-character amount ("12 000 000")
+          and the unit, so phones and narrow sidebars stack; side by side from a 28rem container. */}
       <div className="@container">
-        <div className="grid grid-cols-1 gap-2 @xs:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 @md:grid-cols-2">
           <MoneyInput
             value={from}
             onChange={(v) => onChange({ from: v, to })}
@@ -108,7 +109,11 @@ function CurrencySwitch({ value, onChange, name, disabled }: { value: Currency; 
   return (
     <div role="radiogroup" aria-label={t("inputs.currency")} className="inline-flex rounded-pill bg-sunken p-0.5">
       {(["UZS", "USD"] as const).map((c) => (
-        <label key={c} className="relative cursor-pointer has-disabled:cursor-not-allowed has-disabled:opacity-50">
+        // On touch the hit area reaches into the track's padding: 44px tall, same look.
+        <label
+          key={c}
+          className="relative cursor-pointer has-disabled:cursor-not-allowed has-disabled:opacity-50 pointer-coarse:after:absolute pointer-coarse:after:-inset-y-0.5 pointer-coarse:after:inset-x-0"
+        >
           <input
             type="radio"
             name={name}

@@ -21,8 +21,10 @@ export function pageItems(page: number, pageCount: number): (number | "gap")[] {
   return out;
 }
 
+// Proportional digits: every slot is at least min-w-10 wide already, and Onest's tabular "1"
+// carries side bearing that makes "12" read as "1 2".
 const item =
-  "num inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-pill px-3 text-md font-medium transition-[background-color,color,transform] duration-150 pointer-coarse:h-11 pointer-coarse:min-w-11";
+  "inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-pill px-3 text-md font-medium transition-[background-color,color,scale] duration-150 pointer-coarse:h-11 pointer-coarse:min-w-11";
 
 /** A link for an href from `hrefFor`: "?page=3" keeps the current path; "/path?page=3" is an app path. */
 function PageLink({ href, className, children, ...props }: {
@@ -70,7 +72,8 @@ export function Pagination({ page, pageCount, hrefFor, label, className }: {
   return (
     <nav aria-label={label ?? t("states.pagination")} className={cn("flex items-center justify-center gap-1", className)}>
       {edge("prev")}
-      <p className="num px-3 text-md text-ink-2 sm:hidden">
+      {/* Proportional digits: Onest's tabular "1" would open a gap in "12". */}
+      <p className="px-3 text-md text-ink-2 sm:hidden">
         <span aria-hidden="true"><span className="font-semibold text-ink">{current}</span> / {pageCount}</span>
         <span className="sr-only">{t("states.pageOf", { page: current, total: pageCount })}</span>
       </p>

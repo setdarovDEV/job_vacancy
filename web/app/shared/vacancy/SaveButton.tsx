@@ -32,8 +32,11 @@ export function SaveButton({ id, withLabel, className }: { id: string; withLabel
         void toggleSaved(id, !saved);
       }}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-control transition-colors",
-        withLabel ? "h-11 border border-line-strong bg-surface px-4 text-[0.9375rem] font-medium hover:bg-sunken" : "size-10 hover:bg-sunken",
+        "inline-flex items-center justify-center gap-2 rounded-control transition-[background-color,color,scale] duration-150 ease-spring active:scale-[0.94]",
+        // Icon-only: 40px with a mouse, at least 44px to a finger (min-*, so a caller's larger size wins).
+        withLabel
+          ? "h-11 border border-line-strong bg-surface px-4 text-md font-medium hover:bg-sunken"
+          : "size-10 hover:bg-sunken pointer-coarse:min-h-11 pointer-coarse:min-w-11",
         saved ? "text-anor" : "text-ink-3 hover:text-ink",
         className,
       )}

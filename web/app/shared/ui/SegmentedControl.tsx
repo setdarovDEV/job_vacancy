@@ -90,6 +90,11 @@ export function SegmentedControl<T extends string>({
   const box = useRef<{ x: number; w: number } | null>(null);
   const activeRef = useRef(-1);
   const [measured, setMeasured] = useState(false);
+  // fullWidth: the CSS thumb only glides once the user has touched the control, so a value
+  // corrected right after hydration (e.g. the glass tier the boot script chose) doesn't slide
+  // across the track on load.
+  const [live, setLive] = useState(false);
+  const wake = fullWidth && !live ? () => setLive(true) : undefined;
 
   const n = options.length;
   const active = options.findIndex((o) => o.value === value);
@@ -176,6 +181,8 @@ export function SegmentedControl<T extends string>({
       ref={track}
       role={tabs ? "tablist" : "radiogroup"}
       aria-label={label}
+      onPointerDown={wake}
+      onKeyDown={wake}
       className={cn(
         "relative isolate rounded-pill bg-sunken p-1",
         fullWidth
@@ -190,7 +197,7 @@ export function SegmentedControl<T extends string>({
         className={cn(
           "pointer-events-none absolute inset-y-1 rounded-pill",
           thumbLook,
-          fullWidth ? "left-1 transition-transform duration-(--dur-3) ease-spring" : "left-0 origin-left",
+          fullWidth ? cn("left-1", live && "transition-transform duration-(--dur-3) ease-spring") : "left-0 origin-left",
           (active < 0 || (!fullWidth && !measured)) && "opacity-0",
         )}
         // Equal segments: the thumb is one segment wide, so translateX(i × 100%) lands exactly.

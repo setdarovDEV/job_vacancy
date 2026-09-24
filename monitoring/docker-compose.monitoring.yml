@@ -1,0 +1,330 @@
+# Monitoring and error tracking for jobvacancy.uz (TZ OPS-04, OPS-05): Prometheus,
+# Alertmanager (→ Telegram), Grafana, exporters (node, cAdvisor, Postgres, SQL, Redis, nginx,
+# blackbox) and GlitchTip (Sentry protocol). Its own compose project next to the app stack:
+#
+#   make monitoring-up            # nginx/scripts/monitoring.sh production up
+#   make monitoring-config        # validate with the example env file (no daemon needed)
+#
+# It reads the same env file as the app (.env.production / .env.staging), joins the app's
+# private networks (<project>_front, <project>_back) as an outsider, and publishes its UIs on
+# 127.0.0.1 only (Grafana :3000, Prometheus :9090, Alertmanager :9093, GlitchTip :8000):
+#   ssh -L 3000:127.0.0.1:3000 -L 8000:127.0.0.1:8000 deploy@app-1
+# Start it after the first `make deploy` (the app networks must exist). The project name is
+# always passed explicitly (-p <app project>-monitoring) because the env file sets
+# COMPOSE_PROJECT_NAME for the app itself.
+name: ${COMPOSE_PROJECT_NAME:-jobvacancy}-monitoring
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-base: &base
+  restart: unless-stopped
+  logging: *logging
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  prometheus:
+    <<: *base
+    image: quay.io/prometheus/prometheus:v3.14.0@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+    entrypoint: ["/bin/sh", "/etc/prometheus/entrypoint.sh"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}
+      - --storage.tsdb.retention.size=${PROMETHEUS_RETENTION_SIZE:-8GB}
+      - --web.listen-address=:9090
+      - --web.enable-lifecycle
+    environment:
+      JV_ENV: ${APP_ENV:-production}
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+      MONITORING_GATEWAY: ${MONITORING_GATEWAY:-10.250.30.1}
+      # db-1 on a split setup: its node_exporter, e.g. 10.0.0.3:9100 (comma-separated).
+      NODE_EXPORTER_EXTRA_TARGETS: ${NODE_EXPORTER_EXTRA_TARGETS:-}
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus:/prometheus
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+    networks: [monitoring, app-front, app-back]
+
+  alertmanager:
+    <<: *base
+    image: quay.io/prometheus/alertmanager:v0.34.1@sha256:e9733bafb1bdef9b00e25a21f8f99dc26a22224bf16641ad754d1649f4c3357a
+    entrypoint: ["/bin/sh", "/etc/alertmanager/entrypoint.sh"]
+    command:
+      - --config.file=/tmp/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.listen-address=:9093
+      - --cluster.listen-address=
+    environment:
+      ALERT_TELEGRAM_BOT_TOKEN: ${ALERT_TELEGRAM_BOT_TOKEN:-}
+      ALERT_TELEGRAM_CHAT_ID: ${ALERT_TELEGRAM_CHAT_ID:-}
+      ALERT_TELEGRAM_THREAD_ID: ${ALERT_TELEGRAM_THREAD_ID:-}
+      ALERT_TELEGRAM_API_URL: ${ALERT_TELEGRAM_API_URL:-https://api.telegram.org}
+      ALERT_WATCHDOG_URL: ${ALERT_WATCHDOG_URL:-}
+    volumes:
+      - ./alertmanager:/etc/alertmanager:ro
+      - alertmanager:/alertmanager
+    tmpfs: ["/tmp:size=8m,mode=1777"]
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9093/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
+    networks: [monitoring]
+
+  grafana:
+    <<: *base
+    image: grafana/grafana:13.2.2@sha256:ac461fb352abc50da10a51c7d02462e9c05488f11f53f14b3ad79a8145f638a0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+      GF_SECURITY_COOKIE_SECURE: "false"   # reached over an SSH tunnel on http://localhost
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/jobvacancy-red.json
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      prometheus: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+    networks: [monitoring]
+
+  # ---- exporters ------------------------------------------------------------------------------
+  # Host metrics need the host's network namespace. It listens only on the monitoring
+  # network's gateway address (private to this host); with ufw allow it from that subnet:
+  #   ufw allow from 10.250.30.0/24 to 10.250.30.1 port 9100 proto tcp
+  node-exporter:
+    <<: *base
+    image: quay.io/prometheus/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0
+    command:
+      - --path.rootfs=/host
+      - --web.listen-address=${MONITORING_GATEWAY:-10.250.30.1}:9100
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|run/credentials/.+|sys|var/lib/docker/.+|var/lib/containers/.+)($|/)
+      - --collector.systemd
+      - --no-collector.wifi
+      - --no-collector.hwmon
+    network_mode: host
+    pid: host
+    volumes:
+      - /:/host:ro,rslave
+      - /run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 64M }
+    # Created by this project before the container starts, so the gateway address exists.
+    depends_on:
+      prometheus: { condition: service_started }
+
+  # Per-container CPU, memory, OOM kills (USE dashboard, compose service label).
+  cadvisor:
+    <<: *base
+    image: gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=15s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.project,com.docker.compose.service
+      - --disable_metrics=advtcp,cpu_topology,cpuset,hugetlb,memory_numa,percpu,process,referenced_memory,resctrl,sched,tcp,udp
+    privileged: true
+    devices: ["/dev/kmsg"]
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+    networks: [monitoring]
+
+  # Built-in Postgres statistics (connections, cache hit, locks, WAL archiver, replication,
+  # pg_stat_statements top queries, per-table insert counters for the business dashboard).
+  postgres-exporter:
+    <<: *base
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1@sha256:ac5ec343104fae0e2d84a27bb8d69b38430a11910c5382cad85d478d2bab713e
+    command:
+      - --collector.stat_statements
+      - --collector.stat_statements.limit=30
+      - --collector.long_running_transactions
+      - --collector.database_wraparound
+      - --collector.postmaster
+      - --collector.stat_archiver
+      - --no-collector.statio_user_indexes
+    environment:
+      DATA_SOURCE_URI: ${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-jobvacancy}?sslmode=${DB_SSLMODE:-disable}
+      DATA_SOURCE_USER: monitoring
+      DATA_SOURCE_PASS: ${MONITORING_DB_PASSWORD:?set MONITORING_DB_PASSWORD}
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 128M }
+    networks: [monitoring, app-back]
+
+  # River queue depth and latency, moderation queue, sign-ups, backup runs: SQL on the app
+  # database as the read-only "monitoring" role (column grants in nginx/postgres/monitoring.sql).
+  sql-exporter:
+    <<: *base
+    image: burningalchemist/sql_exporter:0.24.8@sha256:2586aa37f140128fb92cf9b764ca30fbfab898c8740268ae1a6e1f39260f4d5d
+    command: ["-config.file=/etc/sql_exporter/sql_exporter.yml"]
+    environment:
+      SQLEXPORTER_TARGET_DSN: postgres://monitoring:${MONITORING_DB_PASSWORD}@${DB_HOST:-postgres}:${DB_PORT:-5432}/${DB_NAME:-jobvacancy}?sslmode=${DB_SSLMODE:-disable}&application_name=sql_exporter
+    volumes:
+      - ./sql-exporter:/etc/sql_exporter:ro
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 64M }
+    networks: [monitoring, app-back]
+
+  # One exporter, two targets (redis-cache, redis-state): Prometheus passes ?target=.
+  redis-exporter:
+    <<: *base
+    image: quay.io/oliver006/redis_exporter:v1.92.0@sha256:ca3abd5f19da6c87e96038ba08aaa3dfaab34dc649834584c4d6880b05952fef
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      REDIS_EXPORTER_INCL_SYSTEM_METRICS: "true"
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 64M }
+    networks: [monitoring, app-back]
+
+  # stub_status on nginx's internal :8082 (conf.d/internal.conf).
+  nginx-exporter:
+    <<: *base
+    image: nginx/nginx-prometheus-exporter:1.5.3@sha256:85666e7fde7e253f1c6d978f9a961245df4c9cdb7677e1866d9bb28e8f9ee41d
+    command: ["--nginx.scrape-uri=http://nginx:8082/nginx_status"]
+    deploy:
+      resources:
+        limits: { cpus: "0.1", memory: 32M }
+    networks: [monitoring, app-front]
+
+  # Probes: the site through the origin (our Let's Encrypt certificate, TLS expiry) and
+  # the public URL through Cloudflare (what visitors see).
+  blackbox-exporter:
+    <<: *base
+    image: quay.io/prometheus/blackbox-exporter:v0.28.0@sha256:e753ff9f3fc458d02cca5eddab5a77e1c175eee484a8925ac7d524f04366c2fc
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./blackbox:/etc/blackbox:ro
+    deploy:
+      resources:
+        limits: { cpus: "0.1", memory: 64M }
+    networks: [monitoring, app-front]
+
+  # ---- GlitchTip: errors from the Go API/worker and the browser (Sentry protocol) -----------
+  # Ingestion: browsers post to https://<domain>/errors/api/<project>/envelope/ (nginx proxies
+  # it here over the front network); api/worker use the internal DSN http://<key>@glitchtip:8000/<id>.
+  # UI over the SSH tunnel on :8000. All-in-one role with Postgres as queue and cache (no
+  # Valkey): ~300 MB.
+  glitchtip:
+    <<: *base
+    image: glitchtip/glitchtip:v6.0.3@sha256:db857de5ac398e274d36f521b1cff0c76d714925b865e45b64fe0bd2f4499ec8
+    environment:
+      SERVER_ROLE: all_in_one
+      DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD:?set GLITCHTIP_DB_PASSWORD}@glitchtip-db:5432/glitchtip
+      VALKEY_URL: ""
+      SECRET_KEY: ${GLITCHTIP_SECRET_KEY:?set GLITCHTIP_SECRET_KEY}
+      GLITCHTIP_DOMAIN: ${GLITCHTIP_DOMAIN:-http://localhost:8000}
+      DEFAULT_FROM_EMAIL: ${GLITCHTIP_FROM_EMAIL:-errors@jobvacancy.uz}
+      EMAIL_URL: ${GLITCHTIP_EMAIL_URL:-consolemail://}
+      ENABLE_USER_REGISTRATION: "false"
+      ENABLE_ORGANIZATION_CREATION: "false"
+      GLITCHTIP_MAX_EVENT_LIFE_DAYS: "30"
+      GLITCHTIP_ENABLE_UPTIME: "False"   # uptime is Prometheus/blackbox + the external check
+      PORT: "8000"
+    volumes:
+      - glitchtip-uploads:/code/uploads
+    ports:
+      - "${MONITORING_BIND:-127.0.0.1}:8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/_health/')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    depends_on:
+      glitchtip-db: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 768M }
+    networks:
+      monitoring: {}
+      app-front:
+        aliases: [glitchtip]
+      app-back:           # the worker lives on the back network only
+        aliases: [glitchtip]
+
+  glitchtip-db:
+    <<: *base
+    image: postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - glitchtip-db:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+    networks: [monitoring]
+
+networks:
+  monitoring:
+    ipam:
+      config:
+        - subnet: ${MONITORING_SUBNET:-10.250.30.0/24}
+          gateway: ${MONITORING_GATEWAY:-10.250.30.1}
+  # The app stack's networks (nginx/docker-compose.prod.yml), joined from outside.
+  app-front:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME:-jobvacancy}_front
+  app-back:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME:-jobvacancy}_back
+
+volumes:
+  prometheus:
+  alertmanager:
+  grafana:
+  glitchtip-db:
+  glitchtip-uploads:

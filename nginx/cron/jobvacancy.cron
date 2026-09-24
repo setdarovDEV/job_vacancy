@@ -1,0 +1,5 @@
+# Installed by nginx/scripts/deploy.sh as /etc/cron.d/jobvacancy-@ENV@ (host cron, root).
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Cloudflare edge ranges for real_ip (TZ SEC-02), daily.
+17 4 * * * root cd @ROOT@ && docker compose --env-file .env.@ENV@ -f nginx/docker-compose.prod.yml $( [ @ENV@ = staging ] && echo -f nginx/docker-compose.staging.yml ) exec -T nginx update-cloudflare-ips >>/var/log/jobvacancy-cloudflare-ips.log 2>&1

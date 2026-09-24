@@ -1,0 +1,15 @@
+# Account totals by role and status. users has no index that serves a count by role, so this
+# is a sequential scan of users (~10 ms per 100k rows); it runs at most every 15 minutes.
+collector_name: business_totals
+min_interval: 15m
+
+metrics:
+  - metric_name: jv_users
+    type: gauge
+    help: "Accounts by role and status (active, blocked, deleted)."
+    key_labels: [role, status]
+    values: [accounts]
+    query: |
+      SELECT role::text AS role, status::text AS status, count(*) AS accounts
+      FROM users
+      GROUP BY role, status

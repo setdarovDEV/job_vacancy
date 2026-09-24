@@ -851,11 +851,17 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Public company profile */
+        /**
+         * Public company profile
+         * @description Cached (~60 s, dropped on every profile, logo, verification or vacancy status change); ETag, 304.
+         */
         get: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description ETag of a copy the client has; unchanged content answers 304 with no body. */
+                    "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+                };
                 path: {
                     /** @description uuid or slug */
                     company: components["parameters"]["CompanyRef"];
@@ -865,6 +871,7 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["Company"];
+                304: components["responses"]["NotModified"];
                 404: components["responses"]["Error"];
             };
         };
@@ -1069,7 +1076,8 @@ export interface paths {
          *
          *     Ordering: `relevance` (default with `q`) or `newest` (default without `q`).
          *     Multi-value filters accept repeated params or comma lists (work_format=remote,hybrid).
-         *     A parent category_id includes its subcategories. Results are cached ~30 s.
+         *     A parent category_id includes its subcategories. Results are cached ~30 s (a
+         *     publish or edit refreshes them on the next request); `meta.total` up to 2 minutes.
          */
         get: {
             parameters: {
@@ -1090,13 +1098,17 @@ export interface paths {
                     cursor?: components["parameters"]["Cursor"];
                     limit?: components["parameters"]["Limit"];
                 };
-                header?: never;
+                header?: {
+                    /** @description ETag of a copy the client has; unchanged content answers 304 with no body. */
+                    "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+                };
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
             responses: {
-                200: components["responses"]["VacancyPage"];
+                200: components["responses"]["CachedVacancyPage"];
+                304: components["responses"]["NotModified"];
                 422: components["responses"]["Error"];
             };
         };
@@ -1118,11 +1130,20 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Vacancy page. Unpublished vacancies are 404 except for company members. */
+        /**
+         * Vacancy page. Unpublished vacancies are 404 except for company members.
+         * @description Anonymous visitors and job seekers get the cached public page
+         *     (`Cache-Control: public, max-age=60` without a token, `private, no-cache` with one).
+         *     Employers and admins get a fresh copy: company members also see drafts,
+         *     `can_edit`, `reject_reason` and `submitted_at`. Edits are visible on the next request.
+         */
         get: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description ETag of a copy the client has; unchanged content answers 304 with no body. */
+                    "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+                };
                 path: {
                     /** @description uuid (writes) or slug (reads) */
                     vacancy: components["parameters"]["VacancyRef"];
@@ -1131,7 +1152,8 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                200: components["responses"]["Vacancy"];
+                200: components["responses"]["CachedVacancy"];
+                304: components["responses"]["NotModified"];
                 404: components["responses"]["Error"];
             };
         };
@@ -1242,6 +1264,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vacancies/{vacancy}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Count a page view (beacon, sent by the page after it rendered)
+         * @description No body. Send it once per page view from the browser (`navigator.sendBeacon` or
+         *     `fetch(…, {method: "POST", keepalive: true})`); with a token the view is counted
+         *     per user, otherwise per client IP, at most once per vacancy per hour. Bots and
+         *     non-browser clients (by User-Agent) and the company's own members are not counted.
+         *     Counts reach `views_count` within about a minute.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid (writes) or slug (reads) */
+                    vacancy: components["parameters"]["VacancyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                204: components["responses"]["NoContent"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/search/suggest": {
         parameters: {
             query?: never;
@@ -1249,13 +1310,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Search box autocomplete — vacancy titles (with counts), companies, skills */
+        /**
+         * Search box autocomplete — vacancy titles (with counts), companies, skills
+         * @description Cached per folded prefix for ~5 minutes (ETag, 304).
+         */
         get: {
             parameters: {
                 query: {
                     q: string;
                 };
-                header?: never;
+                header?: {
+                    /** @description ETag of a copy the client has; unchanged content answers 304 with no body. */
+                    "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -1279,6 +1346,7 @@ export interface paths {
                         };
                     };
                 };
+                304: components["responses"]["NotModified"];
             };
         };
         put?: never;
@@ -1296,11 +1364,19 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Most searched queries of the last 7 days (for the home page) */
+        /**
+         * Most searched queries of the last 7 days (for the home page)
+         * @description Up to 10 queries that returned results and were run from at least 3 different
+         *     client IPs in the last 7 days, minus spam (links, contacts, phone numbers,
+         *     profanity) and anything an admin hid. Cached ~10 minutes (ETag, 304).
+         */
         get: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description ETag of a copy the client has; unchanged content answers 304 with no body. */
+                    "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -1317,11 +1393,150 @@ export interface paths {
                         };
                     };
                 };
+                304: components["responses"]["NotModified"];
             };
         };
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/search/popular": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Popular-search candidates with the numbers and flags that decide what is public */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Most searched first */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["PopularSearch"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/search/hidden-terms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Terms hidden from the popular list */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Hidden terms */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["HiddenSearchTerm"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        /** Hide a word or phrase — every popular query containing it (as whole words, any script) disappears */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        term: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Hidden (idempotent) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["HiddenSearchTerm"];
+                        };
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/search/hidden-terms/{term}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Show a hidden term again */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    term: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                204: components["responses"]["NoContent"];
+                404: components["responses"]["Error"];
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -3541,11 +3756,38 @@ export interface components {
         ApplicationResponse: {
             data?: components["schemas"]["Application"];
         };
+        PopularSearch: {
+            query: string;
+            /** @description new client IPs per day */
+            score: number;
+            /** @description different client IPs over 7 days (estimate) */
+            ips: number;
+            /** @description caught by the automatic filter (links */
+            spam: boolean;
+            /** @description contains a term hidden by an admin */
+            hidden: boolean;
+            /** @description on the public list (3+ IPs */
+            shown: boolean;
+        };
+        HiddenSearchTerm: {
+            /** @description stored folded to Latin lower case ("казино" → "kazino") */
+            term: string;
+            /** Format: date-time */
+            created_at: string;
+        };
         ResumeResponse: {
             data?: components["schemas"]["ResumeDetail"];
         };
     };
     responses: {
+        /** @description Not modified (the If-None-Match ETag is current); no body */
+        NotModified: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                [name: string]: unknown;
+            };
+            content?: never;
+        };
         /** @description Error */
         Error: {
             headers: {
@@ -3616,6 +3858,28 @@ export interface components {
                 "application/json": components["schemas"]["VacancyPage"];
             };
         };
+        /** @description Vacancy (cached public page for everyone but company members) */
+        CachedVacancy: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Cache": components["headers"]["XCache"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["VacancyResponse"];
+            };
+        };
+        /** @description Page of vacancies (cached) */
+        CachedVacancyPage: {
+            headers: {
+                ETag: components["headers"]["ETag"];
+                "X-Cache": components["headers"]["XCache"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["VacancyPage"];
+            };
+        };
         /** @description Company */
         Company: {
             headers: {
@@ -3637,10 +3901,17 @@ export interface components {
         ApplicationRef: string;
         /** @description uuid or slug */
         CompanyRef: string;
+        /** @description ETag of a copy the client has; unchanged content answers 304 with no body. */
+        IfNoneMatch: string;
         ClientType: "web" | "android" | "ios";
     };
     requestBodies: never;
-    headers: never;
+    headers: {
+        /** @description Validator of the response body (weak) */
+        ETag: string;
+        /** @description HIT | STALE | MISS: how the cached response was served */
+        XCache: "HIT" | "STALE" | "MISS";
+    };
     pathItems: never;
 }
 export type $defs = Record<string, never>;

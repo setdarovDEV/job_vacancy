@@ -49,9 +49,11 @@ type Service struct {
 	Companies *company.Service
 	Catalog   *catalog.Service
 	Views     *ViewCounter
-	Cache     *ListCache
-	Notify    *notification.Service
-	Log       *slog.Logger
+	// Cache holds the public response caches; nil outside the API (worker, ctl), where
+	// writes then skip invalidation and listings skip the totals cache.
+	Cache  *PublicCache
+	Notify *notification.Service
+	Log    *slog.Logger
 }
 
 func (s *Service) normalize(in *Input) error {
@@ -163,6 +165,7 @@ func (s *Service) Update(ctx context.Context, p reqctx.Principal, id uuid.UUID, 
 	if err != nil {
 		return Detail{}, err
 	}
+	s.changed(ctx, v, c)
 	return detailOf(v, c, skills, true), nil
 }
 
@@ -186,6 +189,7 @@ func (s *Service) Submit(ctx context.Context, p reqctx.Principal, id uuid.UUID) 
 	if err != nil {
 		return Detail{}, err
 	}
+	s.changed(ctx, v, c)
 	return s.detail(ctx, v, c, true)
 }
 
@@ -201,6 +205,7 @@ func (s *Service) Archive(ctx context.Context, p reqctx.Principal, id uuid.UUID)
 	if err != nil {
 		return Detail{}, err
 	}
+	s.changed(ctx, v, c)
 	return s.detail(ctx, v, c, true)
 }
 
@@ -231,7 +236,7 @@ func (s *Service) Approve(ctx context.Context, admin reqctx.Principal, id uuid.U
 	}
 	s.Notify.Notify(ctx, []uuid.UUID{v.CreatedBy}, notification.TypeVacancyApproved,
 		notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title}, true)
-	return s.detailLoadCompany(ctx, v)
+	return s.afterModeration(ctx, v)
 }
 
 func (s *Service) Reject(ctx context.Context, admin reqctx.Principal, id uuid.UUID, reason string) (Detail, error) {
@@ -248,7 +253,7 @@ func (s *Service) Reject(ctx context.Context, admin reqctx.Principal, id uuid.UU
 	}
 	s.Notify.Notify(ctx, []uuid.UUID{v.CreatedBy}, notification.TypeVacancyRejected,
 		notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title, Reason: reason}, true)
-	return s.detailLoadCompany(ctx, v)
+	return s.afterModeration(ctx, v)
 }
 
 func (s *Service) publish(ctx context.Context, id uuid.UUID, from []string, moderator *uuid.UUID) (gen.Vacancy, error) {
@@ -276,31 +281,25 @@ func (s *Service) publish(ctx context.Context, id uuid.UUID, from []string, mode
 
 // ---- reads -------------------------------------------------------------------------------
 
-// Get returns a vacancy by id or slug. Unpublished vacancies are visible only to company
-// members and admins; everyone else gets 404, so drafts can't be probed.
-func (s *Service) Get(ctx context.Context, ref string, viewer *reqctx.Principal, viewerIP string) (Detail, error) {
+// Get returns a vacancy by id or slug, built fresh (the cached public page is
+// publicDetail). Unpublished vacancies are visible only to company members and admins;
+// everyone else gets 404, so drafts can't be probed. member tells the caller not to
+// count the view.
+func (s *Service) Get(ctx context.Context, ref string, viewer *reqctx.Principal) (d Detail, member bool, err error) {
 	v, err := s.resolve(ctx, ref)
 	if err != nil {
-		return Detail{}, err
+		return Detail{}, false, err
 	}
 	c, err := s.Q.GetCompanyByID(ctx, v.CompanyID)
 	if err != nil {
-		return Detail{}, err
+		return Detail{}, false, err
 	}
-	member := viewer != nil && s.Companies.IsMember(ctx, *viewer, c.ID)
+	member = viewer != nil && s.Companies.IsMember(ctx, *viewer, c.ID)
 	if !member && (v.Status != gen.VacancyStatusPublished || c.Status != gen.CompanyStatusActive) {
-		return Detail{}, ErrNotFound
+		return Detail{}, false, ErrNotFound
 	}
-	if !member {
-		key := "ip:" + viewerIP
-		if viewer != nil {
-			key = "u:" + viewer.UserID.String()
-		}
-		if err := s.Views.Hit(ctx, v.ID, key); err != nil {
-			s.Log.WarnContext(ctx, "view count failed", "err", err)
-		}
-	}
-	return s.detail(ctx, v, c, member)
+	d, err = s.detail(ctx, v, c, member)
+	return d, member, err
 }
 
 func (s *Service) ListForCompany(ctx context.Context, p reqctx.Principal, companyRef string, status *gen.VacancyStatus, after *cursorKey, limit int) ([]Card, *string, error) {
@@ -396,12 +395,20 @@ func (s *Service) detail(ctx context.Context, v gen.Vacancy, c gen.Company, memb
 	return detailOf(v, c, sk[v.ID], member), nil
 }
 
-func (s *Service) detailLoadCompany(ctx context.Context, v gen.Vacancy) (Detail, error) {
+// afterModeration drops the vacancy's cached pages and returns the admin's view.
+func (s *Service) afterModeration(ctx context.Context, v gen.Vacancy) (Detail, error) {
 	c, err := s.Q.GetCompanyByID(ctx, v.CompanyID)
 	if err != nil {
 		return Detail{}, err
 	}
+	s.changed(ctx, v, c)
 	return s.detail(ctx, v, c, true)
+}
+
+// changed drops the cached public pages a write to v affects (TZ BE-05). Called after
+// the write committed.
+func (s *Service) changed(ctx context.Context, v gen.Vacancy, c gen.Company) {
+	s.Cache.VacancyChanged(ctx, v.ID, v.Slug, c.ID, c.Slug)
 }
 
 // ---- helpers -----------------------------------------------------------------------------

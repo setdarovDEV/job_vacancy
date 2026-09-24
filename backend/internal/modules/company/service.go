@@ -46,6 +46,16 @@ type Service struct {
 	Pool    *pgxpool.Pool
 	Q       *gen.Queries
 	Catalog *catalog.Service
+	// Changed runs after a public-facing change (profile, logo, verification) committed,
+	// to drop cached pages that show the company (TZ BE-05). Optional.
+	Changed func(ctx context.Context, c gen.Company)
+}
+
+// changed reports c to Changed, if set.
+func (s *Service) changed(ctx context.Context, c gen.Company) {
+	if s.Changed != nil {
+		s.Changed(ctx, c)
+	}
 }
 
 type Input struct {
@@ -162,6 +172,9 @@ func (s *Service) Update(ctx context.Context, p reqctx.Principal, ref string, in
 			CompanyID: c.ID, Company: translit.Fold(updated.Name),
 		})
 	})
+	if err == nil {
+		s.changed(ctx, updated)
+	}
 	return updated, err
 }
 
@@ -293,7 +306,20 @@ func (s *Service) SetVerified(ctx context.Context, ref string, verified bool) (g
 	if err != nil {
 		return c, err
 	}
-	return s.Q.SetCompanyVerified(ctx, gen.SetCompanyVerifiedParams{ID: c.ID, Verified: verified})
+	c, err = s.Q.SetCompanyVerified(ctx, gen.SetCompanyVerifiedParams{ID: c.ID, Verified: verified})
+	if err == nil {
+		s.changed(ctx, c)
+	}
+	return c, err
+}
+
+// SetLogo stores the logo URL (nil removes it).
+func (s *Service) SetLogo(ctx context.Context, id uuid.UUID, url *string) (gen.Company, error) {
+	c, err := s.Q.SetCompanyLogoURL(ctx, gen.SetCompanyLogoURLParams{ID: id, LogoUrl: url})
+	if err == nil {
+		s.changed(ctx, c)
+	}
+	return c, err
 }
 
 // ---- helpers -----------------------------------------------------------------------------

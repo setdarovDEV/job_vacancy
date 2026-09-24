@@ -6,10 +6,10 @@
 # Edits the lines tagged "# jv:<name>" in conf.d/10-upstreams.conf (container layer only: a
 # recreated nginx container starts with every instance up) and reloads gracefully.
 set -eu
-NGINX=${NGINX:-nginx}   # overridable for tests: NGINX="nginx -p <prefix> -c <conf>"
+NGINX_CMD=${NGINX_CMD:-nginx}   # overridable for tests: NGINX_CMD="nginx -p <prefix> -c <conf>"
 conf=${NGINX_ETC:-/etc/nginx}/conf.d/10-upstreams.conf
 if [ "${1:-status}" = status ]; then
-  grep -E '# jv:' "$conf" | while IFS= read -r line; do
+  grep -E '^[[:space:]]*server .*# jv:' "$conf" | while IFS= read -r line; do
     case $line in *" down;"*) echo "${line##*# jv:} down" ;; *) echo "${line##*# jv:} up" ;; esac
   done
   exit 0
@@ -28,11 +28,11 @@ while [ $# -ge 2 ]; do
   esac
 done
 if [ $# -ne 0 ]; then echo "usage: jv-upstream (up|down) <name> [...] | status" >&2; cp "$backup" "$conf"; exit 2; fi
-if ! $NGINX -t -q; then
+if ! $NGINX_CMD -t -q; then
   cp "$backup" "$conf"
   echo "jv-upstream: config test failed, change reverted" >&2
   exit 1
 fi
 rm -f "$backup"
-$NGINX -s reload
-grep -E '# jv:' "$conf" | sed -E 's/^ *//'
+$NGINX_CMD -s reload
+grep -E '^[[:space:]]*server .*# jv:' "$conf" | sed -E 's/^ *//'

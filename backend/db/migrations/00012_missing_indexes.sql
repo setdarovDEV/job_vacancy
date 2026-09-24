@@ -16,7 +16,9 @@
 --   application_events_actor_idx  FK application_events.actor_id (user delete)
 --   vacancies_company_pub_idx     company page: published vacancies of one company
 --   vacancies_district_pub_idx    district filter on the public listing
---   user_sessions_expires_idx     periodic cleanup of expired sessions
+--   user_sessions_expires_idx     periodic cleanup of expired sessions (DeleteExpiredSessions)
+--   user_sessions_revoked_idx     ...whose "OR revoked_at < …" branch needs its own index,
+--                                 otherwise the OR still forces a Seq Scan (BitmapOr)
 
 -- +goose Up
 CREATE INDEX CONCURRENTLY IF NOT EXISTS applications_resume_idx      ON applications (resume_id);
@@ -29,6 +31,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS application_events_actor_idx ON applicat
 CREATE INDEX CONCURRENTLY IF NOT EXISTS vacancies_company_pub_idx    ON vacancies (company_id, published_at DESC, id DESC) WHERE status = 'published';
 CREATE INDEX CONCURRENTLY IF NOT EXISTS vacancies_district_pub_idx   ON vacancies (district_id, published_at DESC, id DESC) WHERE status = 'published';
 CREATE INDEX CONCURRENTLY IF NOT EXISTS user_sessions_expires_idx    ON user_sessions (expires_at);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS user_sessions_revoked_idx    ON user_sessions (revoked_at) WHERE revoked_at IS NOT NULL;
 
 -- +goose Down
 DROP INDEX CONCURRENTLY IF EXISTS applications_resume_idx;
@@ -41,3 +44,4 @@ DROP INDEX CONCURRENTLY IF EXISTS application_events_actor_idx;
 DROP INDEX CONCURRENTLY IF EXISTS vacancies_company_pub_idx;
 DROP INDEX CONCURRENTLY IF EXISTS vacancies_district_pub_idx;
 DROP INDEX CONCURRENTLY IF EXISTS user_sessions_expires_idx;
+DROP INDEX CONCURRENTLY IF EXISTS user_sessions_revoked_idx;

@@ -1,0 +1,100 @@
+#!/bin/bash
+# Point-in-time restore from the offsite archive into an EMPTY data directory (TZ OPS-03).
+#
+#   walg-restore [--time "2026-09-24 14:05:00+05"] [--name deploy_v1.4.0] [--backup NAME]
+#                [--start] [--check]
+#
+#   --time    recover up to this moment (the newest base backup that finished before it is
+#             chosen automatically); --name: up to a restore point (deploy.sh creates one
+#             before every migration); neither: replay everything archived (latest state).
+#   --start   start Postgres, wait until recovery is done and it is promoted, then stop it.
+#   --check   with --start: print row counts and the last replayed commit (drill report).
+#
+# Never restores over existing data: point PGDATA at a fresh volume (scripts/restore.sh
+# does that and keeps the old volume). Archiving is disabled for the restored copy
+# (BACKUP_ENABLED=false) unless it is being promoted to the new production primary.
+set -euo pipefail
+. "$(dirname "$0")/walg-env"
+: "${WALG_S3_PREFIX:?BACKUP_S3_PREFIX is not set}"
+: "${PGDATA:?PGDATA is not set}"
+target_time="" target_name="" backup="" start=0 check=0
+while [ $# -gt 0 ]; do
+  case $1 in
+    --time) target_time=$2; shift 2 ;;
+    --name) target_name=$2; shift 2 ;;
+    --backup) backup=$2; shift 2 ;;
+    --start) start=1; shift ;;
+    --check) check=1; shift ;;
+    *) echo "unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+log() { echo "$(date -u +%FT%TZ) walg-restore: $*"; }
+die() { log "$*"; exit 1; }
+[ -n "$target_time" ] && [ -n "$target_name" ] && die "use --time or --name, not both"
+mkdir -p "$PGDATA"
+[ -z "$(ls -A "$PGDATA")" ] || die "$PGDATA is not empty: restore into a fresh volume"
+
+t0=$(date +%s)
+list=$("$WALG" backup-list --detail --json) || die "cannot list backups in $WALG_S3_PREFIX"
+if [ -z "$backup" ]; then
+  if [ -n "$target_time" ]; then
+    t=$(date -u -d "$target_time" +%s) || die "cannot parse --time '$target_time'"
+    backup=$(jq -r --argjson t "$t" '[.[] | select((.finish_time | sub("\\.[0-9]+"; "") | fromdateiso8601) <= $t)]
+      | sort_by(.finish_time) | last | .backup_name // empty' <<<"$list")
+    [ -n "$backup" ] || die "no base backup finished before $target_time"
+  else
+    backup=$(jq -r 'sort_by(.finish_time) | last | .backup_name // empty' <<<"$list")
+    [ -n "$backup" ] || die "the archive has no base backups"
+  fi
+fi
+log "fetching base backup $backup"
+"$WALG" backup-fetch "$PGDATA" "$backup"
+chmod 700 "$PGDATA"
+t_fetch=$(( $(date +%s) - t0 ))
+
+{
+  echo "# --- added by walg-restore $(date -u +%FT%TZ) ---"
+  echo "restore_command = '$(command -v "$WALG") wal-fetch %f %p'"
+  if [ -n "$target_time" ]; then
+    echo "recovery_target_time = '$target_time'"
+    echo "recovery_target_action = 'promote'"
+  elif [ -n "$target_name" ]; then
+    echo "recovery_target_name = '$target_name'"
+    echo "recovery_target_action = 'promote'"
+  fi
+} >>"$PGDATA/postgresql.auto.conf"
+touch "$PGDATA/recovery.signal"
+log "base backup in place after ${t_fetch}s; target: ${target_time:-${target_name:-latest archived WAL}}"
+[ "$start" = 1 ] || { log "start Postgres on this data directory to replay WAL"; exit 0; }
+
+# Replay with the production config (recovery refuses max_connections, max_worker_processes,
+# max_wal_senders... lower than the primary's), a private socket, no TCP, and no archiving
+# of the restored timeline.
+sock=$(mktemp -d)
+conf=${PG_CONFIG_FILE:-/etc/postgresql/postgresql.conf}
+opts="-c listen_addresses='' -c unix_socket_directories='$sock' -c archive_mode=off"
+if [ -f "$conf" ]; then
+  opts="-c config_file=$conf -c data_directory=$PGDATA -c hba_file=$PGDATA/pg_hba.conf -c ident_file=$PGDATA/pg_ident.conf $opts"
+  opts="$opts -c shared_buffers=${PG_SHARED_BUFFERS:-2GB} -c effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-6GB}"
+fi
+BACKUP_ENABLED=false pg_ctl -D "$PGDATA" -w -t 3600 -l "$PGDATA/restore.log" -o "$opts ${RESTORE_PG_OPTS:-}" start >/dev/null
+psqlq() { psql -h "$sock" -U "${PGUSER:-postgres}" -d "${PGDATABASE:-postgres}" -XAtqc "$1"; }
+for _ in $(seq 1 3600); do
+  [ "$(psqlq 'select pg_is_in_recovery()')" = f ] && break
+  sleep 1
+done
+[ "$(psqlq 'select pg_is_in_recovery()')" = f ] || die "still in recovery after an hour, see $PGDATA/restore.log"
+t_total=$(( $(date +%s) - t0 ))
+last=$(psqlq "select coalesce(to_char(pg_last_xact_replay_timestamp() at time zone 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"'), 'n/a')")
+log "recovered and promoted: fetch ${t_fetch}s, total ${t_total}s, last replayed commit $last"
+if [ "$check" = 1 ]; then
+  db=${CHECK_DATABASE:-${POSTGRES_DB:-postgres}}
+  log "row counts in $db (exact):"
+  psql -h "$sock" -U "${PGUSER:-postgres}" -d "$db" -XAt -F ' ' -c "
+    select t, (xpath('/row/c/text()', query_to_xml(format('select count(*) as c from %I', t), false, true, '')))[1]::text::bigint
+    from unnest(array['users','companies','vacancies','resumes','applications','conversations','messages']) t
+    where to_regclass(t) is not null" | sed 's/^/  /' || true
+fi
+pg_ctl -D "$PGDATA" -w -m fast stop >/dev/null
+rm -rf "$sock"
+echo "RESTORE_BACKUP=$backup RESTORE_FETCH_SECONDS=$t_fetch RESTORE_TOTAL_SECONDS=$t_total RESTORE_LAST_COMMIT=$last"

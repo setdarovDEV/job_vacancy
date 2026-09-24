@@ -12,41 +12,17 @@ import { useLocale } from "../i18n/hooks";
 import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
 import { groupDigits } from "../lib/format";
+import { readRecent, saveRecent, type Suggest } from "../search/recent";
 import { followAnchor, placeUnder } from "./anchor";
 import { Avatar } from "./Avatar";
 import { Button } from "./Button";
 import { fieldControl, fieldShell } from "./Field";
 import { Select } from "./Select";
 
-type Suggest = {
-  titles?: { title?: string; vacancies?: number }[];
-  companies?: { id: string; name: string; slug: string; logo_url: string | null; verified: boolean }[];
-  skills?: { id: number; name: string }[];
-};
 type Option =
   | { kind: "recent" | "title" | "skill"; key: string; label: string; count?: number }
   | { kind: "company"; key: string; label: string; slug: string; logo: string | null; verified: boolean };
 type Group = { id: string; label: string; options: Option[] };
-
-const RECENT_KEY = "jv_recent_searches";
-const RECENT_MAX = 6;
-
-function readRecent(): string[] {
-  try {
-    const v: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, RECENT_MAX) : [];
-  } catch {
-    return []; // private mode, blocked storage, bad JSON
-  }
-}
-function saveRecent(q: string) {
-  try {
-    const list = [q, ...readRecent().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, RECENT_MAX);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-  } catch {
-    /* storage unavailable: recent searches are a convenience */
-  }
-}
 
 /** The typed part of a suggestion in full ink, the rest a step quieter. */
 function highlight(label: string, q: string): ReactNode {
@@ -313,11 +289,12 @@ export function SearchBar({
         className,
       )}
     >
-      {/* Glass keeps its own shadows: the focus ring is a separate layer that only fades in. */}
+      {/* Glass keeps its own shadows: the focus ring is a separate layer that only fades in. The
+          solid focus-blue edge carries the 3:1 contrast; the soft ring alone doesn't reach it. */}
       {glass && (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 rounded-[inherit] opacity-0 shadow-ring transition-opacity duration-200 group-focus-within/search:opacity-100"
+          className="pointer-events-none absolute inset-0 rounded-[inherit] border border-focus opacity-0 shadow-ring transition-opacity duration-200 group-focus-within/search:opacity-100"
         />
       )}
       {hidden.map(([k, v]) => (

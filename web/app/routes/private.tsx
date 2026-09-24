@@ -2,11 +2,12 @@ import { useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router";
 
 import type { Route } from "./+types/private";
-import { useSession } from "~/shared/auth/session";
+import { refresh, useSession } from "~/shared/auth/session";
 import { localizedPath, stripLocale } from "~/shared/i18n/config";
 import { useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { QueryProvider } from "~/shared/query/query";
+import { ErrorState } from "~/shared/ui/ErrorState";
 import { Skeleton, SkeletonText } from "~/shared/ui/Skeleton";
 
 export const meta: Route.MetaFunction = () => [{ name: "robots", content: "noindex" }];
@@ -15,27 +16,41 @@ export const meta: Route.MetaFunction = () => [{ name: "robots", content: "noind
  * Signed-in areas. The access token lives only in browser memory, so these pages render
  * a placeholder on the server and load their data in the browser. The placeholder has the
  * shape of the page that follows (cabinet with sidebar, chat, resume), so restoring the
- * session doesn't make the layout jump.
+ * session doesn't make the layout jump. When the session can't be restored because the network
+ * is down, it says so and retries (by hand, or when the connection returns) instead of sending a
+ * signed-in person to the login page.
  */
 export default function PrivateLayout() {
-  const { status } = useSession();
+  const { status, offline } = useSession();
   const navigate = useNavigate();
   const locale = useLocale();
   const { pathname, search } = useLocation();
 
   useEffect(() => {
-    if (status === "anon") {
+    if (status === "anon" && !offline) {
       navigate(`${localizedPath(locale, "/login")}?next=${encodeURIComponent(pathname + search)}`, { replace: true });
     }
-  }, [status, navigate, locale, pathname, search]);
+  }, [status, offline, navigate, locale, pathname, search]);
 
-  if (status !== "authed") {
-    return <PrivateSkeleton path={stripLocale(pathname)} />;
-  }
+  // App pages fill at least the first screen, so the footer starts below the fold: lists that
+  // arrive shorter or longer than their skeleton never drag it across the viewport (CLS).
   return (
-    <QueryProvider>
-      <Outlet />
-    </QueryProvider>
+    <div className="min-h-[calc(100dvh-var(--header-h))]">
+      {status === "authed" ? (
+        <QueryProvider>
+          <Outlet />
+        </QueryProvider>
+      ) : status === "anon" && offline ? (
+        <div className="container-page py-10 md:py-16">
+          <div className="surface-card mx-auto max-w-xl">
+            {/* A TypeError is what fetch throws offline: ErrorState words it as a network problem. */}
+            <ErrorState error={new TypeError("offline")} headingAs="h1" onRetry={() => refresh()} />
+          </div>
+        </div>
+      ) : (
+        <PrivateSkeleton path={stripLocale(pathname)} />
+      )}
+    </div>
   );
 }
 
@@ -100,7 +115,7 @@ function CabinetShape() {
 // Chat: conversation list beside the thread (list only on phones).
 function ChatShape() {
   return (
-    <div className="container-page h-[calc(100dvh-var(--header-h))] py-0 md:py-5">
+    <div className="container-page h-app py-0 md:py-5">
       <div className="flex h-full overflow-hidden border-line bg-surface md:rounded-sheet md:border">
         <div className="flex w-full shrink-0 flex-col gap-1 border-line p-3 md:w-80 md:border-r">
           <Skeleton className="mb-2 h-11 rounded-control" />

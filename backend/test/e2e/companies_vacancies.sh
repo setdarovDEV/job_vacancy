@@ -9,6 +9,7 @@ pass=0; fail=0
 check() { if [ "$2" == "$3" ]; then echo "  ✔ $1"; pass=$((pass+1)); else echo "  ✘ $1 (got '$2', want '$3')"; fail=$((fail+1)); fi; }
 req() { curl -s -o $SP/body.json -w '%{http_code}' "$@"; }
 J() { jq -r "$1" $SP/body.json; }
+hdr() { local k=$1; shift; curl -s -o /dev/null -D - "$@" | tr -d '\r' | grep -i "^$k:" | head -1 | cut -d' ' -f2-; }
 H='Content-Type: application/json'
 mailcode() { sleep 1.5; curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
 register() { # email role -> prints access token
@@ -94,6 +95,20 @@ check "slug unchanged after edit" "$(J .data.slug)" "$VSLUG"
 check "admin verifies company" "$(req -X PUT $API/admin/companies/$CID/verification -H "Authorization: Bearer $T_A")$(J .data.verified)" "200true"
 req -X POST $API/admin/vacancies/$VID/approve -H "Authorization: Bearer $T_A" >/dev/null
 check "verified edit stays published" "$(req -X PUT $API/vacancies/$VID -H "Authorization: Bearer $T1" -H "$H" -d "$V")$(J .data.status)" "200published"
+
+echo "== response cache (TZ BE-05)"
+curl -s -o /dev/null $API/vacancies/$VSLUG   # warm
+check "public page from cache" "$(hdr x-cache $API/vacancies/$VSLUG)" HIT
+check "anonymous Cache-Control" "$(hdr cache-control $API/vacancies/$VSLUG)" "public, max-age=60"
+ETAG=$(hdr etag $API/vacancies/$VSLUG)
+check "If-None-Match → 304" $(req -H "If-None-Match: $ETAG" $API/vacancies/$VSLUG) 304
+check "pre-gzipped bytes" "$(hdr content-encoding -H 'Accept-Encoding: gzip' $API/vacancies/$VSLUG)" gzip
+req -X PUT $API/vacancies/$VID -H "Authorization: Bearer $T1" -H "$H" -d "$(echo $V | jq '.title="Senior Go dasturchi (yangi)"')" >/dev/null
+check "edit visible to visitors at once" "$(req $API/vacancies/$VSLUG)$(J .data.title)" "200Senior Go dasturchi (yangi)"
+check "old ETag is stale → 200" $(req -H "If-None-Match: $ETAG" $API/vacancies/$VSLUG) 200
+check "owner gets a fresh private copy" "$(hdr cache-control -H "Authorization: Bearer $T1" $API/vacancies/$VSLUG)" "private, no-cache"
+check "company page cached" "$(curl -s -o /dev/null $API/companies/$CSLUG; hdr x-cache $API/companies/$CSLUG)" HIT
+req -X PUT $API/vacancies/$VID -H "Authorization: Bearer $T1" -H "$H" -d "$V" >/dev/null
 check "archive" "$(req -X POST $API/vacancies/$VID/archive -H "Authorization: Bearer $T1")$(J .data.status)" "200archived"
 check "archived hidden" $(req $API/vacancies/$VSLUG) 404
 check "verified submit publishes directly" "$(req -X POST $API/vacancies/$VID/submit -H "Authorization: Bearer $T1")$(J .data.status)" "200published"
@@ -140,13 +155,18 @@ check "last page" "$(req "$Q&limit=2&cursor=$NEXT")$(J '.data | length')$(J .met
 check "bad cursor 400" $(req "$Q&cursor=garbage") 400
 check "company open_vacancies" "$(req $API/companies/$CSLUG)$(J .data.open_vacancies)" "2005"
 
-echo "== views (Redis → Postgres flush every minute)"
-for i in 1 2 3; do curl -s -o /dev/null $API/vacancies/$VSLUG; done
-curl -s -o /dev/null $API/vacancies/$VSLUG -H "Authorization: Bearer $T_S"
-curl -s -o /dev/null $API/vacancies/$VSLUG -H "Authorization: Bearer $T1"   # owner: not counted
+echo "== views: beacon + GET, bots skipped (Redis → Postgres flush every minute)"
+UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
+check "beacon 204" $(req -X POST -A "$UA" $API/vacancies/$VSLUG/view) 204
+for i in 1 2; do curl -s -o /dev/null -X POST -A "$UA" $API/vacancies/$VID/view; done       # same IP: deduped
+curl -s -o /dev/null -A "$UA" $API/vacancies/$VSLUG -H "Authorization: Bearer $T_S"          # cached GET still counts
+curl -s -o /dev/null -X POST -A "$UA" $API/vacancies/$VSLUG/view -H "Authorization: Bearer $T1"  # owner: not counted
+curl -s -o /dev/null -X POST $API/vacancies/$VSLUG/view -H "Authorization: Bearer $T2"       # curl UA = bot: not counted
+curl -s -o /dev/null -X POST -A "Googlebot/2.1 (+http://www.google.com/bot.html)" $API/vacancies/$VSLUG/view -H "Authorization: Bearer $T2"
+check "beacon for unknown vacancy 404" $(req -X POST -A "$UA" $API/vacancies/no-such-vacancy-xyz/view) 404
 echo "  … waiting for the flush job"
 for i in $(seq 1 14); do sleep 5; v=$(curl -s $API/vacancies/$VID -H "Authorization: Bearer $T1" | jq .data.views_count); [ "$v" != "0" ] && break; done
-check "views deduped: 1 anon IP + 1 seeker" "$v" 2
+check "views deduped: 1 anon IP + 1 seeker, no owner, no bots" "$v" 2
 
 echo
 echo "passed: $pass  failed: $fail"

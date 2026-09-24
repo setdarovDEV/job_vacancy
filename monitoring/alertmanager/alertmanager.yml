@@ -1,0 +1,67 @@
+# Alertmanager for jobvacancy.uz (TZ OPS-04): everything goes to one Telegram chat.
+# This file is a template: entrypoint.sh fills the @...@ placeholders from the environment
+# (ALERT_TELEGRAM_*, ALERT_WATCHDOG_URL) and writes the secrets to files, so neither the
+# bot token nor the heartbeat URL ever sits in the repository or in `docker inspect`.
+#   amtool check-config <rendered file>      # CI: nginx/scripts/monitoring-lint.sh
+global:
+  resolve_timeout: 5m
+
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+
+route:
+  receiver: @DEFAULT_RECEIVER@
+  group_by: [alertname, env]
+  group_wait: 30s
+  group_interval: 2m
+  repeat_interval: 4h
+  routes:
+    # Heartbeat of the whole pipeline → healthchecks.io (alerts from outside when it stops).
+    - matchers: ['alertname="Watchdog"']
+      receiver: @WATCHDOG_RECEIVER@
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
+    # Staging has no backups of its own (it restores production's): nothing to page about.
+    - matchers: ['env="staging"', 'alertname=~"Backup.*|WalArchive.*"']
+      receiver: "null"
+    # Critical: the first notification leaves 10 s after the rule fires (≤ 2 min end to end).
+    - matchers: ['severity="critical"']
+      receiver: @DEFAULT_RECEIVER@
+      group_wait: 10s
+      group_interval: 1m
+      repeat_interval: 1h
+
+inhibit_rules:
+  - source_matchers: ['alertname="CertificateExpiresVerySoon"']
+    target_matchers: ['alertname="CertificateExpiresSoon"']
+    equal: [instance]
+  - source_matchers: ['alertname="DiskSpaceCritical"']
+    target_matchers: ['alertname=~"DiskSpaceLow|DiskWillFillIn24h"']
+    equal: [host, mountpoint]
+  # Postgres down explains the archive, pool and exporter alerts that follow it.
+  - source_matchers: ['alertname="PostgresDown"']
+    target_matchers: ['alertname=~"WalArchive.*|PostgresConnectionsHigh|DbPoolSaturated|ExporterDown|RiverQueue.*"']
+    equal: [env]
+  # Every API instance down: the probes and 5xx alerts say the same thing.
+  - source_matchers: ['alertname="SiteProbeFailed"']
+    target_matchers: ['alertname="SitePublicProbeFailed"']
+    equal: [env]
+
+receivers:
+  - name: "null"
+  - name: telegram
+    telegram_configs:
+      - api_url: @TELEGRAM_API_URL@
+        bot_token_file: /tmp/alertmanager/telegram_token
+        chat_id: @TELEGRAM_CHAT_ID@
+        message_thread_id: @TELEGRAM_THREAD_ID@
+        parse_mode: HTML
+        disable_notifications: false
+        send_resolved: true
+        message: '{{ template "jv.telegram.message" . }}'
+  - name: watchdog
+    webhook_configs:
+      - url_file: /tmp/alertmanager/watchdog_url
+        send_resolved: false
+        max_alerts: 1

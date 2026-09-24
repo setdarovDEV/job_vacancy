@@ -7,6 +7,7 @@ package gen
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -73,6 +74,51 @@ func (q *Queries) GetVacanciesByIDs(ctx context.Context, ids []uuid.UUID) ([]Get
 	return items, nil
 }
 
+const hideSearchTerm = `-- name: HideSearchTerm :exec
+INSERT INTO search_hidden_terms (term, hidden_by) VALUES ($1, $2)
+ON CONFLICT (term) DO NOTHING
+`
+
+type HideSearchTermParams struct {
+	Term     string
+	HiddenBy *uuid.UUID
+}
+
+func (q *Queries) HideSearchTerm(ctx context.Context, arg HideSearchTermParams) error {
+	_, err := q.db.Exec(ctx, hideSearchTerm, arg.Term, arg.HiddenBy)
+	return err
+}
+
+const listHiddenSearchTerms = `-- name: ListHiddenSearchTerms :many
+SELECT term, created_at FROM search_hidden_terms ORDER BY term
+`
+
+type ListHiddenSearchTermsRow struct {
+	Term      string
+	CreatedAt time.Time
+}
+
+// Words or phrases hidden from the public "popular searches" list (TZ SEC-07).
+func (q *Queries) ListHiddenSearchTerms(ctx context.Context) ([]ListHiddenSearchTermsRow, error) {
+	rows, err := q.db.Query(ctx, listHiddenSearchTerms)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListHiddenSearchTermsRow{}
+	for rows.Next() {
+		var i ListHiddenSearchTermsRow
+		if err := rows.Scan(&i.Term, &i.CreatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listVacancyIDsAfter = `-- name: ListVacancyIDsAfter :many
 SELECT id FROM vacancies WHERE id > $1 ORDER BY id LIMIT $2
 `
@@ -117,17 +163,23 @@ func (q *Queries) SetVacancySearchCompany(ctx context.Context, arg SetVacancySea
 }
 
 const suggestCompanies = `-- name: SuggestCompanies :many
-SELECT id, name, slug, logo_url, (verified_at IS NOT NULL)::boolean AS verified
-FROM companies
-WHERE status = 'active'
-  AND (lower(name) LIKE lower($1::text) || '%' OR lower(name) % lower($1::text))
-ORDER BY lower(name) LIKE lower($1::text) || '%' DESC, similarity(lower(name), lower($1::text)) DESC
-LIMIT $2
+(SELECT id, name, slug, logo_url, (verified_at IS NOT NULL)::boolean AS verified
+ FROM companies
+ WHERE status = 'active' AND lower(name) COLLATE "C" LIKE $1::text || '%'
+ ORDER BY lower(name) COLLATE "C"
+ LIMIT $2)
+UNION ALL
+(SELECT id, name, slug, logo_url, (verified_at IS NOT NULL)::boolean AS verified
+ FROM companies
+ WHERE status = 'active' AND lower(name) % lower($3::text)
+ ORDER BY lower(name) <-> lower($3::text)
+ LIMIT $2)
 `
 
 type SuggestCompaniesParams struct {
-	Q          string
+	Prefix     string
 	MaxResults int32
+	Q          string
 }
 
 type SuggestCompaniesRow struct {
@@ -138,8 +190,12 @@ type SuggestCompaniesRow struct {
 	Verified bool
 }
 
+// Company suggestions: names starting with the prefix first (companies_name_prefix_idx),
+// then the closest names by trigram distance (KNN on companies_name_gist_idx). Each
+// branch stops after max_results rows however many names match; Go drops duplicates.
+// prefix is the lower-cased input with LIKE wildcards escaped.
 func (q *Queries) SuggestCompanies(ctx context.Context, arg SuggestCompaniesParams) ([]SuggestCompaniesRow, error) {
-	rows, err := q.db.Query(ctx, suggestCompanies, arg.Q, arg.MaxResults)
+	rows, err := q.db.Query(ctx, suggestCompanies, arg.Prefix, arg.MaxResults, arg.Q)
 	if err != nil {
 		return nil, err
 	}
@@ -166,15 +222,15 @@ func (q *Queries) SuggestCompanies(ctx context.Context, arg SuggestCompaniesPara
 
 const suggestTitles = `-- name: SuggestTitles :many
 WITH m AS MATERIALIZED (
-    SELECT s.vacancy_id, s.title FROM vacancy_search s
+    SELECT s.title, s.display_title, s.published_at FROM vacancy_search s
     WHERE s.is_published AND s.document @@ to_tsquery('simple', $2::text)
     ORDER BY s.published_at DESC
-    LIMIT 2000
+    LIMIT 500
 )
-SELECT min(v.title)::text AS title, count(*) AS vacancies
-FROM m JOIN vacancies v ON v.id = m.vacancy_id
+SELECT COALESCE(min(m.display_title), min(m.title))::text AS title, count(*) AS vacancies
+FROM m
 GROUP BY m.title
-ORDER BY count(*) DESC, max(v.published_at) DESC
+ORDER BY count(*) DESC, max(m.published_at) DESC
 LIMIT $1
 `
 
@@ -189,10 +245,12 @@ type SuggestTitlesRow struct {
 }
 
 // Title suggestions: the ":*A" labels in the tsquery restrict matching to title lexemes.
-// Grouped by folded title so "Kassir" and "кассир" collapse into one suggestion.
-// Only the newest 2000 matches are grouped: suggestions need to be fast on every
-// keystroke, and the most common titles are well represented in that sample.
-// "vacancies" is therefore a lower bound for very broad prefixes.
+// Grouped by folded title so "Kassir" and "кассир" collapse into one suggestion, shown
+// with an original spelling (display_title; the folded title only for a row written
+// before that column existed). Only the newest 500 matches are grouped, all from
+// vacancy_search alone (TZ BE-11): suggestions run on every keystroke, and the most
+// common titles are well represented in that sample. "vacancies" is therefore a lower
+// bound for very broad prefixes.
 func (q *Queries) SuggestTitles(ctx context.Context, arg SuggestTitlesParams) ([]SuggestTitlesRow, error) {
 	rows, err := q.db.Query(ctx, suggestTitles, arg.MaxResults, arg.Tsquery)
 	if err != nil {
@@ -213,15 +271,27 @@ func (q *Queries) SuggestTitles(ctx context.Context, arg SuggestTitlesParams) ([
 	return items, nil
 }
 
+const unhideSearchTerm = `-- name: UnhideSearchTerm :execrows
+DELETE FROM search_hidden_terms WHERE term = $1
+`
+
+func (q *Queries) UnhideSearchTerm(ctx context.Context, term string) (int64, error) {
+	result, err := q.db.Exec(ctx, unhideSearchTerm, term)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const upsertVacancySearch = `-- name: UpsertVacancySearch :exec
 INSERT INTO vacancy_search (vacancy_id, is_published, published_at, is_featured, company_id,
                             category_id, region_id, district_id, employment_type, work_format,
                             experience, schedule, salary_min, salary_max, currency,
-                            title, tags, company, meta, body)
+                            display_title, title, tags, company, meta, body)
 SELECT v.id, v.status = 'published', v.published_at, v.is_featured, v.company_id,
        v.category_id, v.region_id, v.district_id, v.employment_type, v.work_format,
        v.experience, v.schedule, v.salary_min, v.salary_max, v.currency,
-       $2, $3, $4, $5, $6
+       v.title, $2, $3, $4, $5, $6
 FROM vacancies v WHERE v.id = $1
 ON CONFLICT (vacancy_id) DO UPDATE
 SET is_published = EXCLUDED.is_published, published_at = EXCLUDED.published_at,
@@ -231,6 +301,7 @@ SET is_published = EXCLUDED.is_published, published_at = EXCLUDED.published_at,
     work_format = EXCLUDED.work_format, experience = EXCLUDED.experience,
     schedule = EXCLUDED.schedule, salary_min = EXCLUDED.salary_min,
     salary_max = EXCLUDED.salary_max, currency = EXCLUDED.currency,
+    display_title = EXCLUDED.display_title,
     title = EXCLUDED.title, tags = EXCLUDED.tags, company = EXCLUDED.company,
     meta = EXCLUDED.meta, body = EXCLUDED.body
 `
@@ -244,7 +315,8 @@ type UpsertVacancySearchParams struct {
 	Body    string
 }
 
-// Copies the filter/rank columns from the vacancy row; the folded text comes from Go.
+// Copies the filter/rank columns and the title as written from the vacancy row; the folded
+// text comes from Go.
 func (q *Queries) UpsertVacancySearch(ctx context.Context, arg UpsertVacancySearchParams) error {
 	_, err := q.db.Exec(ctx, upsertVacancySearch,
 		arg.ID,

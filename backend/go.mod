@@ -4,6 +4,7 @@ go 1.27.1
 
 require (
 	github.com/MicahParks/keyfunc/v3 v3.8.2
+	github.com/alicebob/miniredis/v2 v2.39.0
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.3.2
@@ -26,7 +27,6 @@ require (
 
 require (
 	github.com/MicahParks/jwkset v0.11.3 // indirect
-	github.com/alicebob/miniredis/v2 v2.39.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect

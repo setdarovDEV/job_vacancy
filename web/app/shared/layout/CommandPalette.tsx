@@ -3,7 +3,7 @@ import {
   BadgeCheck, Briefcase, Building2, Clock, CornerDownLeft, Handshake, House, LogIn, Plus, Search, Tag, UserPlus, X,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { useNavigate } from "react-router";
 
 import { api } from "../api/client";
@@ -13,16 +13,12 @@ import { useLocale } from "../i18n/hooks";
 import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
 import { groupDigits } from "../lib/format";
+import { readRecent, saveRecent, type Suggest } from "../search/recent";
 import { Avatar } from "../ui/Avatar";
 import { Kbd } from "../ui/Kbd";
 import { Spinner } from "../ui/Spinner";
 import { accountLinks, postVacancyHref } from "./UserArea";
 
-type Suggest = {
-  titles?: { title?: string; vacancies?: number }[];
-  companies?: { id: string; name: string; slug: string; logo_url: string | null; verified: boolean }[];
-  skills?: { id: number; name: string }[];
-};
 type Item = {
   id: string;
   label: string;
@@ -34,26 +30,6 @@ type Item = {
   remember?: string;
 };
 type Group = { id: string; label?: string; items: Item[] };
-
-// Shared with SearchBar (same key and cap), so recent searches follow the user between the two.
-const RECENT_KEY = "jv_recent_searches";
-const RECENT_MAX = 6;
-function readRecent(): string[] {
-  try {
-    const v: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, RECENT_MAX) : [];
-  } catch {
-    return []; // private mode, blocked storage, bad JSON
-  }
-}
-function saveRecent(q: string) {
-  try {
-    const list = [q, ...readRecent().filter((x) => x.toLowerCase() !== q.toLowerCase())].slice(0, RECENT_MAX);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-  } catch {
-    /* storage unavailable: recent searches are a convenience */
-  }
-}
 
 // Case- and apostrophe-insensitive (o'z / oʻz / o‘z are the same letter to a typist).
 const norm = (s: string) => s.toLocaleLowerCase().replace(/[ʻʼ‘’`']/g, "");
@@ -77,8 +53,12 @@ const tile = (Icon: LucideIcon) => <Icon className="size-4.5" aria-hidden="true"
  * in its own chunk, fetched on the first shortcut or search-button press (see SiteHeader).
  * Combobox pattern: focus stays in the field, arrows move the highlighted option, Enter opens
  * it; results are announced. Suggestions come from /search/suggest (debounced, cached).
+ * On close focus goes back to what opened it (`returnFocus` when nothing was focused, e.g. a tap
+ * on iOS), or to the page content after a result was opened.
  */
-export default function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export default function CommandPalette({
+  open, onOpenChange, returnFocus,
+}: { open: boolean; onOpenChange: (v: boolean) => void; returnFocus?: RefObject<HTMLElement | null> }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const navigate = useNavigate();
@@ -87,6 +67,8 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
   const uid = useId();
   const listId = `${uid}-list`;
   const input = useRef<HTMLInputElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const navigated = useRef(false);
 
   const [text, setText] = useState("");
   const [active, setActive] = useState(0);
@@ -202,6 +184,7 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
   const go = (item: Item | undefined) => {
     if (!item) return;
     if (item.remember) saveRecent(item.remember);
+    navigated.current = true;
     onOpenChange(false);
     navigate(localizedPath(locale, item.to));
   };
@@ -228,6 +211,21 @@ export default function CommandPalette({ open, onOpenChange }: { open: boolean; 
         <D.Overlay className="anim-overlay fixed inset-0 z-50 bg-overlay" />
         <D.Content
           aria-describedby={undefined}
+          onOpenAutoFocus={() => {
+            // Fired before Radix focuses the field: activeElement is still the opener.
+            const el = document.activeElement;
+            opener.current = el instanceof HTMLElement && el !== document.body ? el : null;
+            navigated.current = false;
+          }}
+          onCloseAutoFocus={(e) => {
+            // No <D.Trigger> here, so Radix would drop focus on <body>. After opening a result the
+            // new page's content takes it (RouteAnnouncer says which page); else the opener does.
+            // preventScroll: the opener usually sits in the sticky header.
+            e.preventDefault();
+            const back = opener.current?.isConnected ? opener.current : returnFocus?.current;
+            const to = navigated.current ? document.getElementById("main") : back;
+            to?.focus({ preventScroll: true });
+          }}
           className={cn(
             "glass-sheet anim-pop fixed inset-x-3 top-[max(0.75rem,env(safe-area-inset-top))] z-50 mx-auto flex max-w-xl origin-top flex-col overflow-hidden rounded-sheet",
             "max-h-[min(36rem,calc(100dvh-1.5rem))] md:top-[12vh] md:max-h-[min(36rem,76dvh)]",

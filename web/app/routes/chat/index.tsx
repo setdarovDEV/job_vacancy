@@ -26,7 +26,7 @@ export default function Chat() {
   }, [qc]);
 
   return (
-    <div className="container-page h-[calc(100dvh-4rem)] py-0 md:py-5">
+    <div className="container-page h-app py-0 md:py-5">
       <div className="flex h-full overflow-hidden border-line bg-surface md:rounded-sheet md:border">
         <aside className={cn("w-full shrink-0 border-line md:w-80 md:border-r", id ? "hidden md:flex" : "flex")}>
           <ConversationList activeId={id} />

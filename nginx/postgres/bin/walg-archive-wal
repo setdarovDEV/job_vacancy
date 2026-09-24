@@ -1,0 +1,15 @@
+#!/bin/bash
+# archive_command (postgresql.conf): ship one WAL segment offsite with wal-g.
+# BACKUP_ENABLED=false (staging, restore drills) turns archiving into a no-op so a copy of
+# the database never writes into the production archive. A failure returns non-zero:
+# Postgres keeps the segment and retries (watch pg_stat_archiver.failed_count).
+set -uo pipefail
+if [ "${BACKUP_ENABLED:-true}" != "true" ]; then
+  exit 0
+fi
+. "$(dirname "$0")/walg-env"
+if [ -z "$WALG_S3_PREFIX" ]; then
+  echo "walg-archive-wal: BACKUP_ENABLED=true but BACKUP_S3_PREFIX is empty" >&2
+  exit 1
+fi
+exec "$WALG" wal-push "$1"

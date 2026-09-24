@@ -1,0 +1,59 @@
+# Business dashboard (TZ OPS-04 "biznes"). Row counts per day use the time-ordered UUIDv7
+# primary keys: every id created after T sorts after the smallest UUID with T's 48-bit
+# millisecond prefix, so "created in the last 24 h" is a range scan of the primary key
+# (Index Only Scan / Index Scan on <table>_pkey), not a scan of the table.
+# Inserts per hour for every table (messages included) come for free from
+# postgres_exporter: pg_stat_user_tables_n_tup_ins.
+collector_name: business
+
+metrics:
+  # Plan: Index Scan on users_pkey (id >= <24h bound>), role read from the matching rows.
+  - metric_name: jv_signups_24h
+    type: gauge
+    help: "Accounts created in the last 24 hours, by role."
+    key_labels: [role]
+    values: [accounts]
+    query: |
+      SELECT r.role::text AS role, count(u.id) AS accounts
+      FROM unnest(enum_range(NULL::user_role)) AS r(role)
+      LEFT JOIN users u ON u.role = r.role
+        AND u.id >= (lpad(to_hex(floor(extract(epoch FROM now() - interval '24 hours') * 1000)::bigint), 12, '0') || repeat('0', 20))::uuid
+      GROUP BY r.role
+
+  # Plan: Index Only Scan on applications_pkey / vacancies_pkey / companies_pkey / resumes_pkey.
+  - metric_name: jv_created_24h
+    type: gauge
+    help: "Rows created in the last 24 hours, by entity."
+    key_labels: [entity]
+    values: [created]
+    query: |
+      WITH b AS (
+        SELECT (lpad(to_hex(floor(extract(epoch FROM now() - interval '24 hours') * 1000)::bigint), 12, '0') || repeat('0', 20))::uuid AS since
+      )
+      SELECT 'applications' AS entity, (SELECT count(*) FROM applications, b WHERE applications.id >= b.since) AS created
+      UNION ALL SELECT 'vacancies', (SELECT count(*) FROM vacancies, b WHERE vacancies.id >= b.since)
+      UNION ALL SELECT 'companies', (SELECT count(*) FROM companies, b WHERE companies.id >= b.since)
+      UNION ALL SELECT 'resumes', (SELECT count(*) FROM resumes, b WHERE resumes.id >= b.since)
+
+  # Plan: Index Only Scan on vacancies_published_idx (partial, status = 'published').
+  - metric_name: jv_vacancies_published
+    type: gauge
+    help: "Vacancies currently published."
+    values: [vacancies]
+    query: |
+      SELECT count(*) AS vacancies FROM vacancies WHERE status = 'published'
+
+  # Plan: Index Only Scan on vacancies_moderation_idx (partial on submitted_at, status = 'moderation').
+  - metric_name: jv_moderation_queue
+    type: gauge
+    help: "Vacancies waiting for moderation."
+    values: [vacancies]
+    query: |
+      SELECT count(*) AS vacancies FROM vacancies WHERE status = 'moderation'
+  - metric_name: jv_moderation_oldest_seconds
+    type: gauge
+    help: "How long the oldest vacancy has been waiting for moderation; 0 when the queue is empty."
+    values: [seconds]
+    query: |
+      SELECT COALESCE(EXTRACT(EPOCH FROM now() - min(submitted_at)), 0)::float8 AS seconds
+      FROM vacancies WHERE status = 'moderation'

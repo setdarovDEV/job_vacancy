@@ -76,7 +76,7 @@ var (
 func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(mw.RequestID, mw.ClientIP(d.TrustProxy, d.TrustedProxies), mw.Observe(d.Log), mw.Recover(d.Log),
-		mw.CORS(d.CORSOrigins))
+		mw.CORS(d.CORSOrigins), mw.RejectBadURL)
 	if d.RequestTimeout > 0 {
 		r.Use(mw.Timeout(d.RequestTimeout, d.SlowRequestTimeout))
 	}
@@ -155,6 +155,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Use(mw.RequireRole("admin"))
 				r.Route("/companies", d.CompanyHandler.AdminRoutes)
 				r.Route("/vacancies", d.VacancyHandler.AdminRoutes)
+				r.Route("/search", d.VacancyHandler.AdminSearchRoutes)
 			})
 		})
 	})

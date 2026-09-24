@@ -189,17 +189,44 @@ func (q *Queries) DeleteVacancySkills(ctx context.Context, vacancyID uuid.UUID) 
 	return err
 }
 
-const expireVacancies = `-- name: ExpireVacancies :execrows
-UPDATE vacancies SET status = 'expired'
-WHERE status = 'published' AND expires_at < now()
+const expireVacancies = `-- name: ExpireVacancies :many
+UPDATE vacancies v SET status = 'expired'
+FROM companies c
+WHERE c.id = v.company_id AND v.status = 'published' AND v.expires_at < now()
+RETURNING v.id, v.slug, v.company_id, c.slug AS company_slug
 `
 
-func (q *Queries) ExpireVacancies(ctx context.Context) (int64, error) {
-	result, err := q.db.Exec(ctx, expireVacancies)
+type ExpireVacanciesRow struct {
+	ID          uuid.UUID
+	Slug        string
+	CompanyID   uuid.UUID
+	CompanySlug string
+}
+
+// Returns what the response caches need to drop (TZ BE-05). Only vacancy rows are locked.
+func (q *Queries) ExpireVacancies(ctx context.Context) ([]ExpireVacanciesRow, error) {
+	rows, err := q.db.Query(ctx, expireVacancies)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.RowsAffected(), nil
+	defer rows.Close()
+	items := []ExpireVacanciesRow{}
+	for rows.Next() {
+		var i ExpireVacanciesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.CompanyID,
+			&i.CompanySlug,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getVacancyByID = `-- name: GetVacancyByID :one
@@ -424,6 +451,40 @@ func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQue
 			&i.CompanySlug,
 			&i.CompanyVerifiedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPublishedVacancyRefs = `-- name: ListPublishedVacancyRefs :many
+SELECT id, slug FROM vacancies
+WHERE company_id = $1 AND status = 'published'
+ORDER BY published_at DESC, id DESC
+LIMIT 1000
+`
+
+type ListPublishedVacancyRefsRow struct {
+	ID   uuid.UUID
+	Slug string
+}
+
+// A company's live vacancies, whose cached pages show the company (name, logo, badge).
+// Served by vacancies_company_pub_idx.
+func (q *Queries) ListPublishedVacancyRefs(ctx context.Context, companyID uuid.UUID) ([]ListPublishedVacancyRefsRow, error) {
+	rows, err := q.db.Query(ctx, listPublishedVacancyRefs, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListPublishedVacancyRefsRow{}
+	for rows.Next() {
+		var i ListPublishedVacancyRefsRow
+		if err := rows.Scan(&i.ID, &i.Slug); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

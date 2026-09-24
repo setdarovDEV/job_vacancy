@@ -31,6 +31,7 @@ type Handler struct{ Svc *Service }
 func (h *Handler) Routes(r chi.Router, auth *mw.Authenticator) {
 	r.Get("/", h.list)
 	r.With(auth.Optional).Get("/{vacancy}", h.get)
+	r.With(auth.Optional).Post("/{vacancy}/view", h.view)
 	r.Group(func(r chi.Router) {
 		r.Use(auth.Require)
 		r.Put("/{vacancy}", h.update)
@@ -60,69 +61,12 @@ func (h *Handler) AdminRoutes(r chi.Router) {
 	r.Post("/{vacancy}/reject", h.reject)
 }
 
-// ---- public ----------------------------------------------------------------------------
-
-func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	f, err := parseFilter(r)
-	if err != nil {
-		response.Error(w, r, err)
-		return
-	}
-	res, err := h.Svc.Cache.Get(r.Context(), f, func(ctx context.Context) (ListResult, error) { return h.Svc.List(ctx, f) })
-	if err != nil {
-		response.Error(w, r, err)
-		return
-	}
-	if !f.Query.Empty() && f.After == nil && len(res.Cards) > 0 {
-		h.Svc.Cache.RecordSearch(r.Context(), r.URL.Query().Get("q"))
-	}
-	w.Header().Set("Cache-Control", "public, max-age=15")
-	response.List(w, res.Cards, listMeta{NextCursor: res.NextCursor, Total: res.Total,
-		TotalCapped: res.TotalCapped, Fuzzy: res.Fuzzy})
-}
-
-type listMeta struct {
-	NextCursor  *string `json:"next_cursor"`
-	Total       *int    `json:"total,omitempty"`
-	TotalCapped bool    `json:"total_capped,omitempty"`
-	Fuzzy       bool    `json:"fuzzy,omitempty"`
-}
-
-func (h *Handler) suggest(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query().Get("q")
-	if len(q) > 100 {
-		q = q[:100]
-	}
-	out, err := h.Svc.Suggest(r.Context(), q)
-	if err != nil {
-		response.Error(w, r, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=60")
-	response.JSON(w, http.StatusOK, out)
-}
-
-func (h *Handler) popular(w http.ResponseWriter, r *http.Request) {
-	out, err := h.Svc.Cache.Popular(r.Context(), 10)
-	if err != nil {
-		response.Error(w, r, err)
-		return
-	}
-	w.Header().Set("Cache-Control", "public, max-age=300")
-	response.JSON(w, http.StatusOK, out)
-}
-
-func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	var viewer *reqctx.Principal
-	if p, ok := reqctx.PrincipalFrom(r.Context()); ok {
-		viewer = &p
-	}
-	d, err := h.Svc.Get(r.Context(), chi.URLParam(r, "vacancy"), viewer, reqctx.ClientIP(r.Context()).String())
-	if err != nil {
-		response.Error(w, r, err)
-		return
-	}
-	response.JSON(w, http.StatusOK, d)
+// AdminSearchRoutes are mounted under /admin/search (TZ SEC-07 moderation).
+func (h *Handler) AdminSearchRoutes(r chi.Router) {
+	r.Get("/popular", h.adminPopular)
+	r.Get("/hidden-terms", h.hiddenTerms)
+	r.Post("/hidden-terms", h.hideTerm)
+	r.Delete("/hidden-terms/{term}", h.unhideTerm)
 }
 
 // ---- employer ----------------------------------------------------------------------------

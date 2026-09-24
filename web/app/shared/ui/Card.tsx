@@ -5,8 +5,8 @@ import { LocalizedLink } from "../i18n/hooks";
 import { cn } from "../lib/cn";
 
 const paddings = { none: "", sm: "p-4", md: "p-5 md:p-6", lg: "p-6 md:p-8" } as const;
-// One radius class per card: tailwind-merge doesn't know our radius names, so two rounded-*
-// classes would both survive and the later one in the stylesheet (not in className) would win.
+// The radius is a prop (not a className override) so every card picks from the three
+// system radii.
 const radii = { control: "rounded-control", panel: "rounded-panel", sheet: "rounded-sheet" } as const;
 
 type CardOwnProps = {
@@ -92,7 +92,6 @@ export function CardHeader({
   return (
     <div className={cn("flex flex-wrap items-start justify-between gap-x-4 gap-y-3", className)}>
       <div className="min-w-0 flex-1 basis-56">
-        {/* Not through cn(): tailwind-merge treats text-lead as a color and would drop it. */}
         <Heading id={id} className={`break-words ${headerTitle[size]}`}>{title}</Heading>
         {description && <p className="mt-1 break-words text-md text-ink-2">{description}</p>}
       </div>

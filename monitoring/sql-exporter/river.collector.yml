@@ -1,0 +1,56 @@
+# River job queue (TZ OPS-04: "River navbati > 1000", latency, failures).
+# river_job indexes (River's own migrations): river_job_prioritized_fetching_index
+# (state, queue, priority, scheduled_at, id) and river_job_state_and_finalized_at_index
+# (state, finalized_at) WHERE finalized_at IS NOT NULL.
+collector_name: river
+
+metrics:
+  # Plan: Index Only Scan on river_job_prioritized_fetching_index (state = ANY(...)).
+  # Completed/cancelled/discarded rows (the bulk of the table) are never read.
+  - metric_name: jv_river_jobs
+    type: gauge
+    help: "River jobs waiting or running, by queue and state."
+    key_labels: [queue, state]
+    values: [jobs]
+    query: |
+      SELECT queue, state::text AS state, count(*) AS jobs
+      FROM river_job
+      WHERE state IN ('available', 'pending', 'retryable', 'running', 'scheduled')
+      GROUP BY queue, state
+
+  # Queue latency: how long the oldest runnable job has been waiting for a worker.
+  # Plan: Index Only Scan on river_job_prioritized_fetching_index (state = 'available').
+  - metric_name: jv_river_queue_wait_seconds
+    type: gauge
+    help: "Age of the oldest available (runnable) River job, by queue; 0 when the queue is empty."
+    key_labels: [queue]
+    values: [seconds]
+    query: |
+      SELECT q.queue, COALESCE(EXTRACT(EPOCH FROM now() - min(j.scheduled_at)), 0)::float8 AS seconds
+      FROM (VALUES ('critical'), ('default')) AS q(queue)
+      LEFT JOIN river_job j ON j.queue = q.queue AND j.state = 'available' AND j.scheduled_at <= now()
+      GROUP BY q.queue
+
+  # Plan: Index Scan on river_job_state_and_finalized_at_index (state, finalized_at > ...).
+  - metric_name: jv_river_jobs_finalized_5m
+    type: gauge
+    help: "River jobs finalized in the last 5 minutes, by kind and final state (completed, discarded, cancelled)."
+    key_labels: [kind, state]
+    values: [jobs]
+    query: |
+      SELECT kind, state::text AS state, count(*) AS jobs
+      FROM river_job
+      WHERE state IN ('completed', 'discarded', 'cancelled') AND finalized_at > now() - interval '5 minutes'
+      GROUP BY kind, state
+
+  # Plan: Index Scan on river_job_state_and_finalized_at_index (state = 'discarded').
+  - metric_name: jv_river_jobs_discarded_1h
+    type: gauge
+    help: "River jobs discarded (retries exhausted) in the last hour, by kind."
+    key_labels: [kind]
+    values: [jobs]
+    query: |
+      SELECT kind, count(*) AS jobs
+      FROM river_job
+      WHERE state = 'discarded' AND finalized_at > now() - interval '1 hour'
+      GROUP BY kind

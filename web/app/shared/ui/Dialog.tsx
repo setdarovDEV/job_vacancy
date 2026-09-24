@@ -39,6 +39,7 @@ export function DialogContent({
   title, description, closeLabel, children, footer, className, initialFocus, size = "md", role, dismissible = true,
 }: DialogProps) {
   const content = useRef<HTMLDivElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   return (
     <D.Portal>
       <D.Overlay className="anim-overlay fixed inset-0 z-50 bg-overlay" />
@@ -46,7 +47,7 @@ export function DialogContent({
         ref={content}
         // Spread only when set: an explicit undefined would drop Radix's own role="dialog".
         {...(role ? { role } : {})}
-        {...overlayGuards(content, initialFocus, dismissible)}
+        {...overlayGuards(content, initialFocus, dismissible, opener)}
         {...(description ? {} : { "aria-describedby": undefined })}
         className={cn(
           "glass-sheet anim-dialog fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] flex-col rounded-sheet py-6 md:py-7",
@@ -88,6 +89,7 @@ export function SheetContent({ title, description, closeLabel, children, footer,
   const scroller = useRef<HTMLDivElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const closeBtn = useRef<HTMLButtonElement>(null);
+  const opener = useRef<HTMLElement | null>(null);
   const setContent = useCallback((el: HTMLDivElement | null) => {
     content.current = el;
     setNode(el);
@@ -99,7 +101,7 @@ export function SheetContent({ title, description, closeLabel, children, footer,
       <D.Overlay ref={overlay} className="anim-overlay fixed inset-0 z-50 bg-overlay" />
       <D.Content
         ref={setContent}
-        {...overlayGuards(content, initialFocus, true)}
+        {...overlayGuards(content, initialFocus, true, opener)}
         {...(description ? {} : { "aria-describedby": undefined })}
         className={cn(
           "glass-sheet fixed z-50 flex flex-col",
@@ -152,10 +154,21 @@ const CloseButton = forwardRef<HTMLButtonElement, { label: string; className?: s
   },
 );
 
-/** Radix handlers shared by dialogs and sheets: initial focus, nested popovers, toasts, busy state. */
-function overlayGuards(content: RefObject<HTMLElement | null>, initialFocus: RefObject<HTMLElement | null> | undefined, dismissible: boolean) {
+/**
+ * Radix handlers shared by dialogs and sheets: initial focus, focus return, nested popovers,
+ * toasts, busy state.
+ */
+function overlayGuards(
+  content: RefObject<HTMLElement | null>,
+  initialFocus: RefObject<HTMLElement | null> | undefined,
+  dismissible: boolean,
+  opener: RefObject<HTMLElement | null>,
+) {
   return {
     onOpenAutoFocus(e: Event) {
+      // Radix fires this before it moves focus in, so activeElement is still whatever opened us.
+      const active = document.activeElement;
+      opener.current = active instanceof HTMLElement && active !== document.body ? active : null;
       const target = initialFocus?.current;
       if (target) {
         e.preventDefault();
@@ -164,6 +177,17 @@ function overlayGuards(content: RefObject<HTMLElement | null>, initialFocus: Ref
         // Touch: focusing a field would pop the on-screen keyboard over the panel.
         e.preventDefault();
         content.current?.focus({ preventScroll: true });
+      }
+    },
+    onCloseAutoFocus(e: Event) {
+      // Radix only returns focus to a <DialogTrigger>: controlled dialogs (ConfirmDialog,
+      // useConfirm, the menu sheet) would drop it on <body>. Back to the opener instead, without
+      // scrolling (it may sit in the sticky header). Gone (a deleted row): Radix's default.
+      const el = opener.current;
+      opener.current = null;
+      if (el?.isConnected) {
+        e.preventDefault();
+        el.focus({ preventScroll: true });
       }
     },
     onEscapeKeyDown(e: KeyboardEvent) {

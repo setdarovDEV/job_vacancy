@@ -24,7 +24,7 @@ export function Logo({ className }: { className?: string }) {
   return (
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <LogoMark className="size-7" />
-      <span className="font-display text-[1.0625rem] font-semibold leading-none tracking-[-0.02em] text-ink">
+      <span className="font-display text-lead font-semibold leading-none tracking-heading text-ink">
         Job Vacancy
       </span>
     </span>

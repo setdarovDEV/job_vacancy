@@ -1,0 +1,11 @@
+{{/* Telegram message (parse_mode HTML) for jobvacancy.uz alerts. Text only, escaped. */}}
+{{ define "jv.telegram.message" -}}
+{{ if eq .Status "firing" }}<b>[{{ .CommonLabels.severity | toUpper }}] {{ .CommonLabels.alertname }}</b>{{ else }}<b>[RESOLVED] {{ .CommonLabels.alertname }}</b>{{ end }} · {{ .CommonLabels.env | html }}
+{{ range .Alerts -}}
+{{ if eq $.Status "firing" }}• {{ else }}✓ {{ end }}{{ .Annotations.summary | html }}
+{{- if .Annotations.description }}
+  {{ .Annotations.description | html }}{{ end }}
+  since {{ .StartsAt.UTC.Format "2006-01-02 15:04 UTC" }}{{ if eq $.Status "resolved" }}, resolved {{ .EndsAt.UTC.Format "15:04 UTC" }}{{ end }}
+{{ end -}}
+{{ with .CommonAnnotations.runbook }}Runbook: {{ . | html }}{{ end }}
+{{- end }}

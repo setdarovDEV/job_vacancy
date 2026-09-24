@@ -10,9 +10,9 @@ const tints = [
   "bg-sunken text-ink-2",
 ];
 
-function initials(name: string) {
+function initials(name: string, letters: 1 | 2 = 2) {
   const parts = name.trim().split(/\s+/);
-  return ((parts[0]?.[0] ?? "") + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+  return ((parts[0]?.[0] ?? "") + (letters > 1 && parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
 }
 
 function hash(s: string) {
@@ -48,10 +48,12 @@ export type AvatarProps = {
   className?: string;
   /** e.g. { viewTransitionName } for list → detail transitions. */
   style?: CSSProperties;
+  /** Letters in the initials fallback (default 2). */
+  letters?: 1 | 2;
 };
 
 /** Person or company picture with an initials fallback. square=true for company logos. */
-export function Avatar({ name, src, size = "md", square, alt = "", priority, className, style }: AvatarProps) {
+export function Avatar({ name, src, size = "md", square, alt = "", priority, className, style, letters }: AvatarProps) {
   // Remember which src failed, so a new src (fresh upload) gets another chance.
   const [failed, setFailed] = useState<string | null>(null);
   const s = sizes[size];
@@ -98,14 +100,15 @@ export function Avatar({ name, src, size = "md", square, alt = "", priority, cla
       )}
       style={style}
     >
-      {initials(name)}
+      {initials(name, letters)}
     </span>
   );
 }
 
 // ~15–20% overlap: enough to read as a group while initials stay legible.
 const overlap = { xs: "-space-x-1", sm: "-space-x-1.5", md: "-space-x-2" } as const;
-// The wide display face needs one step smaller initials so the next face doesn't cover them.
+// The wide display face needs one step smaller initials so the next face doesn't cover them;
+// at xs there is no smaller step, so those faces show a single letter.
 const groupText = { xs: "", sm: "text-2xs", md: "text-xs" } as const;
 const bubble = { xs: "h-6 min-w-6 px-1 text-2xs", sm: "h-8 min-w-8 px-1.5 text-xs", md: "h-10 min-w-10 px-2 text-sm" } as const;
 
@@ -129,7 +132,7 @@ export function AvatarGroup({
       {shown.map((it, i) => (
         <li key={`${i}-${it.name}`} className="shrink-0" title={it.name}>
           {/* Faces are the only identification here, so each one is named. */}
-          <Avatar name={it.name} src={it.src} size={size} alt={it.name} className={cn("ring-2 ring-surface", groupText[size])} />
+          <Avatar name={it.name} src={it.src} size={size} alt={it.name} letters={size === "xs" ? 1 : 2} className={cn("ring-2 ring-surface", groupText[size])} />
         </li>
       ))}
       {rest > 0 && (

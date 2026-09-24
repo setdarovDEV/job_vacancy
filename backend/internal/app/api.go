@@ -110,11 +110,15 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err := catalogSvc.Start(ctx); err != nil {
 		return err
 	}
-	companySvc := &company.Service{Pool: pool, Q: q, Catalog: catalogSvc}
+	publicCache := vacancy.NewPublicCache(rdb, log)
+	publicCache.PopularMinIPs = cfg.Search.PopularMinIPs
+	companySvc := &company.Service{Pool: pool, Q: q, Catalog: catalogSvc,
+		// Profile, logo and verification changes show on vacancy pages and cards too.
+		Changed: func(ctx context.Context, c gen.Company) { publicCache.CompanyChanged(ctx, q, c) }}
 	vacancySvc := &vacancy.Service{
 		Pool: pool, Q: q, Companies: companySvc, Catalog: catalogSvc,
 		Views:  &vacancy.ViewCounter{RDB: rdb},
-		Cache:  &vacancy.ListCache{RDB: rdb, TTL: 30 * time.Second, Log: log},
+		Cache:  publicCache,
 		Notify: notifySvc,
 		Log:    log,
 	}
@@ -151,7 +155,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		}},
 		UserHandler:    &user.Handler{Q: q},
 		CatalogHandler: &catalog.Handler{Svc: catalogSvc},
-		CompanyHandler: &company.Handler{Svc: companySvc, Files: fileSvc},
+		CompanyHandler: &company.Handler{Svc: companySvc, Files: fileSvc, Cache: publicCache.Company},
 		FileHandler:    &file.Handler{Svc: fileSvc},
 		ChatHandler:    &chat.Handler{Svc: chatSvc},
 		SavedHandler: &savedsearch.Handler{Svc: &savedsearch.Service{Q: q, Vacancies: vacancySvc,

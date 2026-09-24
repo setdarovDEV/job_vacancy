@@ -149,6 +149,10 @@ const en: Messages = {
     company_not_found: "Company not found.", application_not_found: "Application not found.",
     conversation_not_found: "Conversation not found.",
     internal_error: "Something went wrong on the server. Try again in a moment.",
+    service_unavailable: "The service is temporarily unavailable. Try again in a minute.",
+    timeout: "The server took too long to respond. Please try again.",
+    invalid_request: "The request contains invalid characters. Check the link and try again.",
+    hidden_term_not_found: "This term isn't on the hidden list.",
   },
   jobs: {
     title: "Jobs",
