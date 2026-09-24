@@ -23,7 +23,7 @@ for (const path of pages) {
   const res = await p.goto(B + path, { waitUntil: "networkidle" });
   await p.waitForTimeout(500);
   const v = await p.evaluate(() => ({ ...window.__v, fcp: performance.getEntriesByName("first-contentful-paint")[0]?.startTime ?? 0, ttfb: performance.getEntriesByType("navigation")[0].responseStart }));
-  const fail = res.status() !== 200 || errors.length || v.cls > 0.1 || v.lcp > 2500;
+  const fail = res.status() !== 200 || errors.length || v.cls > 0.05 || v.lcp > 2000;
   if (fail) bad++;
   console.log(`${fail ? "✘" : "✔"} ${path.padEnd(28)} ${res.status()}  TTFB ${Math.round(v.ttfb)}ms  FCP ${Math.round(v.fcp)}ms  LCP ${Math.round(v.lcp)}ms  CLS ${v.cls.toFixed(3)}${errors.length ? "  ERR " + errors.join(" | ") : ""}`);
   await ctx.close();
