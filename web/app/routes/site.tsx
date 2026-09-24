@@ -1,4 +1,3 @@
-import { Briefcase, Building2, House } from "lucide-react";
 import type { ReactNode } from "react";
 import { data, isRouteErrorResponse, Outlet, redirect, useMatches, useRevalidator, type UIMatch } from "react-router";
 
@@ -7,16 +6,13 @@ import type { Route } from "./+types/site";
 // thrown loader 404s too; the not-found route renders the same component for /ru/xyz etc.
 import NotFound from "./not-found";
 import { isLocaleSegment } from "~/shared/i18n/config";
-import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { MobileTabBar } from "~/shared/layout/MobileTabBar";
 import { NavigationProgress } from "~/shared/layout/NavigationProgress";
 import { RouteAnnouncer } from "~/shared/layout/RouteAnnouncer";
 import { SiteFooter } from "~/shared/layout/SiteFooter";
 import { SiteHeader } from "~/shared/layout/SiteHeader";
-import { Button } from "~/shared/ui/Button";
 import { ErrorState } from "~/shared/ui/ErrorState";
-import { SearchBar } from "~/shared/ui/SearchBar";
 
 /*
  * Route handle contract — the shell reads these from `export const handle = { … }` in any route
