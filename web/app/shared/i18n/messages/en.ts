@@ -171,6 +171,9 @@ const en: Messages = {
     skill_not_found: "Skill not found.",
     skill_merge_self: "A skill can't be merged into itself.",
     user_not_found: "User not found.",
+    captcha_required: "After several failed attempts, please confirm you're not a robot.",
+    captcha_invalid: "The check didn't go through. Please try again.",
+    image_rejected: "This file couldn't be opened as an image. Upload a JPG, PNG or WebP (up to 40 megapixels).",
   },
   jobs: {
     title: "Jobs",

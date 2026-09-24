@@ -35,8 +35,14 @@ const refreshApplications = () =>
  * picker with an optional cover letter, then a success state with a drawn check.
  */
 export default function ApplyDialog({
-  open, onOpenChange, vacancy,
-}: { open: boolean; onOpenChange: (o: boolean) => void; vacancy: Schemas["VacancyDetail"] }) {
+  open, onOpenChange, vacancy, onApplied,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  vacancy: Schemas["VacancyDetail"];
+  /** Called once an application is known to exist (sent now, or found from before). */
+  onApplied?: () => void;
+}) {
   const { t } = useTranslation();
   const { status, user, offline } = useSession();
   const seeker = status === "authed" && user?.role === "seeker";
@@ -79,6 +85,12 @@ export default function ApplyDialog({
   useEffect(() => {
     if (seeker && open) void fetchData();
   }, [seeker, open, fetchData]);
+
+  const applied = done != null || (load.status === "ready" && load.appliedId != null);
+  // (setting the same flag again is a no-op for the page, so a new callback identity is harmless)
+  useEffect(() => {
+    if (applied) onApplied?.();
+  }, [applied, onApplied]);
 
   const skeleton = useSkeletonHold(status === "loading" || (seeker && load.status === "loading"));
 

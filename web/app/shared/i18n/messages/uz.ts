@@ -221,6 +221,9 @@ const uz = {
     skill_not_found: "Ko'nikma topilmadi.",
     skill_merge_self: "Ko'nikmani o'ziga birlashtirib bo'lmaydi.",
     user_not_found: "Foydalanuvchi topilmadi.",
+    captcha_required: "Bir necha marta noto'g'ri urinishdan keyin robot emasligingizni tasdiqlang.",
+    captcha_invalid: "Tekshiruv tasdiqlanmadi. Qayta urinib ko'ring.",
+    image_rejected: "Bu faylni rasm sifatida ochib bo'lmadi. JPG, PNG yoki WebP rasm yuklang (40 megapikselgacha).",
   },
   jobs: {
     title: "Vakansiyalar",

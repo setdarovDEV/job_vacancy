@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/google/uuid"
@@ -21,7 +22,8 @@ import (
 
 // ErrImageRejected: the worker could not use the upload (not a decodable image, or more
 // than imaging.MaxPixels).
-var ErrImageRejected = apperr.Validation(map[string]string{"file_id": "image"})
+var ErrImageRejected = apperr.New(http.StatusUnprocessableEntity, "image_rejected",
+	"the file could not be used as an image (JPEG, PNG or WebP up to 40 megapixels)")
 
 // Objects is the object storage images need (storage.Storage; an in-memory map in tests).
 type Objects interface {

@@ -79,16 +79,71 @@ export interface paths {
                         /** Format: email */
                         email: string;
                         password: string;
+                        /** @description solved Cloudflare Turnstile token; needed after 403 captcha_required (TZ SEC-04) */
+                        captcha_token?: string;
                     };
                 };
             };
             responses: {
                 200: components["responses"]["Auth"];
                 401: components["responses"]["Error"];
-                403: components["responses"]["Error"];
+                /** @description account_blocked, captcha_required or captcha_invalid */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
                 429: components["responses"]["Error"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/captcha": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Captcha the sign-in form shows after captcha_required (TZ SEC-04) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Cacheable for an hour */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                /** @description false: no captcha is ever asked for (only delays) */
+                                enabled: boolean;
+                                /** @enum {string|null} */
+                                provider: "turnstile" | null;
+                                /** @description Cloudflare Turnstile site key for the widget */
+                                site_key: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3147,13 +3202,22 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Download as PDF (contacts only if the viewer may see them) */
+        /**
+         * Download as PDF (contacts only if the viewer may see them)
+         * @description Rendered PDFs are kept in object storage by resume, content (updated_at included),
+         *     viewer's contact visibility and language (TZ BE-13): a repeat is served without
+         *     rendering (X-Cache: HIT). Renders are limited to 10 a minute per user (429);
+         *     cached copies are not.
+         */
         get: {
             parameters: {
                 query?: {
                     lang?: components["schemas"]["Locale"];
                 };
-                header?: never;
+                header?: {
+                    /** @description ETag of a copy the client has; unchanged content answers 304 with no body. */
+                    "If-None-Match"?: components["parameters"]["IfNoneMatch"];
+                };
                 path: {
                     resume: components["parameters"]["ResumeRef"];
                 };
@@ -3164,12 +3228,17 @@ export interface paths {
                 /** @description PDF */
                 200: {
                     headers: {
+                        ETag?: string;
+                        "X-Cache"?: "HIT" | "MISS";
                         [name: string]: unknown;
                     };
                     content: {
                         "application/pdf": unknown;
                     };
                 };
+                304: components["responses"]["NotModified"];
+                404: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -3659,7 +3728,9 @@ export interface paths {
         put?: never;
         /**
          * Start an upload (returns a presigned POST; size and type are enforced by storage)
-         * @description Limits: avatar / company_logo — jpeg, png, webp ≤ 5 MB (public URL);
+         * @description Limits: avatar / company_logo — jpeg, png, webp ≤ 5 MB; company_cover — jpeg, png, webp
+         *     ≤ 10 MB (all three are published as WebP sizes after PUT /me/avatar or
+         *     /companies/{company}/logo|cover; the upload itself stays private and is deleted);
          *     chat_image — jpeg, png, webp, gif ≤ 10 MB; chat_voice — webm, ogg, m4a (audio/mp4), mp3, aac ≤ 5 MB;
          *     chat_file — pdf, doc(x), xls(x), ppt(x), txt, zip, rar, jpeg, png ≤ 25 MB (private, signed URLs).
          */
@@ -3674,7 +3745,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** @enum {string} */
-                        purpose: "avatar" | "company_logo" | "chat_image" | "chat_file" | "chat_voice";
+                        purpose: "avatar" | "company_logo" | "company_cover" | "chat_image" | "chat_file" | "chat_voice";
                         content_type: string;
                         size: number;
                         name?: string;
@@ -3748,7 +3819,13 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Set (file_id) or remove (null) the avatar */
+        /**
+         * Set (file_id) or remove (null) the avatar
+         * @description The worker publishes the avatar as 64/128/256 px WebP squares without metadata; this
+         *     waits up to 4 s for them (usually well under a second). If they aren't ready the old
+         *     avatar is returned with avatar_pending: true and a media.ready event follows. An
+         *     upload that isn't a usable image answers 422 image_rejected.
+         */
         put: {
             parameters: {
                 query?: never;
@@ -3766,6 +3843,9 @@ export interface paths {
             };
             responses: {
                 200: components["responses"]["User"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
             };
         };
         post?: never;
@@ -3783,7 +3863,10 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Set or remove the company logo (owner/admin) */
+        /**
+         * Set or remove the company logo (owner/admin)
+         * @description A company_logo upload, published as WebP fitting 64/128/256 px boxes (transparency kept); waits like PUT /me/avatar (logo_pending).
+         */
         put: {
             parameters: {
                 query?: never;
@@ -3804,6 +3887,54 @@ export interface paths {
             };
             responses: {
                 200: components["responses"]["Company"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/companies/{company}/cover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set or remove the company cover (owner/admin)
+         * @description A company_cover upload, published as 640 and 1280 px wide WebP banners (cropped to
+         *     16:9 at most) plus cover_lqip; waits like PUT /me/avatar (cover_pending).
+         */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        file_id?: string | null;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["Company"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
             };
         };
         post?: never;
@@ -4142,6 +4273,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/rum": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Real-user Web Vitals beacon (TZ FE-06)
+         * @description Sent with navigator.sendBeacon (text/plain or application/json). Values as the
+         *     web-vitals library reports them: LCP, INP, FCP, TTFB in milliseconds, CLS unitless.
+         *     route is the page's route pattern (e.g. `/vacancies/:slug`, with or without
+         *     `/:lang?`); unknown routes count as "other". They feed the Prometheus histograms
+         *     web_vitals_{lcp,inp,fcp,ttfb}_seconds and web_vitals_cls by route. Bots are ignored.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @example /vacancies/:slug */
+                        route?: string;
+                        metrics?: {
+                            /** @enum {string} */
+                            name: "LCP" | "INP" | "CLS" | "FCP" | "TTFB";
+                            value: number;
+                        }[];
+                        /** @description a single metric may be sent flat instead of metrics[] */
+                        name?: string;
+                        value?: number;
+                    };
+                };
+            };
+            responses: {
+                204: components["responses"]["NoContent"];
+                400: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/csp-report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Content-Security-Policy violation reports (TZ SEC-03)
+         * @description Target of the policies' `report-uri` (application/csp-report) and `report-to`
+         *     (application/reports+json). Counted in csp_violations_total{directive, blocked,
+         *     disposition}; a few samples a minute are logged. Always 204.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/csp-report": Record<string, never>;
+                    "application/reports+json": Record<string, never>[];
+                };
+            };
+            responses: {
+                204: components["responses"]["NoContent"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ws/ticket": {
         parameters: {
             query?: never;
@@ -4183,7 +4404,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** WebSocket endpoint */
+        /**
+         * WebSocket endpoint
+         * @description The ticket is bound to the session that asked for it: revoking that session closes
+         *     the socket with 4001 (TZ BE-15). A restarting server closes with 1012; reconnect and
+         *     fetch missed messages over REST.
+         */
         get: {
             parameters: {
                 query: {
@@ -4689,6 +4915,19 @@ export interface components {
     schemas: {
         /** @enum {string} */
         Locale: "uz" | "uz-Cyrl" | "ru" | "en";
+        /**
+         * @description The image at each size, keyed by width in px ("64", "128", "256" for avatars and
+         *     logos; "640", "1280" for covers), all WebP (TZ BE-14). null for images from before
+         *     processing and for external pictures (Google avatars): use the *_url field.
+         * @example {
+         *       "64": "https://jobvacancy.uz/media/img/avatar/2026/09/0192…/64.webp",
+         *       "128": "…/128.webp",
+         *       "256": "…/256.webp"
+         *     }
+         */
+        ImageSizes: {
+            [key: string]: string;
+        } | null;
         Error: {
             error?: {
                 /** @example invalid_credentials */
@@ -4711,7 +4950,11 @@ export interface components {
             phone: string | null;
             phone_verified: boolean;
             full_name: string;
+            /** @description the largest size */
             avatar_url: string | null;
+            avatar_urls?: components["schemas"]["ImageSizes"];
+            /** @description a new avatar was chosen and its sizes are still being made; a media.ready event follows */
+            avatar_pending?: boolean;
             /** @enum {string} */
             role: "seeker" | "employer" | "admin";
             locale: components["schemas"]["Locale"];
@@ -4813,6 +5056,12 @@ export interface components {
             slug: string;
             logo_url: string | null;
             cover_url: string | null;
+            logo_urls?: components["schemas"]["ImageSizes"];
+            cover_urls?: components["schemas"]["ImageSizes"];
+            /** @description tiny WebP data URI of the cover, shown blurred while it loads (TZ FE-04) */
+            cover_lqip?: string | null;
+            logo_pending?: boolean;
+            cover_pending?: boolean;
             verified: boolean;
             /** Format: date-time */
             created_at: string;
@@ -4835,6 +5084,7 @@ export interface components {
             name: string;
             slug: string;
             logo_url: string | null;
+            logo_urls?: components["schemas"]["ImageSizes"];
             verified: boolean;
         };
         CompanyInvite: {
@@ -4872,6 +5122,7 @@ export interface components {
             /** @description empty for deleted accounts */
             full_name: string;
             avatar_url: string | null;
+            avatar_urls?: components["schemas"]["ImageSizes"];
             /** @enum {string} */
             role: "seeker" | "employer" | "admin";
             /** @enum {string} */
@@ -5183,6 +5434,7 @@ export interface components {
                 id?: string;
                 full_name?: string;
                 avatar_url?: string | null;
+                avatar_urls?: components["schemas"]["ImageSizes"];
             };
             category_id: number | null;
             region_id: number | null;

@@ -3,6 +3,9 @@ import type { ReactNode } from "react";
 import { data, isRouteErrorResponse, Outlet, redirect, useMatches, useRevalidator, type UIMatch } from "react-router";
 
 import type { Route } from "./+types/site";
+// One 404 design for every case: unknown URLs land here (":lang?" swallows the first segment),
+// thrown loader 404s too; the not-found route renders the same component for /ru/xyz etc.
+import NotFound from "./not-found";
 import { isLocaleSegment } from "~/shared/i18n/config";
 import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
@@ -142,44 +145,5 @@ export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
         </div>
       )}
     </Shell>
-  );
-}
-
-/** Friendly 404: say what happened, then offer a search and the main ways back in. */
-function NotFound() {
-  const { t } = useTranslation();
-  const links = [
-    { to: "/vacancies", key: "nav.vacancies", icon: Briefcase },
-    { to: "/companies", key: "nav.companies", icon: Building2 },
-    { to: "/", key: "errors.toHome", icon: House },
-  ] as const;
-  return (
-    <section className="relative isolate overflow-hidden">
-      {/* Fades out at the bottom so the colour never ends in a hard edge. */}
-      <div aria-hidden="true" className="aurora-hero aurora-fade pointer-events-none absolute inset-0 -z-10" />
-      <div className="container-page flex flex-col items-center pb-16 pt-12 text-center md:pb-24 md:pt-20">
-        <p aria-hidden="true" className="num font-display text-5xl font-semibold tracking-display text-lapis">404</p>
-        <h1 className="mt-4 max-w-xl break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">
-          {t("errors.not_found")}
-        </h1>
-        <p className="mt-3 max-w-md text-base text-ink-2">{t("shell.notFoundBody")}</p>
-        <SearchBar action="/vacancies" size="lg" material="glass" suggest recent className="mt-8 w-full max-w-2xl" />
-        <nav aria-label={t("shell.notFoundLinks")} className="mt-6">
-          <ul className="flex flex-wrap justify-center gap-2">
-            {links.map((l) => {
-              const Icon = l.icon;
-              return (
-                <li key={l.to}>
-                  {/* Solid: the header, the glass search and the tab bar are already three blur layers. */}
-                  <Button asChild variant="secondary" shape="pill" icon={<Icon className="size-4.5" />}>
-                    <LocalizedLink to={l.to} prefetch="intent">{t(l.key)}</LocalizedLink>
-                  </Button>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-      </div>
-    </section>
   );
 }

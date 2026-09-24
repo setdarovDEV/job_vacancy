@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Job Vacancy API
-  version: 0.6.0
+  version: 0.7.0
   description: |
     Shared contract for the web (React) and mobile (Flutter) clients.
 
@@ -11,9 +11,24 @@ info:
     Client frames: `{"type":"ping"}`, `{"type":"typing","conversation_id"}`,
     `{"type":"read","conversation_id","message_id"}`, `{"type":"watch_presence","user_ids":[…]}`.
     Events are not buffered: after reconnecting, fetch `/conversations/{id}/messages?after=<last id>`.
+    Close codes (TZ BE-15): `1012` the server is restarting (a rolling deploy): reconnect
+    with a new ticket, then catch up over REST as above; `4001` the session the ticket was
+    issued for was signed out or revoked (or the user blocked): don't reconnect with it,
+    refresh the token first (it fails for a revoked session). Image processing events:
+    `media.ready` `{target: avatar|logo|cover, owner_id, file_id, url, urls, lqip}` and
+    `media.failed` `{target, owner_id, file_id}`, sent to the uploader.
 
     **Uploads.** POST /files → multipart POST to `upload.url` with every `upload.fields`
     entry followed by the `file` field → POST /files/{id}/complete → use the file id.
+    Every upload is private. Avatars, company logos and covers become public only as
+    WebP sizes the worker makes from them (TZ BE-14, SEC-06: turned upright, all EXIF and
+    GPS metadata dropped, the original deleted): `avatar_urls`/`logo_urls` = `{"64","128",
+    "256"}`, `cover_urls` = `{"640","1280"}` (for `srcset`), plus `cover_lqip`, a tiny
+    blurred-preview data URI. `PUT /me/avatar` and `PUT /companies/{company}/logo|cover`
+    wait up to 4 s for them and answer with the new image; if it's still processing the old
+    one is returned with `avatar_pending`/`logo_pending`/`cover_pending: true` and a
+    `media.ready` event follows on the WebSocket. Images uploaded before this have
+    `*_urls: null` (use `*_url`) until `ctl reprocess-images` ran.
 
     **Envelope.** Success: `{"data": ...}` (lists add `"meta"`). Failure:
     `{"error": {"code", "message", "fields"?, "retry_after"?}}`. `code` is stable; clients
@@ -23,10 +38,27 @@ info:
     **Deadlines.** Every request runs under a server deadline (8 s; PDF export 25 s;
     the WebSocket is exempt) and each database statement under 5 s. When one is exceeded
     the API answers `503` with code `timeout` and `Retry-After: 1`; the call is safe to
-    retry. Rate limits answer `429` with code `rate_limited` and `retry_after`: 1200
-    requests/min per client IP on every route and, with an access token, 600/min per user
-    across all routes (public pages included); sign-in and code endpoints have stricter
-    limits of their own.
+    retry. Rate limits answer `429` with code `rate_limited` and `retry_after`. They are
+    sized for mobile carriers' CGNAT, where dozens of people share one address (TZ SEC-04):
+    3000 requests/min per client IP on every route and, with an access token, 600/min per
+    user across all routes (public pages included); `/auth/login` and `/auth/google` 100/min
+    per IP; `/auth/refresh` and `/auth/logout` 120/min per IP; sign-up and password reset
+    30/min per IP; code endpoints 10 per 10 min per user; PDF renders 10/min per user.
+
+    **Sign-in protection (TZ SEC-04).** Failed passwords never lock an account. After 3
+    failures from one address on one e-mail each attempt waits (0.5 s, 1 s, 2 s, 4 s max)
+    before the password is checked. After 5 failures on an e-mail (from anywhere) or 20
+    from one address, the next attempt must carry a solved Cloudflare Turnstile token
+    (`captcha_token`) when captcha is enabled: without it `403 captcha_required` (show the
+    widget: `GET /auth/captcha` gives the site key), with a bad one `403 captcha_invalid`.
+    A solved captcha skips the delay; a successful sign-in resets the e-mail's count.
+
+    **Security headers (TZ SEC-03).** Every API response carries
+    `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none';
+    frame-ancestors 'none'; base-uri 'none'`, `Cross-Origin-Resource-Policy: same-site` and
+    `X-Robots-Tag: noindex`; responses to signed-in requests default to
+    `Cache-Control: no-store` unless the endpoint sets its own policy. Browsers report CSP
+    violations to `POST /csp-report` and Web Vitals to `POST /rum` (TZ FE-06).
 
     **Compression.** Send `Accept-Encoding: gzip` (browsers do); JSON responses shrink
     by ~80 %. In production nginx also offers brotli.
@@ -79,6 +111,14 @@ components:
       schema: { type: string, enum: [web, android, ios], default: web }
   schemas:
     Locale: { type: string, enum: [uz, uz-Cyrl, ru, en] }
+    ImageSizes:
+      type: [object, "null"]
+      additionalProperties: { type: string }
+      description: |
+        The image at each size, keyed by width in px ("64", "128", "256" for avatars and
+        logos; "640", "1280" for covers), all WebP (TZ BE-14). null for images from before
+        processing and for external pictures (Google avatars): use the *_url field.
+      examples: [{ "64": "https://jobvacancy.uz/media/img/avatar/2026/09/0192…/64.webp", "128": "…/128.webp", "256": "…/256.webp" }]
     Error:
       type: object
       properties:
@@ -100,7 +140,9 @@ components:
         phone: { type: [string, "null"], examples: ["+998901234567"] }
         phone_verified: { type: boolean }
         full_name: { type: string }
-        avatar_url: { type: [string, "null"] }
+        avatar_url: { type: [string, "null"], description: "the largest size" }
+        avatar_urls: { $ref: "#/components/schemas/ImageSizes" }
+        avatar_pending: { type: boolean, description: "a new avatar was chosen and its sizes are still being made; a media.ready event follows" }
         role: { type: string, enum: [seeker, employer, admin] }
         locale: { $ref: "#/components/schemas/Locale" }
         has_password: { type: boolean }
@@ -191,6 +233,11 @@ components:
             slug: { type: string }
             logo_url: { type: [string, "null"] }
             cover_url: { type: [string, "null"] }
+            logo_urls: { $ref: "#/components/schemas/ImageSizes" }
+            cover_urls: { $ref: "#/components/schemas/ImageSizes" }
+            cover_lqip: { type: [string, "null"], description: "tiny WebP data URI of the cover, shown blurred while it loads (TZ FE-04)" }
+            logo_pending: { type: boolean }
+            cover_pending: { type: boolean }
             verified: { type: boolean }
             created_at: { type: string, format: date-time }
             open_vacancies: { type: integer, description: public profile only }
@@ -204,6 +251,7 @@ components:
         name: { type: string }
         slug: { type: string }
         logo_url: { type: [string, "null"] }
+        logo_urls: { $ref: "#/components/schemas/ImageSizes" }
         verified: { type: boolean }
     CompanyInvite:
       type: object
@@ -235,6 +283,7 @@ components:
         phone: { type: [string, "null"] }
         full_name: { type: string, description: "empty for deleted accounts" }
         avatar_url: { type: [string, "null"] }
+        avatar_urls: { $ref: "#/components/schemas/ImageSizes" }
         role: { type: string, enum: [seeker, employer, admin] }
         status: { type: string, enum: [active, blocked, deleted] }
         email_verified: { type: boolean }
@@ -494,7 +543,7 @@ components:
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
-        person: { type: object, properties: { id: { type: string, format: uuid }, full_name: { type: string }, avatar_url: { type: [string, "null"] } } }
+        person: { type: object, properties: { id: { type: string, format: uuid }, full_name: { type: string }, avatar_url: { type: [string, "null"] }, avatar_urls: { $ref: "#/components/schemas/ImageSizes" } } }
         category_id: { type: [integer, "null"] }
         region_id: { type: [integer, "null"] }
         relocate: { type: boolean }
@@ -656,11 +705,31 @@ paths:
               properties:
                 email: { type: string, format: email }
                 password: { type: string }
+                captcha_token: { type: string, maxLength: 2048, description: "solved Cloudflare Turnstile token; needed after 403 captcha_required (TZ SEC-04)" }
       responses:
         "200": { $ref: "#/components/responses/Auth" }
         "401": { $ref: "#/components/responses/Error" }
-        "403": { $ref: "#/components/responses/Error" }
+        "403": { description: "account_blocked, captcha_required or captcha_invalid", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "429": { $ref: "#/components/responses/Error" }
+  /auth/captcha:
+    get:
+      tags: [auth]
+      summary: Captcha the sign-in form shows after captcha_required (TZ SEC-04)
+      responses:
+        "200":
+          description: "Cacheable for an hour"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [enabled, provider, site_key]
+                    properties:
+                      enabled: { type: boolean, description: "false: no captcha is ever asked for (only delays)" }
+                      provider: { type: [string, "null"], enum: [turnstile, null] }
+                      site_key: { type: [string, "null"], description: "Cloudflare Turnstile site key for the widget" }
   /auth/google:
     post:
       tags: [auth]
@@ -1754,10 +1823,25 @@ paths:
       tags: [resumes]
       security: [{ bearer: [] }]
       summary: Download as PDF (contacts only if the viewer may see them)
+      description: |
+        Rendered PDFs are kept in object storage by resume, content (updated_at included),
+        viewer's contact visibility and language (TZ BE-13): a repeat is served without
+        rendering (X-Cache: HIT). Renders are limited to 10 a minute per user (429);
+        cached copies are not.
       parameters:
         - { $ref: "#/components/parameters/ResumeRef" }
         - { name: lang, in: query, schema: { $ref: "#/components/schemas/Locale" } }
-      responses: { "200": { description: PDF, content: { application/pdf: {} } } }
+        - { $ref: "#/components/parameters/IfNoneMatch" }
+      responses:
+        "200":
+          description: PDF
+          headers:
+            ETag: { schema: { type: string } }
+            X-Cache: { schema: { type: string, enum: [HIT, MISS] } }
+          content: { application/pdf: {} }
+        "304": { $ref: "#/components/responses/NotModified" }
+        "404": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /resumes/{resume}/invite:
     post:
       tags: [applications]
@@ -1891,7 +1975,9 @@ paths:
       security: [{ bearer: [] }]
       summary: Start an upload (returns a presigned POST; size and type are enforced by storage)
       description: |
-        Limits: avatar / company_logo — jpeg, png, webp ≤ 5 MB (public URL);
+        Limits: avatar / company_logo — jpeg, png, webp ≤ 5 MB; company_cover — jpeg, png, webp
+        ≤ 10 MB (all three are published as WebP sizes after PUT /me/avatar or
+        /companies/{company}/logo|cover; the upload itself stays private and is deleted);
         chat_image — jpeg, png, webp, gif ≤ 10 MB; chat_voice — webm, ogg, m4a (audio/mp4), mp3, aac ≤ 5 MB;
         chat_file — pdf, doc(x), xls(x), ppt(x), txt, zip, rar, jpeg, png ≤ 25 MB (private, signed URLs).
       requestBody:
@@ -1902,7 +1988,7 @@ paths:
               type: object
               required: [purpose, content_type, size]
               properties:
-                purpose: { type: string, enum: [avatar, company_logo, chat_image, chat_file, chat_voice] }
+                purpose: { type: string, enum: [avatar, company_logo, company_cover, chat_image, chat_file, chat_voice] }
                 content_type: { type: string }
                 size: { type: integer }
                 name: { type: string }
@@ -1923,16 +2009,45 @@ paths:
       tags: [me]
       security: [{ bearer: [] }]
       summary: Set (file_id) or remove (null) the avatar
+      description: |
+        The worker publishes the avatar as 64/128/256 px WebP squares without metadata; this
+        waits up to 4 s for them (usually well under a second). If they aren't ready the old
+        avatar is returned with avatar_pending: true and a media.ready event follows. An
+        upload that isn't a usable image answers 422 image_rejected.
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { file_id: { type: [string, "null"], format: uuid } } } } } }
-      responses: { "200": { $ref: "#/components/responses/User" } }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
   /companies/{company}/logo:
     put:
       tags: [companies]
       security: [{ bearer: [] }]
       summary: Set or remove the company logo (owner/admin)
+      description: A company_logo upload, published as WebP fitting 64/128/256 px boxes (transparency kept); waits like PUT /me/avatar (logo_pending).
       parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
       requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { file_id: { type: [string, "null"], format: uuid } } } } } }
-      responses: { "200": { $ref: "#/components/responses/Company" } }
+      responses:
+        "200": { $ref: "#/components/responses/Company" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /companies/{company}/cover:
+    put:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Set or remove the company cover (owner/admin)
+      description: |
+        A company_cover upload, published as 640 and 1280 px wide WebP banners (cropped to
+        16:9 at most) plus cover_lqip; waits like PUT /me/avatar (cover_pending).
+      parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { file_id: { type: [string, "null"], format: uuid } } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/Company" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
 
   /me/notifications:
     get:
@@ -2000,6 +2115,55 @@ paths:
       summary: Telegram Bot API webhook (requires X-Telegram-Bot-Api-Secret-Token)
       responses: { "200": { description: OK }, "401": { $ref: "#/components/responses/Error" } }
 
+  /rum:
+    post:
+      tags: [telemetry]
+      summary: Real-user Web Vitals beacon (TZ FE-06)
+      description: |
+        Sent with navigator.sendBeacon (text/plain or application/json). Values as the
+        web-vitals library reports them: LCP, INP, FCP, TTFB in milliseconds, CLS unitless.
+        route is the page's route pattern (e.g. `/vacancies/:slug`, with or without
+        `/:lang?`); unknown routes count as "other". They feed the Prometheus histograms
+        web_vitals_{lcp,inp,fcp,ttfb}_seconds and web_vitals_cls by route. Bots are ignored.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                route: { type: string, maxLength: 100, examples: ["/vacancies/:slug"] }
+                metrics:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    type: object
+                    required: [name, value]
+                    properties:
+                      name: { type: string, enum: [LCP, INP, CLS, FCP, TTFB] }
+                      value: { type: number, minimum: 0 }
+                name: { type: string, description: "a single metric may be sent flat instead of metrics[]" }
+                value: { type: number }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /csp-report:
+    post:
+      tags: [telemetry]
+      summary: Content-Security-Policy violation reports (TZ SEC-03)
+      description: |
+        Target of the policies' `report-uri` (application/csp-report) and `report-to`
+        (application/reports+json). Counted in csp_violations_total{directive, blocked,
+        disposition}; a few samples a minute are logged. Always 204.
+      requestBody:
+        content:
+          application/csp-report: { schema: { type: object } }
+          application/reports+json: { schema: { type: array, items: { type: object } } }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+
   /ws/ticket:
     post:
       tags: [realtime]
@@ -2010,6 +2174,10 @@ paths:
     get:
       tags: [realtime]
       summary: WebSocket endpoint
+      description: |
+        The ticket is bound to the session that asked for it: revoking that session closes
+        the socket with 4001 (TZ BE-15). A restarting server closes with 1012; reconnect and
+        fetch missed messages over REST.
       parameters: [{ name: ticket, in: query, required: true, schema: { type: string } }]
       responses: { "101": { description: Switching protocols }, "401": { $ref: "#/components/responses/Error" } }
   /ws/presence:

@@ -1,8 +1,8 @@
 import {
-  ArrowRight, BadgeCheck, BriefcaseBusiness, Building2, CalendarClock, CalendarDays, Clock3, ExternalLink, Eye,
+  ArrowRight, BadgeCheck, BriefcaseBusiness, Building2, CalendarClock, CalendarDays, CircleCheck, Clock3, ExternalLink, Eye,
   Hourglass, House, Layers, MapPin, PencilLine, SearchX, Star, Users,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { useRevalidator, useViewTransitionState } from "react-router";
 
 import type { Route } from "./+types/index";
@@ -106,6 +106,9 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
   useViewBeacon(v.id, status !== "loading");
   // Mounted on first use and kept, so closing plays the exit animation and a reopen keeps the draft.
   const [applyUsed, setApplyUsed] = useState(false);
+  // Known once the dialog has checked (or sent) an application: the Apply buttons then say so
+  // and reopen the dialog, which links to the application.
+  const [applied, setApplied] = useState(false);
   const [asideRef, asideFits] = useStickyFit<HTMLElement>();
 
   const region = nameOf(idx.regions.get(v.region_id)?.name, locale);
@@ -124,6 +127,9 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
   };
   // Hovering or focusing an Apply button fetches the dialog's code before the click.
   const preload = { onPointerEnter: () => void loadApply(), onFocus: () => void loadApply() };
+  const applyLook = applied
+    ? { variant: "secondary" as const, icon: <CircleCheck className="size-4.5 text-firuza-ink" />, label: t("apply.alreadySent") }
+    : { variant: "primary" as const, icon: undefined, label: t("common.apply") };
 
   const WorkIcon = v.work_format === "remote" ? House : Building2;
   const facts: { id: string; Icon: ComponentType<{ className?: string }>; label: string; value: string }[] = [
@@ -234,8 +240,8 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
                 <>
                   {canApply && (
                     // Phones apply from the sticky bar at the bottom.
-                    <Button size="lg" onClick={apply} {...preload} className="max-md:hidden">
-                      {t("common.apply")}
+                    <Button size="lg" variant={applyLook.variant} icon={applyLook.icon} onClick={apply} {...preload} className="max-md:hidden">
+                      {applyLook.label}
                     </Button>
                   )}
                   <SaveButton id={v.id} withLabel className="max-md:flex-1 max-md:px-3 md:h-13 md:px-5" />
@@ -343,8 +349,8 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
                   <p className="text-lead font-semibold tracking-snug text-ink">{t("vacancyPage.ctaTitle")}</p>
                   <p className="mt-0.5 text-md text-ink-2">{t("vacancyPage.ctaBody", { company: v.company.name })}</p>
                 </div>
-                <Button size="lg" onClick={apply} {...preload} className="shrink-0">
-                  {t("common.apply")}
+                <Button size="lg" variant={applyLook.variant} icon={applyLook.icon} onClick={apply} {...preload} className="shrink-0">
+                  {applyLook.label}
                 </Button>
               </div>
             )}
@@ -357,12 +363,12 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
         </aside>
       </div>
 
-      {canApply && <ApplyBar v={v} pay={pay} hasPay={hasPay} onApply={apply} preload={preload} />}
+      {canApply && <ApplyBar v={v} pay={pay} hasPay={hasPay} onApply={apply} preload={preload} look={applyLook} />}
 
       {applyUsed && (
         <Suspense>
           {/* key: another vacancy (a similar row) starts with a fresh dialog state. */}
-          <ApplyDialog key={v.id} open={applyOpen} onOpenChange={setApplyOpen} vacancy={v} />
+          <ApplyDialog key={v.id} open={applyOpen} onOpenChange={setApplyOpen} vacancy={v} onApplied={() => setApplied(true)} />
         </Suspense>
       )}
     </article>
@@ -579,14 +585,14 @@ function SimilarRow({ s }: { s: Similar }) {
  * vacancy is on screen and comes to rest at the end of the article (so it never covers the
  * footer). The route hides the tab bar, so it's the only glass layer at the bottom.
  */
-function ApplyBar({ v, pay, hasPay, onApply, preload }: {
+function ApplyBar({ v, pay, hasPay, onApply, preload, look }: {
   v: Vacancy;
   pay: string;
   hasPay: boolean;
   onApply: () => void;
   preload: { onPointerEnter: () => void; onFocus: () => void };
+  look: { variant: "primary" | "secondary"; icon?: ReactNode; label: string };
 }) {
-  const { t } = useTranslation();
   // Toasts rise above the bar while this page is open (phones only; desktop toasts sit elsewhere).
   useEffect(() => {
     const root = document.documentElement;
@@ -596,20 +602,20 @@ function ApplyBar({ v, pay, hasPay, onApply, preload }: {
   return (
     <>
       {/* The shell's scroll-edge scrim comes with its tab bar, hidden here: this bar brings its own,
-          tall enough that cards fade into paper before they pass under the glass. Same z-30 as the
-          scrim but later in the DOM, so the bar paints above it and still below the header (z-40). */}
+          tall enough that cards fade into paper before they pass under the glass. The bar itself is
+          z-40 (the page-bar layer), so it always paints above the z-30 scrim. */}
       <div aria-hidden="true" className="edge-fade-b md:hidden" style={{ height: "calc(env(safe-area-inset-bottom) + 5rem)" }} />
-      <div className="glass-chrome sticky bottom-above-tabbar z-30 mt-6 flex items-center gap-3 rounded-pill p-2 pl-5 md:hidden">
-      <div className="min-w-0 flex-1">
-        {/* Only ink levels on chrome glass: the salary keeps the display face, not the colour. */}
-        <p className={cn("truncate", hasPay ? "num font-display text-md font-semibold tracking-heading text-ink" : "text-md font-medium text-ink")}>
-          {pay}
-        </p>
-        <p className="truncate text-xs text-ink-2">{v.company.name}</p>
-      </div>
-      <Button shape="pill" onClick={onApply} {...preload} className="shrink-0">
-        {t("common.apply")}
-      </Button>
+      <div className="glass-chrome sticky bottom-above-tabbar z-40 mt-6 flex items-center gap-3 rounded-pill p-2 pl-5 md:hidden">
+        <div className="min-w-0 flex-1">
+          {/* Only ink levels on chrome glass: the salary keeps the display face, not the colour. */}
+          <p className={cn("truncate", hasPay ? "num font-display text-md font-semibold tracking-heading text-ink" : "text-md font-medium text-ink")}>
+            {pay}
+          </p>
+          <p className="truncate text-xs text-ink-2">{v.company.name}</p>
+        </div>
+        <Button shape="pill" variant={look.variant} icon={look.icon} onClick={onApply} {...preload} className="shrink-0">
+          {look.label}
+        </Button>
       </div>
     </>
   );

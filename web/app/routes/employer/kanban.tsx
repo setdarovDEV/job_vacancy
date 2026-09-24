@@ -968,7 +968,8 @@ const KanbanCard = memo(function KanbanCard({ a, state, onMove }: {
             <StageMenuItems current={a.status} onPick={(s) => onMove(a, s)} />
             <div aria-hidden="true" className="-mx-1.5 my-1.5 h-px bg-line" />
             <LocalizedLink to={`/employer/applications/${a.id}`} prefetch="intent" className={popoverItem}>
-              <ArrowUpRight aria-hidden="true" className="size-4 shrink-0 text-ink-3" />
+              {/* Same 24px icon column as the stage rows above, so the labels line up. */}
+              <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center text-ink-3"><ArrowUpRight className="size-4" /></span>
               {t("kanbanPage.openApplication")}
             </LocalizedLink>
           </Popover>
