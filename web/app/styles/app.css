@@ -351,6 +351,8 @@
   body {
     min-height: 100dvh;
     background: var(--paper);
+    /* Own stacking context so the fixed aurora (z-index -1) paints above the body background. */
+    isolation: isolate;
   }
   /* The aurora: fixed, painted once, composited — the glass refracts it. */
   body::before {
