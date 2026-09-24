@@ -1,0 +1,7 @@
+#!/bin/sh
+# Graceful reload after a certificate renewal or config change; refuses a broken config.
+set -eu
+jv-tls >/dev/null
+nginx -t -q
+nginx -s reload
+echo "jv-reload: reloaded"

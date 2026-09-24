@@ -1,0 +1,37 @@
+#!/bin/sh
+# Refreshes snippets/cloudflare-real-ip.conf from Cloudflare's published ranges (TZ SEC-02)
+# and reloads nginx. Run daily from the host: nginx/cron/jobvacancy.cron.
+# Refuses suspicious answers (too few ranges, anything that isn't a CIDR) and keeps the old
+# file when the new one fails `nginx -t`.
+set -eu
+NGINX=${NGINX:-nginx}   # overridable for tests
+out=${NGINX_ETC:-/etc/nginx}/snippets/cloudflare-real-ip.conf
+tmp=$(mktemp)
+fetch() { curl -fsS --max-time 20 --retry 3 "https://www.cloudflare.com/$1"; echo; }
+v4=$(fetch ips-v4 | sed '/^[[:space:]]*$/d')
+v6=$(fetch ips-v6 | sed '/^[[:space:]]*$/d')
+bad=$(printf '%s\n%s\n' "$v4" "$v6" | grep -vE '^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$|^[0-9a-fA-F:]+:[0-9a-fA-F:]*/[0-9]{1,3}$' || true)
+n4=$(printf '%s\n' "$v4" | grep -c . || true)
+n6=$(printf '%s\n' "$v6" | grep -c . || true)
+if [ -n "$bad" ] || [ "$n4" -lt 10 ] || [ "$n6" -lt 3 ]; then
+  echo "update-cloudflare-ips: unexpected answer (v4=$n4 v6=$n6), keeping the current list" >&2
+  exit 1
+fi
+{
+  sed -n '/^#/p' "$out" | grep -v '^# Updated:'
+  echo "# Updated: $(date -u +%Y-%m-%d)"
+  printf '%s\n%s\n' "$v4" "$v6" | sed 's/.*/set_real_ip_from &;/'
+} >"$tmp"
+if cmp -s "$tmp" "$out"; then rm -f "$tmp"; echo "update-cloudflare-ips: unchanged"; exit 0; fi
+if [ "$(grep -v '^#' "$tmp")" = "$(grep -v '^#' "$out")" ]; then rm -f "$tmp"; echo "update-cloudflare-ips: unchanged"; exit 0; fi
+cp "$out" "$out.bak"
+cat "$tmp" >"$out"
+rm -f "$tmp"
+if $NGINX -t -q; then
+  $NGINX -s reload
+  echo "update-cloudflare-ips: updated ($n4 IPv4, $n6 IPv6 ranges)"
+else
+  cat "$out.bak" >"$out"
+  echo "update-cloudflare-ips: new list failed nginx -t, restored the previous one" >&2
+  exit 1
+fi

@@ -227,7 +227,7 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 		// A job whose worker died (SIGKILL after the grace period) is picked up again after
 		// this; it must stay above the longest job timeout (saved-search alerts, 10 min).
 		RescueStuckJobsAfter: 15 * time.Minute,
-		Workers: workers,
+		Workers:              workers,
 		// Finished jobs may contain one-time codes; don't keep them around.
 		CompletedJobRetentionPeriod: time.Hour,
 		PeriodicJobs: []*river.PeriodicJob{

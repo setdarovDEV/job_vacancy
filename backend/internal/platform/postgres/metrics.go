@@ -63,9 +63,9 @@ var (
 )
 
 var poolDescs = struct {
-	max, total, acquired, idle, constructing                          *prometheus.Desc
+	max, total, acquired, idle, constructing                            *prometheus.Desc
 	acquires, emptyAcquires, canceled, newConns, lifetimeKill, idleKill *prometheus.Desc
-	acquireWait, emptyWait                                             *prometheus.Desc
+	acquireWait, emptyWait                                              *prometheus.Desc
 }{
 	max:           poolDesc("db_pool_max_conns", "Maximum size of the pool."),
 	total:         poolDesc("db_pool_total_conns", "Open connections (idle + acquired + constructing)."),

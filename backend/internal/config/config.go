@@ -80,9 +80,9 @@ type Auth struct {
 	JWTKeyID          string        `env:"JWT_KID" envDefault:"k1"`
 	JWTPreviousSecret string        `env:"JWT_PREVIOUS_SECRET"`
 	JWTPreviousKeyID  string        `env:"JWT_PREVIOUS_KID"`
-	JWTIssuer       string        `env:"JWT_ISSUER" envDefault:"jobvacancy.uz"`
-	AccessTokenTTL  time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
-	RefreshTokenTTL time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"` // 30 days
+	JWTIssuer         string        `env:"JWT_ISSUER" envDefault:"jobvacancy.uz"`
+	AccessTokenTTL    time.Duration `env:"ACCESS_TOKEN_TTL" envDefault:"15m"`
+	RefreshTokenTTL   time.Duration `env:"REFRESH_TOKEN_TTL" envDefault:"720h"` // 30 days
 	// Refresh cookie for the web client; mobile clients receive the token in the body.
 	CookieDomain string `env:"AUTH_COOKIE_DOMAIN" envDefault:""`
 	CookieSecure bool   `env:"AUTH_COOKIE_SECURE" envDefault:"false"`

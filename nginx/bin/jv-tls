@@ -1,0 +1,20 @@
+#!/bin/sh
+# Points /etc/nginx/tls at the Let's Encrypt lineage when it exists; otherwise makes sure a
+# self-signed placeholder is there, so nginx can start before the first certificate is
+# issued (scripts/cert.sh) and ACME http-01 challenges can be answered on port 80.
+set -eu
+name=${CERT_NAME:-jobvacancy}
+le=/etc/letsencrypt/live/$name
+tls=/etc/nginx/tls
+mkdir -p "$tls"
+if [ -s "$le/fullchain.pem" ] && [ -s "$le/privkey.pem" ]; then
+  ln -sfn "$le/fullchain.pem" "$tls/fullchain.pem"
+  ln -sfn "$le/privkey.pem" "$tls/privkey.pem"
+  echo "jv-tls: using Let's Encrypt certificate '$name'"
+elif [ ! -s "$tls/fullchain.pem" ] || [ ! -s "$tls/privkey.pem" ]; then
+  rm -f "$tls/fullchain.pem" "$tls/privkey.pem"
+  openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -days 30 \
+    -subj "/CN=placeholder.invalid" -keyout "$tls/privkey.pem" -out "$tls/fullchain.pem" 2>/dev/null
+  chmod 600 "$tls/privkey.pem"
+  echo "jv-tls: no certificate '$name' yet: serving a self-signed placeholder (run: make cert)" >&2
+fi

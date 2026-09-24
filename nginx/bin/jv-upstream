@@ -1,0 +1,38 @@
+#!/bin/sh
+# Drain or restore upstream instances for rolling deploys (scripts/deploy.sh):
+#   jv-upstream down api-1          take api-1 out of rotation
+#   jv-upstream up api-1 down api-2 several changes, one reload
+#   jv-upstream status
+# Edits the lines tagged "# jv:<name>" in conf.d/10-upstreams.conf (container layer only: a
+# recreated nginx container starts with every instance up) and reloads gracefully.
+set -eu
+NGINX=${NGINX:-nginx}   # overridable for tests: NGINX="nginx -p <prefix> -c <conf>"
+conf=${NGINX_ETC:-/etc/nginx}/conf.d/10-upstreams.conf
+if [ "${1:-status}" = status ]; then
+  grep -E '# jv:' "$conf" | while IFS= read -r line; do
+    case $line in *" down;"*) echo "${line##*# jv:} down" ;; *) echo "${line##*# jv:} up" ;; esac
+  done
+  exit 0
+fi
+backup=$(mktemp)
+cp "$conf" "$backup"
+while [ $# -ge 2 ]; do
+  state=$1 name=$2
+  shift 2
+  grep -qE "# jv:$name\$" "$conf" || { echo "jv-upstream: unknown instance $name" >&2; cp "$backup" "$conf"; exit 2; }
+  sed -i -E "/# jv:$name\$/ s/ down;/;/" "$conf"
+  case $state in
+    down) sed -i -E "/# jv:$name\$/ s/;([[:space:]]*# jv:$name)\$/ down;\1/" "$conf" ;;
+    up) ;;
+    *) echo "usage: jv-upstream (up|down) <name> [...] | status" >&2; cp "$backup" "$conf"; exit 2 ;;
+  esac
+done
+if [ $# -ne 0 ]; then echo "usage: jv-upstream (up|down) <name> [...] | status" >&2; cp "$backup" "$conf"; exit 2; fi
+if ! $NGINX -t -q; then
+  cp "$backup" "$conf"
+  echo "jv-upstream: config test failed, change reverted" >&2
+  exit 1
+fi
+rm -f "$backup"
+$NGINX -s reload
+grep -E '# jv:' "$conf" | sed -E 's/^ *//'
