@@ -13,7 +13,7 @@ J() { jq -r "$1" $SP/body.json; }
 H='Content-Type: application/json'
 mailcode() { sleep 1.5; curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
 user() { # email role verify(yes/no) -> token
-  local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$4\",\"role\":\"$2\"}" | jq -r .data.access_token)
+  local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$4\",\"role\":\"$2\"}" | jq -r .data.access_token)
   if [ "$3" = yes ]; then c=$(mailcode $1); curl -s -o /dev/null -X POST $API/auth/email/verify -H "Authorization: Bearer $t" -H "$H" -d "{\"code\":\"$c\"}"; fi
   echo $t; }
 login() { curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\"}" | jq -r .data.access_token; }

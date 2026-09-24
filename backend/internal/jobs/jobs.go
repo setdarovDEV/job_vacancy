@@ -150,6 +150,22 @@ func (w *ExpiryWarningsWorker) Work(ctx context.Context, _ *river.Job[ExpiryWarn
 	return err
 }
 
+// ReindexWorker rebuilds some vacancies' search documents (after a skill merge) and
+// drops their cached pages.
+type ReindexWorker struct {
+	river.WorkerDefaults[vacancy.ReindexArgs]
+	Vacancies *vacancy.Service
+}
+
+func (w *ReindexWorker) Work(ctx context.Context, job *river.Job[vacancy.ReindexArgs]) error {
+	live, err := w.Vacancies.ReindexIDs(ctx, job.Args.IDs)
+	if err != nil {
+		return err
+	}
+	w.Vacancies.Cache.VacanciesChanged(ctx, live...)
+	return nil
+}
+
 // ---- files -------------------------------------------------------------------------------
 
 type CleanupUploadsArgs struct{}
@@ -177,7 +193,9 @@ type PurgeObjectsWorker struct {
 	Log     *slog.Logger
 }
 
-func (w *PurgeObjectsWorker) Timeout(*river.Job[file.PurgeObjectsArgs]) time.Duration { return 2 * time.Minute }
+func (w *PurgeObjectsWorker) Timeout(*river.Job[file.PurgeObjectsArgs]) time.Duration {
+	return 2 * time.Minute
+}
 
 // Work removes every object; a missing one counts as removed, so a retry after a partial
 // run is harmless.
@@ -249,6 +267,8 @@ type Deps struct {
 	Saved   *savedsearch.Service
 	// Lifecycle runs vacancy expiry, expiry warnings and the end of "TOP" placements.
 	Lifecycle *vacancy.Lifecycle
+	// Vacancies rebuilds search documents (vacancy.reindex jobs).
+	Vacancies *vacancy.Service
 	Log       *slog.Logger
 	// River concurrency per queue (TZ BE-07: critical 10, default 20); 0 uses those.
 	CriticalWorkers int
@@ -271,6 +291,7 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 	river.AddWorker(workers, &ExpireVacanciesWorker{Lifecycle: d.Lifecycle, Log: d.Log})
 	river.AddWorker(workers, &ExpiryWarningsWorker{Lifecycle: d.Lifecycle, Log: d.Log})
 	river.AddWorker(workers, &PurgeObjectsWorker{Storage: d.Storage, Log: d.Log})
+	river.AddWorker(workers, &ReindexWorker{Vacancies: d.Vacancies})
 	river.AddWorker(workers, &DeliverWorker{D: &notification.Deliverer{
 		Q: q, Mailer: d.Mailer, Bot: d.Bot, Push: d.Push, WebURL: d.WebURL, Log: d.Log,
 	}})

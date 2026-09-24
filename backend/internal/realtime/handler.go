@@ -78,6 +78,7 @@ func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
 }
 
 // presence answers GET /ws/presence?ids=a,b,c for screens that don't hold a socket.
+// Asking about anyone the caller shares no conversation with is 403 (TZ SEC-05).
 func (h *Handler) presence(w http.ResponseWriter, r *http.Request) {
 	var ids []uuid.UUID
 	for _, s := range splitComma(r.URL.Query().Get("ids")) {
@@ -85,7 +86,8 @@ func (h *Handler) presence(w http.ResponseWriter, r *http.Request) {
 			ids = append(ids, id)
 		}
 	}
-	st, err := h.Hub.Presence(r.Context(), ids)
+	w.Header().Set("Cache-Control", "no-store")
+	st, err := h.Hub.VisiblePresence(r.Context(), reqctx.MustPrincipal(r.Context()).UserID, ids, true)
 	if err != nil {
 		response.Error(w, r, err)
 		return

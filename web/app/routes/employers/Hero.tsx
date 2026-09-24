@@ -93,7 +93,8 @@ function ProductMock() {
   return (
     <div role="img" aria-label={t("employersPage.mock.label")} className="relative min-w-0">
       <div className="glass-panel rounded-sheet p-2">
-        <div className="flex aspect-4/3 flex-col overflow-hidden rounded-inner border border-line bg-surface">
+        {/* Fixed proportions: nothing inside can shift the page; wider (shorter) while it spans the full width. */}
+        <div className="flex aspect-4/3 flex-col overflow-hidden rounded-inner border border-line bg-surface sm:aspect-video lg:aspect-4/3">
           <div className="flex items-center gap-3 border-b border-line px-4 py-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold text-ink">{vacancy}</p>
@@ -103,16 +104,18 @@ function ProductMock() {
           </div>
           <dl className="hidden grid-cols-3 divide-x divide-line border-b border-line sm:grid">
             <Kpi label={t("dashboardPage.kpi.views")} value={groupDigits(1284)}>
-              <svg aria-hidden="true" viewBox="0 0 100 28" preserveAspectRatio="none" className="mt-1 h-5 w-full text-lapis">
+              <svg aria-hidden="true" viewBox="0 0 100 28" preserveAspectRatio="none" className="mt-1 block h-5 w-full text-lapis">
                 <path d={spark} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
               </svg>
             </Kpi>
             <Kpi label={t("dashboardPage.kpi.fresh")} value={groupDigits(12)} tone="text-lapis-ink" />
             <Kpi label={t("dashboardPage.kpi.applications")} value={groupDigits(24)} />
           </dl>
-          <div className="grid min-h-0 flex-1 grid-cols-3 gap-2 p-2 mask-b-from-70% sm:gap-3 sm:p-3">
+          {/* Phones get two roomier columns; the "hired" one joins from sm. The bottom fades out (aurora-fade is
+              a plain bottom mask), so the board reads as continuing below the frame. */}
+          <div className="grid min-h-0 flex-1 aurora-fade grid-cols-2 gap-2 p-2 sm:grid-cols-3 sm:gap-3 sm:p-3">
             {columns.map((col, ci) => (
-              <div key={col.status} className="flex min-w-0 flex-col gap-2 rounded-control bg-sunken/70 p-1.5 sm:p-2">
+              <div key={col.status} className={cn("min-w-0 flex-col gap-2 rounded-control bg-sunken/70 p-1.5 sm:p-2", ci === 2 ? "hidden sm:flex" : "flex")}>
                 <div className="flex min-w-0 items-center justify-between gap-1 px-1">
                   <span className="truncate text-xs font-semibold text-ink-2">{t(`enums.application_status.${col.status}`)}</span>
                   <span className="num rounded-pill bg-surface px-1.5 text-2xs font-semibold text-ink-2">{col.count}</span>
@@ -128,7 +131,7 @@ function ProductMock() {
       {/* The "new application" toast: depth for the preview on tablets and up; it springs in once. */}
       <div
         aria-hidden="true"
-        className="surface-card anim-enter absolute -bottom-6 -left-3 hidden w-72 items-center gap-3 p-3 shadow-3 sm:flex md:-left-4"
+        className="surface-card anim-enter absolute -bottom-6 -left-3 hidden w-72 items-center gap-3 p-3 shadow-3 sm:flex"
         style={{ "--i": 6 } as CSSProperties}
       >
         <span className="grid size-10 shrink-0 place-items-center rounded-control bg-firuza-soft text-firuza-ink">
@@ -150,8 +153,10 @@ function Kpi({ label, value, tone = "text-ink", children }: { label: string; val
   return (
     <div className="flex min-w-0 flex-col px-4 py-3">
       <dt className="truncate text-xs text-ink-2">{label}</dt>
-      <dd className={cn("num font-display text-lg font-semibold tracking-heading", tone)}>{value}</dd>
-      {children}
+      <dd className={cn("num font-display text-lg font-semibold tracking-heading", tone)}>
+        {value}
+        {children}
+      </dd>
     </div>
   );
 }
@@ -163,7 +168,7 @@ function MockCard({ person, t, lifted }: { person: Person; t: TFunction; lifted?
       className={cn(
         "relative min-w-0 rounded-control border border-line bg-surface p-2 shadow-1",
         // The card being dragged to the next stage: tilted, lifted, lapis edge (as in the real kanban).
-        lifted && "rotate-2 border-lapis shadow-3",
+        lifted && "rotate-1 border-lapis shadow-3",
       )}
     >
       <div className="flex min-w-0 items-center gap-2">

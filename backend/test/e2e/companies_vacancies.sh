@@ -13,7 +13,7 @@ hdr() { local k=$1; shift; curl -s -o /dev/null -D - "$@" | tr -d '\r' | grep -i
 H='Content-Type: application/json'
 mailcode() { sleep 1.5; curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
 register() { # email role -> prints access token
-  curl -s -X POST $API/auth/register -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"User $2\",\"role\":\"$2\"}" | jq -r .data.access_token; }
+  curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"User $2\",\"role\":\"$2\"}" | jq -r .data.access_token; }
 verify() { # token email
   c=$(mailcode $2); curl -s -o /dev/null -X POST $API/auth/email/verify -H "Authorization: Bearer $1" -H "$H" -d "{\"code\":\"$c\"}"; }
 login() { curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\"}" | jq -r .data.access_token; }
@@ -118,8 +118,13 @@ check "delete draft 204" $(req -X DELETE $API/vacancies/$DRAFT -H "Authorization
 
 echo "== team"
 T2=$(register $E2 employer); verify $T2 $E2
-check "add recruiter 204" $(req -X POST $API/companies/$CID/members -H "Authorization: Bearer $T1" -H "$H" -d "{\"email\":\"$E2\",\"role\":\"recruiter\"}") 204
+check "add recruiter → invite 204" $(req -X POST $API/companies/$CID/members -H "Authorization: Bearer $T1" -H "$H" -d "{\"email\":\"$E2\",\"role\":\"recruiter\"}") 204
 check "seeker can't be added" $(req -X POST $API/companies/$CID/members -H "Authorization: Bearer $T1" -H "$H" -d "{\"email\":\"$S1\",\"role\":\"recruiter\"}") 404
+# TZ FN-05: the invitee is not a member (and sees nothing of the company) until they accept.
+check "invitee can't read members yet" $(req $API/companies/$CID/members -H "Authorization: Bearer $T2") 403
+check "invitee can't read company vacancies yet" $(req "$API/companies/$CID/vacancies" -H "Authorization: Bearer $T2") 403
+check "invitee sees the invite" "$(req $API/me/invites -H "Authorization: Bearer $T2")$(J '.data[0].company.id')" "200$CID"
+check "accept invite" "$(req -X POST $API/me/invites/$(J '.data[0].id')/accept -H "Authorization: Bearer $T2")$(J .data.my_role)" "200recruiter"
 check "recruiter posts vacancy" $(req -X POST $API/companies/$CID/vacancies -H "Authorization: Bearer $T2" -H "$H" -d "$(echo $V | jq '.title="Frontend React dasturchi" | .category_id='$IT' | .work_format="remote" | .skills=["React","TypeScript"]')") 201
 V2=$(J .data.id)
 req -X POST $API/vacancies/$V2/submit -H "Authorization: Bearer $T2" >/dev/null

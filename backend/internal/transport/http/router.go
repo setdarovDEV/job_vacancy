@@ -13,6 +13,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"jobvacancy.uz/backend/internal/modules/account"
+	"jobvacancy.uz/backend/internal/modules/admin"
 	"jobvacancy.uz/backend/internal/modules/application"
 	"jobvacancy.uz/backend/internal/modules/auth"
 	"jobvacancy.uz/backend/internal/modules/catalog"
@@ -20,6 +22,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/company"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/modules/notification"
+	"jobvacancy.uz/backend/internal/modules/report"
 	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
 	"jobvacancy.uz/backend/internal/modules/user"
@@ -63,6 +66,9 @@ type Deps struct {
 	SavedHandler   *savedsearch.Handler
 	WSHandler      *realtime.Handler
 	AppHandler     *application.Handler
+	AdminHandler   *admin.Handler
+	ReportHandler  *report.Handler
+	AccountHandler *account.Handler
 }
 
 // Request limits. api_ip and api_user are counted by the request gate for every API
@@ -113,6 +119,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Use(d.Auth.Require)
 				d.VacancyHandler.SavedRoutes(r)
 				d.AppHandler.VacancyRoutes(r)
+				d.ReportHandler.VacancyRoutes(r)
 			})
 		})
 		r.Route("/search", d.VacancyHandler.SearchRoutes)
@@ -135,6 +142,7 @@ func NewRouter(d Deps) http.Handler {
 			r.Use(d.Auth.Require) // the per-user limit is counted by the gate
 			r.Route("/me", func(r chi.Router) {
 				d.UserHandler.Routes(r)
+				d.AccountHandler.Routes(r)
 				d.AuthHandler.MeRoutes(r)
 				d.CompanyHandler.MeRoutes(r)
 				d.ResumeHandler.MeRoutes(r)
@@ -155,11 +163,18 @@ func NewRouter(d Deps) http.Handler {
 			})
 			r.Route("/conversations", d.ChatHandler.Routes)
 			r.Route("/messages", d.ChatHandler.MessageRoutes)
+			// Admin panel (TZ FN-01): every route is admin-only (403 otherwise) and every
+			// write is recorded in admin_audit_log.
 			r.Route("/admin", func(r chi.Router) {
 				r.Use(mw.RequireRole("admin"))
-				r.Route("/companies", d.CompanyHandler.AdminRoutes)
+				r.Route("/companies", func(r chi.Router) {
+					d.CompanyHandler.AdminRoutes(r)
+					d.AdminHandler.CompanyRoutes(r)
+				})
 				r.Route("/vacancies", d.VacancyHandler.AdminRoutes)
 				r.Route("/search", d.VacancyHandler.AdminSearchRoutes)
+				r.Route("/reports", d.ReportHandler.AdminRoutes)
+				d.AdminHandler.Routes(r)
 			})
 		})
 	})

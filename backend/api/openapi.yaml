@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Job Vacancy API
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Shared contract for the web (React) and mobile (Flutter) clients.
 
@@ -38,6 +38,17 @@ info:
     affected pages at once; listings may show the previous state for one more request.
     Vacancy views are counted by `POST /vacancies/{vacancy}/view`, sent by the page after
     it rendered.
+
+    **MVP features (TZ FN-01…FN-08, SEC-05).** Admin panel under `/admin/*` (admin role
+    only, every other caller gets `403 forbidden`; every write is audited, see
+    `/admin/audit-log`). Vacancy reports (`POST /vacancies/{vacancy}/report`, 10 a day per
+    user; 3 open reports send a published vacancy back to moderation). Account deletion
+    (`DELETE /me`). Republishing expired vacancies (`POST /vacancies/{vacancy}/republish`).
+    Company membership by invitation only (`/companies/{company}/invites`, `/me/invites`).
+    Districts per region (`/catalog/regions/{region}/districts`). Sign-up needs
+    `consent: true`. Presence is visible only between people who share a conversation and
+    can be hidden (`PATCH /me {hide_online}`). New notification types: `vacancy.expiring`,
+    `vacancy.expired`, `vacancy.reported`, `company.invite`, `company.invite_accepted`.
 
     **Tokens.** The access token (JWT, 15 min) goes in `Authorization: Bearer`.
     Web: the refresh token lives in the HttpOnly cookie `jv_refresh` (path `/api/v1/auth`).
@@ -95,6 +106,10 @@ components:
         has_password: { type: boolean }
         google_linked: { type: boolean }
         created_at: { type: string, format: date-time }
+        hide_online: { type: boolean, description: "online status hidden from everyone (TZ SEC-05)" }
+        consent_version: { type: [string, "null"], description: "privacy policy version accepted (TZ FN-08); null for accounts created before consent was recorded" }
+        consent_at: { type: [string, "null"], format: date-time }
+        consent_outdated: { type: boolean, description: "true: show the current policy and PUT /me/consent" }
     Auth:
       type: object
       properties:
@@ -189,6 +204,165 @@ components:
         slug: { type: string }
         logo_url: { type: [string, "null"] }
         verified: { type: boolean }
+    CompanyInvite:
+      type: object
+      required: [id, email, role, invited_by_name, expires_at, expired, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        role: { type: string, enum: [admin, recruiter] }
+        invited_by_name: { type: [string, "null"] }
+        expires_at: { type: string, format: date-time }
+        expired: { type: boolean, description: "past expires_at: resend it with POST /companies/{company}/invites" }
+        created_at: { type: string, format: date-time }
+    MyInvite:
+      type: object
+      required: [id, role, invited_by_name, expires_at, created_at, company]
+      properties:
+        id: { type: string, format: uuid }
+        role: { type: string, enum: [admin, recruiter] }
+        invited_by_name: { type: [string, "null"] }
+        expires_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        company: { $ref: "#/components/schemas/CompanySummary" }
+    AdminUser:
+      type: object
+      required: [id, email, phone, full_name, avatar_url, role, status, email_verified, phone_verified, last_seen_at, created_at, deleted_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: [string, "null"] }
+        phone: { type: [string, "null"] }
+        full_name: { type: string, description: "empty for deleted accounts" }
+        avatar_url: { type: [string, "null"] }
+        role: { type: string, enum: [seeker, employer, admin] }
+        status: { type: string, enum: [active, blocked, deleted] }
+        email_verified: { type: boolean }
+        phone_verified: { type: boolean }
+        last_seen_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+        deleted_at: { type: [string, "null"], format: date-time }
+    AdminUserDetail:
+      allOf:
+        - $ref: "#/components/schemas/AdminUser"
+        - type: object
+          required: [companies]
+          properties:
+            companies:
+              type: array
+              items:
+                type: object
+                required: [id, name, slug, status, role]
+                properties:
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+                  slug: { type: string }
+                  status: { type: string, enum: [active, blocked, deleted] }
+                  role: { type: string, enum: [owner, admin, recruiter] }
+    AdminCompany:
+      allOf:
+        - $ref: "#/components/schemas/Company"
+        - type: object
+          required: [status, owner_id, owner_name, owner_email, open_vacancies]
+          properties:
+            status: { type: string, enum: [active, blocked, deleted] }
+            owner_id: { type: string, format: uuid }
+            owner_name: { type: string }
+            owner_email: { type: [string, "null"] }
+            open_vacancies: { type: integer }
+    AdminSkill:
+      type: object
+      required: [id, name, slug, is_verified, usage_count, vacancies, resumes, created_at]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        is_verified: { type: boolean }
+        usage_count: { type: integer }
+        vacancies: { type: integer }
+        resumes: { type: integer }
+        created_at: { type: string, format: date-time }
+    AdminStats:
+      type: object
+      required: [totals, days]
+      properties:
+        totals:
+          type: object
+          required: [users, seekers, employers, blocked_users, companies, published_vacancies, moderation_queue, open_reports]
+          properties:
+            users: { type: integer }
+            seekers: { type: integer }
+            employers: { type: integer }
+            blocked_users: { type: integer }
+            companies: { type: integer }
+            published_vacancies: { type: integer }
+            moderation_queue: { type: integer }
+            open_reports: { type: integer }
+        days:
+          type: array
+          description: oldest first, Asia/Tashkent days
+          items:
+            type: object
+            required: [date, registrations, vacancies, applications]
+            properties:
+              date: { type: string, format: date }
+              registrations: { type: integer }
+              vacancies: { type: integer }
+              applications: { type: integer }
+    AuditEntry:
+      type: object
+      required: [id, action, object_type, object_id, details, ip, created_at, admin]
+      properties:
+        id: { type: string, format: uuid }
+        action: { type: string, examples: [user.block, company.block, vacancy.approve, skill.merge, report.resolved] }
+        object_type: { type: string, enum: [user, company, vacancy, skill, report, search_term] }
+        object_id: { type: string }
+        details: { type: object }
+        ip: { type: [string, "null"] }
+        created_at: { type: string, format: date-time }
+        admin:
+          type: [object, "null"]
+          properties: { id: { type: string, format: uuid }, full_name: { type: string }, email: { type: [string, "null"] } }
+    ReportReason: { type: string, enum: [spam, fraud, offensive, discrimination, misleading, duplicate, other] }
+    Report:
+      type: object
+      required: [id, reason, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        reason: { $ref: "#/components/schemas/ReportReason" }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        created_at: { type: string, format: date-time }
+    AdminReport:
+      type: object
+      required: [id, object_type, reason, comment, status, created_at, resolved_at, resolved_by, resolution_note, reporter, vacancy, open_reports]
+      properties:
+        id: { type: string, format: uuid }
+        object_type: { type: string, enum: [vacancy] }
+        reason: { $ref: "#/components/schemas/ReportReason" }
+        comment: { type: string }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        created_at: { type: string, format: date-time }
+        resolved_at: { type: [string, "null"], format: date-time }
+        resolved_by: { type: [string, "null"], format: uuid }
+        resolution_note: { type: string }
+        reporter:
+          type: [object, "null"]
+          properties: { id: { type: string, format: uuid }, full_name: { type: string }, email: { type: [string, "null"] } }
+        vacancy:
+          type: [object, "null"]
+          properties:
+            id: { type: string, format: uuid }
+            title: { type: string }
+            slug: { type: string }
+            status: { $ref: "#/components/schemas/VacancyStatus" }
+            company: { type: object, properties: { id: { type: string, format: uuid }, name: { type: string }, slug: { type: string } } }
+        open_reports: { type: integer, description: "open reports on the same vacancy (open queue only)" }
+    PresenceState:
+      type: object
+      required: [user_id, online, last_seen_at]
+      properties:
+        user_id: { type: string, format: uuid }
+        online: { type: boolean }
+        last_seen_at: { type: [string, "null"], format: date-time }
     VacancyInput:
       type: object
       required: [title, description, category_id, region_id, employment_type, work_format, experience, schedule]
@@ -250,6 +424,8 @@ components:
             can_edit: { type: boolean }
             reject_reason: { type: string, description: company members only }
             submitted_at: { type: string, format: date-time, description: company members only }
+            featured_until: { type: string, format: date-time, description: "company members and admins: end of the TOP placement" }
+            republish: { type: string, enum: [direct, moderation], description: "company members, expired/archived vacancies only: what POST /vacancies/{vacancy}/republish will do" }
     VacancyResponse:
       type: object
       properties: { data: { $ref: "#/components/schemas/VacancyDetail" } }
@@ -457,8 +633,11 @@ paths:
                 full_name: { type: string, minLength: 2, maxLength: 100 }
                 role: { type: string, enum: [seeker, employer] }
                 locale: { $ref: "#/components/schemas/Locale" }
+                consent: { type: boolean, description: "consent to the processing of personal data (TZ FN-08); must be true, else 400 consent_required" }
+                consent_version: { type: string, maxLength: 32, description: "policy version shown; omitted = current; an older one is 409 consent_outdated" }
       responses:
         "201": { $ref: "#/components/responses/Auth" }
+        "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
   /auth/login:
@@ -497,8 +676,11 @@ paths:
                 id_token: { type: string }
                 role: { type: string, enum: [seeker, employer], description: used only for new accounts }
                 locale: { $ref: "#/components/schemas/Locale" }
+                consent: { type: boolean, description: "required (true) when this sign-in creates the account, else 400 consent_required" }
+                consent_version: { type: string, maxLength: 32 }
       responses:
         "200": { $ref: "#/components/responses/Auth" }
+        "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
   /auth/refresh:
     post:
@@ -620,7 +802,7 @@ paths:
     patch:
       tags: [me]
       security: [{ bearer: [] }]
-      summary: Update name or language
+      summary: Update name, language or presence visibility
       requestBody:
         content:
           application/json:
@@ -629,9 +811,47 @@ paths:
               properties:
                 full_name: { type: string, minLength: 2, maxLength: 100 }
                 locale: { $ref: "#/components/schemas/Locale" }
+                hide_online: { type: boolean, description: "hide the online status from everyone (TZ SEC-05); applies to live watchers at once" }
       responses:
         "200": { $ref: "#/components/responses/User" }
         "422": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Delete the account (TZ FN-03)
+      description: |
+        Confirm with `password`; accounts without a password (Google-only) send a fresh
+        `google_id_token` or call within 10 minutes of signing in (else 403 reauth_required).
+        Refused with 409 `ownership_transfer_required` (fields.companies = comma-separated
+        slugs) while the user owns a company that has other members: transfer it first
+        (POST /companies/{company}/owner). A company the user is the only member of closes
+        with the account. Personal data is removed (name, e-mail, phone, avatar, uploads,
+        resumes; applications stay with employers, shown with an empty full_name), every
+        session is revoked and the e-mail can register again. Clears the refresh cookie.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string, maxLength: 72 }
+                google_id_token: { type: string }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /me/consent:
+    put:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Accept the current privacy policy (after it changed; TZ FN-08)
+      requestBody:
+        content: { application/json: { schema: { type: object, properties: { version: { type: string, maxLength: 32, description: "omitted = current" } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/User" }
+        "409": { $ref: "#/components/responses/Error" }
   /me/password:
     put:
       tags: [me]
@@ -699,7 +919,8 @@ paths:
   /catalog/regions:
     get:
       tags: [catalog]
-      summary: Regions with their districts (ETag cached)
+      summary: Regions with their districts (ETag cached); depth=1 leaves the districts out
+      parameters: [{ name: depth, in: query, schema: { type: integer, enum: [1] } }]
       responses:
         "200":
           description: Tree
@@ -707,6 +928,19 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Region" } } } }
         "304": { description: Not modified }
+  /catalog/regions/{region}/districts:
+    get:
+      tags: [catalog]
+      summary: "Districts and cities of regional subordination of one region (SOATO, TZ FN-06), cities first (ETag cached)"
+      parameters: [{ name: region, in: path, required: true, schema: { type: string }, description: region id or slug }]
+      responses:
+        "200":
+          description: Districts
+          content:
+            application/json:
+              schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/Region" } } } }
+        "304": { description: Not modified }
+        "404": { $ref: "#/components/responses/Error" }
   /catalog/skills:
     get:
       tags: [catalog]
@@ -795,7 +1029,12 @@ paths:
     post:
       tags: [companies]
       security: [{ bearer: [] }]
-      summary: Add an existing employer account by email (owner/admin; only the owner grants admin)
+      deprecated: true
+      summary: "Invite by e-mail, or change the role of someone already on the team (use /invites and PATCH /members/{user})"
+      description: |
+        Kept for compatibility (TZ FN-05): nobody is added directly any more. For a current
+        member it changes the role; for anyone else it sends an invite (same rules as
+        POST /companies/{company}/invites) that they have to accept.
       requestBody:
         required: true
         content:
@@ -817,6 +1056,110 @@ paths:
         - { $ref: "#/components/parameters/CompanyRef" }
         - { name: user, in: path, required: true, schema: { type: string, format: uuid } }
       responses: { "204": { $ref: "#/components/responses/NoContent" } }
+    patch:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Change a member's role (admins manage recruiters; the owner also admins)
+      parameters:
+        - { $ref: "#/components/parameters/CompanyRef" }
+        - { name: user, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [role], properties: { role: { type: string, enum: [admin, recruiter] } } } } }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /companies/{company}/invites:
+    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+    get:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Pending invites (owner/admin), expired ones flagged
+      responses:
+        "200":
+          description: Invites
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/CompanyInvite" } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Invite someone by e-mail (TZ FN-05; valid 7 days, resending refreshes it)
+      description: |
+        The invitee is told in the app and by e-mail when they have an account, by e-mail
+        otherwise (a link to /me/invites). They become a member only after accepting; until
+        then they can't read the company's team, vacancies or applications. Admins invite
+        recruiters; the owner also invites admins. Errors: 409 already_member,
+        404 member_not_found (the address belongs to a non-employer or blocked account).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, role]
+              properties: { email: { type: string, format: email }, role: { type: string, enum: [admin, recruiter] } }
+      responses:
+        "201":
+          description: Invite
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/CompanyInvite" } } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /companies/{company}/invites/{invite}:
+    delete:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Revoke a pending invite (owner/admin)
+      parameters:
+        - { $ref: "#/components/parameters/CompanyRef" }
+        - { name: invite, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "404": { $ref: "#/components/responses/Error" }
+  /companies/{company}/owner:
+    post:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Hand the company to another member (owner only); the old owner stays as admin
+      parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [user_id], properties: { user_id: { type: string, format: uuid } } } } }
+      responses:
+        "200": { $ref: "#/components/responses/Company" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /me/invites:
+    get:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Company invites addressed to my e-mail that can still be answered
+      responses:
+        "200":
+          description: Invites
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/MyInvite" } } } } } }
+  /me/invites/{invite}/accept:
+    post:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Join the company (verified e-mail and an employer account needed)
+      parameters: [{ name: invite, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200": { $ref: "#/components/responses/Company" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /me/invites/{invite}/decline:
+    post:
+      tags: [companies]
+      security: [{ bearer: [] }]
+      summary: Decline an invite
+      parameters: [{ name: invite, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /companies/{company}/vacancies:
     parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
     get:
@@ -919,6 +1262,50 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Vacancy" }
         "409": { $ref: "#/components/responses/Error" }
+  /vacancies/{vacancy}/republish:
+    post:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Put an expired or archived vacancy back online for 30 days (TZ FN-04)
+      description: |
+        Without moderation when nothing changed since it was last published (no edit, no
+        return to moderation, not taken down by an admin) or the company is verified;
+        otherwise it goes to moderation like /submit. The response's status says which.
+        409 invalid_status_transition for other statuses.
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      responses:
+        "200": { $ref: "#/components/responses/Vacancy" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /vacancies/{vacancy}/report:
+    post:
+      tags: [vacancies]
+      security: [{ bearer: [] }]
+      summary: Report a published vacancy (TZ FN-02)
+      description: |
+        One report per user and vacancy (409 already_reported), none against your own
+        company (409 own_vacancy), at most 10 a day (429 rate_limited). reason "other" needs
+        a comment. Three open reports from different users send the vacancy back to
+        moderation.
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { $ref: "#/components/schemas/ReportReason" }
+                comment: { type: string, maxLength: 1000 }
+      responses:
+        "201":
+          description: Report filed
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/Report" } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /vacancies/{vacancy}/view:
     post:
       tags: [vacancies]
@@ -1063,6 +1450,234 @@ paths:
       security: [{ bearer: [] }]
       summary: Remove verification
       responses: { "200": { $ref: "#/components/responses/Company" } }
+
+  /admin/vacancies/{vacancy}/featured:
+    parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Mark "TOP" until a date (future, at most a year ahead); ended by a job on that date
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [until], properties: { until: { type: string, format: date-time } } } } }
+      responses: { "200": { $ref: "#/components/responses/Vacancy" }, "404": { $ref: "#/components/responses/Error" }, "422": { $ref: "#/components/responses/Error" } }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: End the "TOP" placement now
+      responses: { "200": { $ref: "#/components/responses/Vacancy" }, "404": { $ref: "#/components/responses/Error" } }
+  /admin/companies:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Companies of any status, newest first
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: part of the name }
+        - { name: status, in: query, schema: { type: string, enum: [active, blocked, deleted] } }
+        - { name: verified, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Page
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/AdminCompany" } }, meta: { type: object, properties: { next_cursor: { type: [string, "null"] } } } } } } }
+  /admin/companies/{company}/block:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Block a company; its published and pending vacancies are unpublished at once and leave search
+      parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 500 } } } } }
+      responses:
+        "200":
+          description: Company
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminCompany" } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/companies/{company}/unblock:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Unblock (its vacancies stay archived until the company republishes them)
+      parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+      responses:
+        "200":
+          description: Company
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminCompany" } } } } }
+  /admin/users:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Search users by part of name, e-mail or phone; newest first
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: role, in: query, schema: { type: string, enum: [seeker, employer, admin] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, blocked, deleted] } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Page
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/AdminUser" } }, meta: { type: object, properties: { next_cursor: { type: [string, "null"] } } } } } } }
+  /admin/users/{user}:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: One user with their company memberships
+      parameters: [{ name: user, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: User
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminUserDetail" } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/users/{user}/block:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Block a user — sign-in refused, all sessions revoked at once, their published/pending vacancies unpublished
+      parameters: [{ name: user, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 3, maxLength: 500 } } } } }
+      responses:
+        "200":
+          description: User
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminUser" } } } } }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/users/{user}/unblock:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Unblock a user
+      parameters: [{ name: user, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        "200":
+          description: User
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminUser" } } } } }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/skills:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Skills newest first with usage counts (verified=false is the moderation queue)
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: verified, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Page
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/AdminSkill" } }, meta: { type: object, properties: { next_cursor: { type: [string, "null"] } } } } } } }
+  /admin/skills/{skill}/verification:
+    parameters: [{ name: skill, in: path, required: true, schema: { type: integer } }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Mark a skill verified (suggested to everyone)
+      responses:
+        "200":
+          description: Skill
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminSkill" } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Remove the verified mark
+      responses:
+        "200":
+          description: Skill
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminSkill" } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/skills/{skill}/merge:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Merge a duplicate skill into another; vacancies and resumes move over and the duplicate is deleted
+      parameters: [{ name: skill, in: path, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object, required: [into_id], properties: { into_id: { type: integer } } } } }
+      responses:
+        "200":
+          description: Result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [into, vacancies, resumes]
+                    properties: { into: { $ref: "#/components/schemas/AdminSkill" }, vacancies: { type: integer }, resumes: { type: integer } }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /admin/reports:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Reports queue — open ones oldest first, resolved/dismissed newest first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, resolved, dismissed], default: open } }
+        - { name: vacancy_id, in: query, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Page
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/AdminReport" } }, meta: { type: object, properties: { next_cursor: { type: [string, "null"] } } } } } } }
+  /admin/reports/{report}/resolve:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Close a report (or every open report on the same vacancy)
+      parameters: [{ name: report, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [resolved, dismissed] }
+                note: { type: string, maxLength: 1000 }
+                all_for_object: { type: boolean }
+      responses:
+        "200":
+          description: How many reports were closed
+          content: { application/json: { schema: { type: object, properties: { data: { type: object, properties: { closed: { type: integer } } } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /admin/stats:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Dashboard totals and daily sign-ups, vacancies and applications
+      parameters: [{ name: days, in: query, schema: { type: integer, minimum: 1, maximum: 90, default: 30 } }]
+      responses:
+        "200":
+          description: Stats
+          content: { application/json: { schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminStats" } } } } }
+  /admin/audit-log:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Admin actions, newest first
+      parameters:
+        - { name: object_type, in: query, schema: { type: string } }
+        - { name: object_id, in: query, schema: { type: string } }
+        - { name: admin_id, in: query, schema: { type: string, format: uuid } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        "200":
+          description: Page
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/AuditEntry" } }, meta: { type: object, properties: { next_cursor: { type: [string, "null"] } } } } } } }
 
   /resumes:
     get:
@@ -1397,9 +2012,17 @@ paths:
     get:
       tags: [realtime]
       security: [{ bearer: [] }]
-      summary: Online status of up to 200 users
+      summary: Online status of up to 200 users you share a conversation with (TZ SEC-05)
+      description: |
+        Naming anyone you share no conversation with is 403 presence_forbidden. Users who
+        hide their status read as offline with last_seen_at null. The WebSocket
+        watch_presence frame applies the same rule, silently dropping strangers.
       parameters: [{ name: ids, in: query, required: true, schema: { type: string }, description: comma-separated uuids }]
-      responses: { "200": { description: "[{user_id, online, last_seen_at}]" } }
+      responses:
+        "200":
+          description: States
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: "#/components/schemas/PresenceState" } } } } } }
+        "403": { $ref: "#/components/responses/Error" }
 
   /applications/{application}/conversation:
     post:

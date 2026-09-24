@@ -126,7 +126,7 @@ export default function Companies({ loaderData }: Route.ComponentProps) {
       {/* Brand light under the (clear at rest) header, fading out before the grid. */}
       <div
         aria-hidden="true"
-        className="aurora-hero aurora-fade pointer-events-none absolute inset-x-0 -top-(--header-h) -z-10 h-80 md:h-96"
+        className="aurora-hero aurora-fade pointer-events-none absolute inset-x-0 -top-(--header-h) -z-10 h-96"
       />
       <div className="container-page pb-16 pt-6 md:pb-24 md:pt-10">
         <PageHeader title={t("companies.title")} description={t("companies.subtitle")} />
@@ -290,7 +290,7 @@ function CompanyCard({ c, meta, priority }: { c: Company; meta: string; priority
             </CardLink>
             {c.verified && (
               <>
-                <BadgeCheck aria-hidden="true" className="ml-1.5 inline size-5 fill-firuza align-text-bottom text-surface" />
+                <BadgeCheck aria-hidden="true" className="-mt-1 ml-1.5 inline size-5 fill-firuza align-middle text-surface" />
                 <span className="sr-only">{t("common.verified")}</span>
               </>
             )}

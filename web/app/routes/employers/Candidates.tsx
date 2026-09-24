@@ -77,7 +77,7 @@ function SearchMock() {
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {chips.map((c) => (
-            <span key={c} className="inline-flex h-8 items-center gap-1 rounded-pill bg-lapis-soft pl-3 pr-2 text-sm text-lapis-ink">
+            <span key={c} className="inline-flex h-8 items-center gap-1 rounded-pill bg-lapis-soft px-3 text-sm text-lapis-ink">
               {c}
               <X aria-hidden="true" className="size-3.5" />
             </span>

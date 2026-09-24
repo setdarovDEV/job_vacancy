@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, CircleCheck, ExternalLink, LogOut, Mail, UserMinus, UserPlus } from "lucide-react";
+import { CircleCheck, ExternalLink, LogOut, Mail, UserMinus, UserPlus } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 
-import { CompanySwitcher, EmployerOnly } from "./EmployerOnly";
+import { CompanySwitcher, EmployerOnly, VerifiedName } from "./EmployerOnly";
 import { useMyCompany, type Company } from "./company-hook";
 import { api, type Schemas } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
@@ -99,6 +99,7 @@ function Editor({ company }: { company: Company | null }) {
           </>
         )}
       />
+      {!canEdit && <Callout tone="info" className="mb-6">{t("dashboardPage.readOnly")}</Callout>}
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
         {/* Live preview: first on phones and tablets (context for the form), a sticky aside on wide screens. */}
         <aside aria-labelledby="preview-title" className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-24 xl:col-start-2 xl:row-start-1">
@@ -112,7 +113,6 @@ function Editor({ company }: { company: Company | null }) {
           )}
         </aside>
         <div className="flex min-w-0 flex-col gap-6 xl:col-start-1 xl:row-start-1">
-          {!canEdit && <Callout tone="info">{t("dashboardPage.readOnly")}</Callout>}
           {company && <LogoCard company={company} disabled={!canEdit} />}
           <ProfileForm
             company={company}
@@ -167,14 +167,7 @@ function Preview({ f, company }: { f: CompanyInput; company: Company | null }) {
             <Avatar name={name || "?"} src={company?.logo_url} square size="lg" />
           </div>
           <p className={cn("mt-3 break-words font-display text-lg font-semibold tracking-heading", name ? "text-ink" : "text-ink-3")}>
-            {name || t("dashboardPage.namePlaceholder")}
-            {/* NBSP: the badge wraps together with the last word, never alone on a line. */}
-            {company?.verified && (
-              <>
-                {"\u00a0"}
-                <BadgeCheck role="img" aria-label={t("common.verified")} className="inline-block size-5 align-middle text-firuza" />
-              </>
-            )}
+            <VerifiedName name={name || t("dashboardPage.namePlaceholder")} verified={company?.verified} iconClassName="size-5" />
           </p>
           {meta.length > 0 && <p className="mt-1 break-words text-sm text-ink-2">{meta.join(" · ")}</p>}
           {site && <p className="mt-1 truncate text-sm text-lapis-ink">{site}</p>}
@@ -512,10 +505,13 @@ function Team({ company }: { company: Company }) {
           columns={columns}
           caption={t("dashboardPage.team.caption")}
           mobileCard={(m) => (
-            <div className="flex items-center gap-2">
-              <div className="min-w-0 flex-1">{who(m)}</div>
-              <div className="shrink-0">{role(m)}</div>
-              {action(m) && <div className="-mr-2 shrink-0">{action(m)}</div>}
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                {who(m)}
+                {/* Under the name (aligned past the avatar), so long names keep their room. */}
+                <div className="mt-2 pl-13">{role(m)}</div>
+              </div>
+              {action(m) && <div className="-mr-2 -mt-1 shrink-0">{action(m)}</div>}
             </div>
           )}
         />

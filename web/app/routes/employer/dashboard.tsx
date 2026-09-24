@@ -3,15 +3,17 @@ import {
   type InfiniteData, type QueryClient, type QueryKey,
 } from "@tanstack/react-query";
 import {
-  Archive, BadgeCheck, Building2, CalendarClock, Check, ChevronRight, Clock, Eye, FilePen, Image as ImageIcon, Inbox, ListFilter,
+  Archive, Building2, CalendarClock, Check, ChevronRight, Clock, Eye, FilePen, Image as ImageIcon, Inbox, ListFilter,
   MoreHorizontal, PencilLine, Plus, RotateCcw, Send, ShieldAlert, Sparkles, Trash2, Users,
 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useViewTransitionState } from "react-router";
 
-import { CompanySwitcher, EmployerOnly } from "./EmployerOnly";
+import { CompanySwitcher, EmployerOnly, VerifiedName } from "./EmployerOnly";
 import { useMyCompany, type Company } from "./company-hook";
 import { api, type Schemas } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
+import { localizedPath } from "~/shared/i18n/config";
 import { LocalizedLink, useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { cn } from "~/shared/lib/cn";
@@ -265,24 +267,16 @@ function Header({ company }: { company: Company }) {
     <PageHeader
       title={
         <>
-          {company.name}
-          {/* NBSP: the badge wraps together with the last word, never alone on a line. */}
-          {company.verified && (
-            <>
-              {"\u00a0"}
-              <BadgeCheck role="img" aria-label={t("common.verified")} className="inline-block size-6 align-middle text-firuza md:size-7" />
-            </>
-          )}
+          <VerifiedName name={company.name} verified={company.verified} iconClassName="size-6 md:size-7" />
+          {/* Several companies: the title itself switches between them (Linear-style). */}
+          <CompanySwitcher compact className="ml-1 align-middle" />
         </>
       }
       description={company.verified ? t("employer.dashboardHint") : t("employer.unverifiedHint")}
       actions={
-        <>
-          <CompanySwitcher />
-          <Button asChild icon={<Plus className="size-4.5" />}>
-            <LocalizedLink to="/employer/vacancies/new" prefetch="intent">{t("nav.postVacancy")}</LocalizedLink>
-          </Button>
-        </>
+        <Button asChild icon={<Plus className="size-4.5" />}>
+          <LocalizedLink to="/employer/vacancies/new" prefetch="intent">{t("nav.postVacancy")}</LocalizedLink>
+        </Button>
       }
     />
   );
@@ -441,6 +435,12 @@ function Attention({ company, items, fresh, reasons, act, enter }: {
       body: <RelTime iso={v.created_at} template={(when) => t("dashboardPage.attn.draft", { when })} />,
     });
   }
+  if (company.my_role !== "recruiter" && !(company.about?.trim() && company.industry_id && company.region_id)) {
+    list.push({
+      id: "profile", tone: "neutral", icon: <Building2 />, title: t("dashboardPage.attn.profile"), body: t("dashboardPage.attn.profileBody"),
+      to: "/employer/company", cta: t("dashboardPage.steps.fill"),
+    });
+  }
   if (!company.logo_url && company.my_role !== "recruiter") {
     list.push({
       id: "logo", tone: "neutral", icon: <ImageIcon />, title: t("dashboardPage.attn.noLogo"), body: t("dashboardPage.attn.noLogoBody"),
@@ -562,9 +562,9 @@ function Vacancies({ list: q, tab, onTab: setTab, overview, fresh, act }: {
 
   const columns: DataTableColumn<Vacancy>[] = [
     { key: COL.title, header: t("dashboardPage.vacancy"), cell: (v) => <TitleCell v={v} /> },
-    { key: COL.views, header: t("dashboardPage.views"), align: "end", className: "w-28", cell: (v) => groupDigits(v.views_count) },
-    { key: COL.apps, header: t("dashboardPage.applicants"), align: "end", className: "w-36", cell: (v) => <Applicants v={v} fresh={fresh.by.get(v.id)} /> },
-    { key: COL.expires, header: t("dashboardPage.expires"), className: "hidden w-36 lg:table-cell", cell: (v) => <Expiry v={v} /> },
+    { key: COL.views, header: t("dashboardPage.views"), align: "end", className: "w-24", cell: (v) => groupDigits(v.views_count) },
+    { key: COL.apps, header: t("dashboardPage.applicants"), align: "end", className: "w-32", cell: (v) => <Applicants v={v} fresh={fresh.by.get(v.id)} /> },
+    { key: COL.expires, header: t("dashboardPage.expires"), className: "w-32", cell: (v) => <Expiry v={v} /> },
     {
       key: COL.actions,
       header: <span className="sr-only">{t("dashboardPage.actions")}</span>,
@@ -646,13 +646,25 @@ function StatusLine({ v }: { v: Vacancy }) {
   );
 }
 
+/**
+ * Only the row being opened gets the shared name, so its title can morph into the applications
+ * page header (vacancy-title-{id}, the same name the public vacancy page uses).
+ */
+function useMorph(v: Vacancy) {
+  const locale = useLocale();
+  const opening = useViewTransitionState(localizedPath(locale, kanbanPath(v)));
+  return opening ? { viewTransitionName: `vacancy-title-${v.id}` } : undefined;
+}
+
 function TitleCell({ v }: { v: Vacancy }) {
+  const morph = useMorph(v);
   return (
     <div className="min-w-0">
       <LocalizedLink
         to={kanbanPath(v)}
         prefetch="intent"
         viewTransition
+        style={morph}
         className="line-clamp-2 break-words text-md font-semibold text-ink transition-colors duration-150 hover:text-lapis-ink"
       >
         {v.title}
@@ -691,6 +703,7 @@ function Expiry({ v }: { v: Vacancy }) {
 
 function MobileRow({ v, fresh, act }: { v: Vacancy; fresh?: number; act: Actions }) {
   const { t } = useTranslation();
+  const morph = useMorph(v);
   return (
     <div className="relative">
       <div className="flex items-start gap-2">
@@ -700,6 +713,7 @@ function MobileRow({ v, fresh, act }: { v: Vacancy; fresh?: number; act: Actions
             to={kanbanPath(v)}
             prefetch="intent"
             viewTransition
+            style={morph}
             className="line-clamp-2 break-words text-md font-semibold text-ink after:absolute after:-inset-4"
           >
             {v.title}

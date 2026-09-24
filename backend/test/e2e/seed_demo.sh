@@ -13,7 +13,7 @@ login() { curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"$1\",\"passwo
 account() { # email role name -> token (registers + verifies on first run)
   local t; t=$(login "$1")
   if [ -z "$t" ]; then
-    t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\"}" | jq -r .data.access_token)
+    t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\"}" | jq -r .data.access_token)
     c=$(mailcode "$1"); curl -s -o /dev/null -X POST $API/auth/email/verify -H "$(A $t)" -H "$H" -d "{\"code\":\"$c\"}"
   fi
   echo "$t"; }
@@ -24,7 +24,7 @@ TS=$(account seeker@demo.uz seeker "Jasur Aliyev")
 CID=$(curl -s $API/me/companies -H "$(A $TE)" | jq -r '.data[0].id // empty')
 if [ -z "$CID" ]; then
   CID=$(curl -s -X POST $API/companies -H "$(A $TE)" -H "$H" -d '{"name":"Demo Texnologiyalari","size":"51-200","website":"demo.uz","about":"Toshkentdagi mahsulot kompaniyasi. Fintech va logistika uchun servislar quramiz."}' | jq -r .data.id)
-  if curl -s -X POST $API/auth/register -H "$H" -d '{"email":"admin@demo.uz","password":"Secret123","full_name":"Demo Admin","role":"seeker"}' >/dev/null; then :; fi
+  if curl -s -X POST $API/auth/register -H "$H" -d '{"consent":true,"email":"admin@demo.uz","password":"Secret123","full_name":"Demo Admin","role":"seeker"}' >/dev/null; then :; fi
   $CTL set-role admin@demo.uz admin >/dev/null
   TA=$(login admin@demo.uz)
   curl -s -o /dev/null -X PUT $API/admin/companies/$CID/verification -H "$(A $TA)"

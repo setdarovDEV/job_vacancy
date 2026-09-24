@@ -65,6 +65,12 @@ type snapshot struct {
 	regionByID   map[int32]regionInfo
 	categories   encoded
 	regions      encoded
+	// regionsTop is the regions without their districts (?depth=1).
+	regionsTop encoded
+	// districts holds each region's districts (TZ FN-06), by region id; regionSlugs maps
+	// a region's slug to its id.
+	districts   map[int32]encoded
+	regionSlugs map[string]int32
 }
 
 type regionInfo struct {
@@ -145,6 +151,23 @@ func (s *Service) Reload(ctx context.Context) error {
 		return err
 	}
 	if snap.regions, err = encode(regRoots); err != nil {
+		return err
+	}
+	tops := make([]Region, len(regRoots))
+	snap.districts = make(map[int32]encoded, len(regRoots))
+	snap.regionSlugs = make(map[string]int32, len(regRoots))
+	for i, r := range regRoots {
+		tops[i] = Region{ID: r.ID, Slug: r.Slug, Kind: r.Kind, Name: r.Name}
+		snap.regionSlugs[r.Slug] = r.ID
+		children := r.Children
+		if children == nil {
+			children = []*Region{}
+		}
+		if snap.districts[r.ID], err = encode(children); err != nil {
+			return err
+		}
+	}
+	if snap.regionsTop, err = encode(tops); err != nil {
 		return err
 	}
 	s.snap.Store(snap)

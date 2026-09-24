@@ -13,9 +13,15 @@ mailcode() { sleep 1.5; curl -s "$MP/search?query=to:$EMAIL" | jq -r '.messages[
 curl -s -X DELETE $MP/messages >/dev/null
 
 echo "== register"
+# TZ FN-08: consent to the processing of personal data is required and recorded.
+check "no consent → 400 consent_required" "$(req -X POST $API/auth/register -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"Secret123\",\"full_name\":\"Ali Valiyev\",\"role\":\"seeker\"}")$(jq -r .error.code $SP/body.json)" "400consent_required"
+check "old policy version → 409 consent_outdated" "$(req -X POST $API/auth/register -H 'Content-Type: application/json' \
+  -d "{\"consent\":true,\"consent_version\":\"2020-01-01\",\"email\":\"$EMAIL\",\"password\":\"Secret123\",\"full_name\":\"Ali Valiyev\",\"role\":\"seeker\"}")$(jq -r .error.code $SP/body.json)" "409consent_outdated"
 code=$(req -c $JAR -X POST $API/auth/register -H 'Content-Type: application/json' -H 'Accept-Language: ru-RU' \
-  -d "{\"email\":\"$EMAIL\",\"password\":\"Secret123\",\"full_name\":\"  Ali   Valiyev \",\"role\":\"seeker\"}")
+  -d "{\"consent\":true,\"email\":\"$EMAIL\",\"password\":\"Secret123\",\"full_name\":\"  Ali   Valiyev \",\"role\":\"seeker\"}")
 check "201 created" $code 201
+check "consent version and time stored" "$(jq -r '"\(.data.user.consent_version != null)/\(.data.user.consent_at != null)/\(.data.user.consent_outdated)"' $SP/body.json)" "true/true/false"
 AT=$(jq -r .data.access_token $SP/body.json)
 check "no refresh token in web body" "$(jq -r '.data.refresh_token // "none"' $SP/body.json)" none
 check "locale from Accept-Language" "$(jq -r .data.user.locale $SP/body.json)" ru
@@ -23,8 +29,8 @@ check "name normalized" "$(jq -r .data.user.full_name $SP/body.json)" "Ali Valiy
 check "refresh cookie set" "$(grep -c jv_refresh $JAR)" 1
 
 echo "== duplicate & validation"
-check "duplicate email 409" $(req -X POST $API/auth/register -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"Secret123\",\"full_name\":\"Ali\",\"role\":\"seeker\"}") 409
-code=$(req -X POST $API/auth/register -H 'Content-Type: application/json' -d '{"email":"bad","password":"short","full_name":"A","role":"admin"}')
+check "duplicate email 409" $(req -X POST $API/auth/register -H 'Content-Type: application/json' -d "{\"consent\":true,\"email\":\"$EMAIL\",\"password\":\"Secret123\",\"full_name\":\"Ali\",\"role\":\"seeker\"}") 409
+code=$(req -X POST $API/auth/register -H 'Content-Type: application/json' -d '{"consent":true,"email":"bad","password":"short","full_name":"A","role":"admin"}')
 check "validation 422" $code 422
 check "fields reported" "$(jq -r '.error.fields | keys | join(",")' $SP/body.json)" "email,full_name,password,role"
 

@@ -22,32 +22,31 @@ export function AiBlock() {
   const { t } = useTranslation();
   return (
     <section aria-labelledby="employers-ai" className={band} style={est(34)}>
-      <Card radius="sheet" padding="none" className="relative isolate overflow-hidden p-3 sm:p-6 md:p-10">
+      <Card radius="sheet" padding="none" className="relative isolate grid gap-6 overflow-hidden p-4 sm:p-6 md:p-10 lg:grid-cols-2 lg:items-center lg:gap-10">
         <div aria-hidden="true" className="aurora-hero pointer-events-none absolute inset-0 -z-10" />
-        <div className="glass-panel grid gap-6 rounded-panel p-5 md:p-8 lg:grid-cols-2 lg:items-center lg:gap-10">
-          <div className="min-w-0">
-            <div className="flex items-center gap-3">
-              <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-control bg-lapis text-on-lapis shadow-2">
-                <Sparkles className="size-5" />
-              </span>
-              <Badge tone="zafaron">{t("common.soon")}</Badge>
-            </div>
-            <h2 id="employers-ai" className="reveal mt-4 break-words font-display text-xl font-semibold tracking-heading text-ink md:text-2xl">
-              {t("employersPage.ai.title")}
-            </h2>
-            <p className="mt-2 text-md text-ink-2 md:text-base">{t("employersPage.ai.body")}</p>
+        {/* The pitch sits on the brand light itself; only the feature list floats as glass. */}
+        <div className="min-w-0 px-1 pt-2 sm:p-0">
+          <div className="flex items-center gap-3">
+            <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-control bg-lapis text-on-lapis shadow-2">
+              <Sparkles className="size-5" />
+            </span>
+            <Badge tone="zafaron">{t("common.soon")}</Badge>
           </div>
-          <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-            {aiItems.map(({ id, icon: Icon }) => (
-              <li key={id} className="flex min-w-0 items-center gap-3 text-md text-ink">
-                <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-control bg-lapis-soft text-lapis-ink">
-                  <Icon className="size-4.5" />
-                </span>
-                <span className="min-w-0">{t(`employersPage.ai.${id}`)}</span>
-              </li>
-            ))}
-          </ul>
+          <h2 id="employers-ai" className="reveal mt-4 break-words font-display text-xl font-semibold tracking-heading text-ink md:text-2xl">
+            {t("employersPage.ai.title")}
+          </h2>
+          <p className="mt-2 max-w-xl text-md text-ink-2 md:text-base">{t("employersPage.ai.body")}</p>
         </div>
+        <ul className="glass-panel grid gap-4 rounded-panel p-5 sm:grid-cols-2 md:p-6 lg:grid-cols-1">
+          {aiItems.map(({ id, icon: Icon }) => (
+            <li key={id} className="flex min-w-0 items-center gap-3 text-md text-ink">
+              <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-control bg-lapis-soft text-lapis-ink">
+                <Icon className="size-4.5" />
+              </span>
+              <span className="min-w-0">{t(`employersPage.ai.${id}`)}</span>
+            </li>
+          ))}
+        </ul>
       </Card>
     </section>
   );
@@ -80,7 +79,7 @@ export function Pricing() {
         <Plan
           id="business"
           badge={<Badge tone="zafaron">{t("common.soon")}</Badge>}
-          price={<span className="font-display text-xl font-semibold tracking-heading text-ink-2">{t("employersPage.pricing.business.price")}</span>}
+          price={<span className="font-display text-lg font-semibold tracking-heading text-ink-2">{t("employersPage.pricing.business.price")}</span>}
           action={
             <Button type="button" size="lg" shape="pill" variant="secondary" className="w-full" disabled>
               {t("common.soon")}
@@ -114,7 +113,7 @@ function Plan({ id, current, badge, price, action }: {
         </h3>
         {badge}
       </div>
-      <p className="mt-4 flex min-h-13 items-end">{price}</p>
+      <p className="mt-4 flex h-13 items-end">{price}</p>
       <p className="mt-2 text-md text-ink-2">{t(`employersPage.pricing.${id}.body`)}</p>
       <ul className="mt-6 space-y-3 border-t border-line pt-6">
         {([1, 2, 3, 4] as const).map((n) => (

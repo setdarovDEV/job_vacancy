@@ -34,11 +34,16 @@ export interface paths {
                         /** @enum {string} */
                         role: "seeker" | "employer";
                         locale?: components["schemas"]["Locale"];
+                        /** @description consent to the processing of personal data (TZ FN-08); must be true, else 400 consent_required */
+                        consent?: boolean;
+                        /** @description policy version shown; omitted = current; an older one is 409 consent_outdated */
+                        consent_version?: string;
                     };
                 };
             };
             responses: {
                 201: components["responses"]["Auth"];
+                400: components["responses"]["Error"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
             };
@@ -119,11 +124,15 @@ export interface paths {
                          */
                         role?: "seeker" | "employer";
                         locale?: components["schemas"]["Locale"];
+                        /** @description required (true) when this sign-in creates the account, else 400 consent_required */
+                        consent?: boolean;
+                        consent_version?: string;
                     };
                 };
             };
             responses: {
                 200: components["responses"]["Auth"];
+                400: components["responses"]["Error"];
                 401: components["responses"]["Error"];
             };
         };
@@ -479,10 +488,43 @@ export interface paths {
         };
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete the account (TZ FN-03)
+         * @description Confirm with `password`; accounts without a password (Google-only) send a fresh
+         *     `google_id_token` or call within 10 minutes of signing in (else 403 reauth_required).
+         *     Refused with 409 `ownership_transfer_required` (fields.companies = comma-separated
+         *     slugs) while the user owns a company that has other members: transfer it first
+         *     (POST /companies/{company}/owner). A company the user is the only member of closes
+         *     with the account. Personal data is removed (name, e-mail, phone, avatar, uploads,
+         *     resumes; applications stay with employers, shown with an empty full_name), every
+         *     session is revoked and the e-mail can register again. Clears the refresh cookie.
+         */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        password?: string;
+                        google_id_token?: string;
+                    };
+                };
+            };
+            responses: {
+                204: components["responses"]["NoContent"];
+                400: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
         options?: never;
         head?: never;
-        /** Update name or language */
+        /** Update name, language or presence visibility */
         patch: {
             parameters: {
                 query?: never;
@@ -495,6 +537,8 @@ export interface paths {
                     "application/json": {
                         full_name?: string;
                         locale?: components["schemas"]["Locale"];
+                        /** @description hide the online status from everyone (TZ SEC-05); applies to live watchers at once */
+                        hide_online?: boolean;
                     };
                 };
             };
@@ -503,6 +547,42 @@ export interface paths {
                 422: components["responses"]["Error"];
             };
         };
+        trace?: never;
+    };
+    "/me/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Accept the current privacy policy (after it changed; TZ FN-08) */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description omitted = current */
+                        version?: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["User"];
+                409: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/me/password": {
@@ -700,10 +780,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Regions with their districts (ETag cached) */
+        /** Regions with their districts (ETag cached); depth=1 leaves the districts out */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    depth?: 1;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -728,6 +810,55 @@ export interface paths {
                     };
                     content?: never;
                 };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/catalog/regions/{region}/districts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Districts and cities of regional subordination of one region (SOATO, TZ FN-06), cities first (ETag cached) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description region id or slug */
+                    region: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Districts */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["Region"][];
+                        };
+                    };
+                };
+                /** @description Not modified */
+                304: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -955,7 +1086,13 @@ export interface paths {
             };
         };
         put?: never;
-        /** Add an existing employer account by email (owner/admin; only the owner grants admin) */
+        /**
+         * Invite by e-mail, or change the role of someone already on the team (use /invites and PATCH /members/{user})
+         * @deprecated
+         * @description Kept for compatibility (TZ FN-05): nobody is added directly any more. For a current
+         *     member it changes the role; for anyone else it sends an invite (same rules as
+         *     POST /companies/{company}/invites) that they have to accept.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -1015,6 +1152,296 @@ export interface paths {
                 204: components["responses"]["NoContent"];
             };
         };
+        options?: never;
+        head?: never;
+        /** Change a member's role (admins manage recruiters; the owner also admins) */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                    user: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        role: "admin" | "recruiter";
+                    };
+                };
+            };
+            responses: {
+                204: components["responses"]["NoContent"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        trace?: never;
+    };
+    "/companies/{company}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description uuid or slug */
+                company: components["parameters"]["CompanyRef"];
+            };
+            cookie?: never;
+        };
+        /** Pending invites (owner/admin), expired ones flagged */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Invites */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["CompanyInvite"][];
+                        };
+                    };
+                };
+                403: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        /**
+         * Invite someone by e-mail (TZ FN-05; valid 7 days, resending refreshes it)
+         * @description The invitee is told in the app and by e-mail when they have an account, by e-mail
+         *     otherwise (a link to /me/invites). They become a member only after accepting; until
+         *     then they can't read the company's team, vacancies or applications. Admins invite
+         *     recruiters; the owner also invites admins. Errors: 409 already_member,
+         *     404 member_not_found (the address belongs to a non-employer or blocked account).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: email */
+                        email: string;
+                        /** @enum {string} */
+                        role: "admin" | "recruiter";
+                    };
+                };
+            };
+            responses: {
+                /** @description Invite */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["CompanyInvite"];
+                        };
+                    };
+                };
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/companies/{company}/invites/{invite}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke a pending invite (owner/admin) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                    invite: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                204: components["responses"]["NoContent"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/companies/{company}/owner": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Hand the company to another member (owner only); the old owner stays as admin */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        user_id: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["Company"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Company invites addressed to my e-mail that can still be answered */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Invites */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["MyInvite"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/invites/{invite}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Join the company (verified e-mail and an employer account needed) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    invite: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Company"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/invites/{invite}/decline": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Decline an invite */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    invite: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                204: components["responses"]["NoContent"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1275,6 +1702,103 @@ export interface paths {
             responses: {
                 200: components["responses"]["Vacancy"];
                 409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vacancies/{vacancy}/republish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Put an expired or archived vacancy back online for 30 days (TZ FN-04)
+         * @description Without moderation when nothing changed since it was last published (no edit, no
+         *     return to moderation, not taken down by an admin) or the company is verified;
+         *     otherwise it goes to moderation like /submit. The response's status says which.
+         *     409 invalid_status_transition for other statuses.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid (writes) or slug (reads) */
+                    vacancy: components["parameters"]["VacancyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Vacancy"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vacancies/{vacancy}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report a published vacancy (TZ FN-02)
+         * @description One report per user and vacancy (409 already_reported), none against your own
+         *     company (409 own_vacancy), at most 10 a day (429 rate_limited). reason "other" needs
+         *     a comment. Three open reports from different users send the vacancy back to
+         *     moderation.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid (writes) or slug (reads) */
+                    vacancy: components["parameters"]["VacancyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: components["schemas"]["ReportReason"];
+                        comment?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Report filed */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["Report"];
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -1706,6 +2230,733 @@ export interface paths {
                 200: components["responses"]["Company"];
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/vacancies/{vacancy}/featured": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description uuid (writes) or slug (reads) */
+                vacancy: components["parameters"]["VacancyRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark "TOP" until a date (future, at most a year ahead); ended by a job on that date */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid (writes) or slug (reads) */
+                    vacancy: components["parameters"]["VacancyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: date-time */
+                        until: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["Vacancy"];
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** End the "TOP" placement now */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid (writes) or slug (reads) */
+                    vacancy: components["parameters"]["VacancyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["Vacancy"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Companies of any status, newest first */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description part of the name */
+                    q?: string;
+                    status?: "active" | "blocked" | "deleted";
+                    verified?: boolean;
+                    cursor?: components["parameters"]["Cursor"];
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminCompany"][];
+                            meta?: {
+                                next_cursor?: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/companies/{company}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Block a company; its published and pending vacancies are unpublished at once and leave search */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Company */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminCompany"];
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/companies/{company}/unblock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unblock (its vacancies stay archived until the company republishes them) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Company */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminCompany"];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search users by part of name, e-mail or phone; newest first */
+        get: {
+            parameters: {
+                query?: {
+                    q?: string;
+                    role?: "seeker" | "employer" | "admin";
+                    status?: "active" | "blocked" | "deleted";
+                    cursor?: components["parameters"]["Cursor"];
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminUser"][];
+                            meta?: {
+                                next_cursor?: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One user with their company memberships */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    user: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description User */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminUserDetail"];
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Block a user — sign-in refused, all sessions revoked at once, their published/pending vacancies unpublished */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    user: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description User */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminUser"];
+                        };
+                    };
+                };
+                400: components["responses"]["Error"];
+                403: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user}/unblock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unblock a user */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    user: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description User */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminUser"];
+                        };
+                    };
+                };
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skills newest first with usage counts (verified=false is the moderation queue) */
+        get: {
+            parameters: {
+                query?: {
+                    q?: string;
+                    verified?: boolean;
+                    cursor?: components["parameters"]["Cursor"];
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminSkill"][];
+                            meta?: {
+                                next_cursor?: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/skills/{skill}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                skill: number;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark a skill verified (suggested to everyone) */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    skill: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Skill */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminSkill"];
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Remove the verified mark */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    skill: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Skill */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminSkill"];
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/skills/{skill}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge a duplicate skill into another; vacancies and resumes move over and the duplicate is deleted */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    skill: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        into_id: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Result */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                into: components["schemas"]["AdminSkill"];
+                                vacancies: number;
+                                resumes: number;
+                            };
+                        };
+                    };
+                };
+                400: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reports queue — open ones oldest first, resolved/dismissed newest first */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "open" | "resolved" | "dismissed";
+                    vacancy_id?: string;
+                    cursor?: components["parameters"]["Cursor"];
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminReport"][];
+                            meta?: {
+                                next_cursor?: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reports/{report}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close a report (or every open report on the same vacancy) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    report: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "resolved" | "dismissed";
+                        note?: string;
+                        all_for_object?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description How many reports were closed */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: {
+                                closed?: number;
+                            };
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dashboard totals and daily sign-ups, vacancies and applications */
+        get: {
+            parameters: {
+                query?: {
+                    days?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Stats */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AdminStats"];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/audit-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Admin actions, newest first */
+        get: {
+            parameters: {
+                query?: {
+                    object_type?: string;
+                    object_id?: string;
+                    admin_id?: string;
+                    cursor?: components["parameters"]["Cursor"];
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["AuditEntry"][];
+                            meta?: {
+                                next_cursor?: string | null;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2966,7 +4217,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Online status of up to 200 users */
+        /**
+         * Online status of up to 200 users you share a conversation with (TZ SEC-05)
+         * @description Naming anyone you share no conversation with is 403 presence_forbidden. Users who
+         *     hide their status read as offline with last_seen_at null. The WebSocket
+         *     watch_presence frame applies the same rule, silently dropping strangers.
+         */
         get: {
             parameters: {
                 query: {
@@ -2979,13 +4235,18 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description [{user_id, online, last_seen_at}] */
+                /** @description States */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            data?: components["schemas"]["PresenceState"][];
+                        };
+                    };
                 };
+                403: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -3455,6 +4716,14 @@ export interface components {
             google_linked: boolean;
             /** Format: date-time */
             created_at: string;
+            /** @description online status hidden from everyone (TZ SEC-05) */
+            hide_online?: boolean;
+            /** @description privacy policy version accepted (TZ FN-08); null for accounts created before consent was recorded */
+            consent_version?: string | null;
+            /** Format: date-time */
+            consent_at?: string | null;
+            /** @description true: show the current policy and PUT /me/consent */
+            consent_outdated?: boolean;
         };
         Auth: {
             data?: {
@@ -3560,6 +4829,187 @@ export interface components {
             logo_url: string | null;
             verified: boolean;
         };
+        CompanyInvite: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            /** @enum {string} */
+            role: "admin" | "recruiter";
+            invited_by_name: string | null;
+            /** Format: date-time */
+            expires_at: string;
+            /** @description past expires_at: resend it with POST /companies/{company}/invites */
+            expired: boolean;
+            /** Format: date-time */
+            created_at: string;
+        };
+        MyInvite: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            role: "admin" | "recruiter";
+            invited_by_name: string | null;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            created_at: string;
+            company: components["schemas"]["CompanySummary"];
+        };
+        AdminUser: {
+            /** Format: uuid */
+            id: string;
+            email: string | null;
+            phone: string | null;
+            /** @description empty for deleted accounts */
+            full_name: string;
+            avatar_url: string | null;
+            /** @enum {string} */
+            role: "seeker" | "employer" | "admin";
+            /** @enum {string} */
+            status: "active" | "blocked" | "deleted";
+            email_verified: boolean;
+            phone_verified: boolean;
+            /** Format: date-time */
+            last_seen_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            deleted_at: string | null;
+        };
+        AdminUserDetail: components["schemas"]["AdminUser"] & {
+            companies: {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                slug: string;
+                /** @enum {string} */
+                status: "active" | "blocked" | "deleted";
+                /** @enum {string} */
+                role: "owner" | "admin" | "recruiter";
+            }[];
+        };
+        AdminCompany: components["schemas"]["Company"] & {
+            /** @enum {string} */
+            status: "active" | "blocked" | "deleted";
+            /** Format: uuid */
+            owner_id: string;
+            owner_name: string;
+            owner_email: string | null;
+            open_vacancies: number;
+        };
+        AdminSkill: {
+            id: number;
+            name: string;
+            slug: string;
+            is_verified: boolean;
+            usage_count: number;
+            vacancies: number;
+            resumes: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminStats: {
+            totals: {
+                users: number;
+                seekers: number;
+                employers: number;
+                blocked_users: number;
+                companies: number;
+                published_vacancies: number;
+                moderation_queue: number;
+                open_reports: number;
+            };
+            /** @description oldest first, Asia/Tashkent days */
+            days: {
+                /** Format: date */
+                date: string;
+                registrations: number;
+                vacancies: number;
+                applications: number;
+            }[];
+        };
+        AuditEntry: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @example user.block
+             * @example company.block
+             * @example vacancy.approve
+             * @example skill.merge
+             * @example report.resolved
+             */
+            action: string;
+            /** @enum {string} */
+            object_type: "user" | "company" | "vacancy" | "skill" | "report" | "search_term";
+            object_id: string;
+            details: Record<string, never>;
+            ip: string | null;
+            /** Format: date-time */
+            created_at: string;
+            admin: {
+                /** Format: uuid */
+                id?: string;
+                full_name?: string;
+                email?: string | null;
+            } | null;
+        };
+        /** @enum {string} */
+        ReportReason: "spam" | "fraud" | "offensive" | "discrimination" | "misleading" | "duplicate" | "other";
+        Report: {
+            /** Format: uuid */
+            id: string;
+            reason: components["schemas"]["ReportReason"];
+            /** @enum {string} */
+            status: "open" | "resolved" | "dismissed";
+            /** Format: date-time */
+            created_at: string;
+        };
+        AdminReport: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            object_type: "vacancy";
+            reason: components["schemas"]["ReportReason"];
+            comment: string;
+            /** @enum {string} */
+            status: "open" | "resolved" | "dismissed";
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            resolved_at: string | null;
+            /** Format: uuid */
+            resolved_by: string | null;
+            resolution_note: string;
+            reporter: {
+                /** Format: uuid */
+                id?: string;
+                full_name?: string;
+                email?: string | null;
+            } | null;
+            vacancy: {
+                /** Format: uuid */
+                id?: string;
+                title?: string;
+                slug?: string;
+                status?: components["schemas"]["VacancyStatus"];
+                company?: {
+                    /** Format: uuid */
+                    id?: string;
+                    name?: string;
+                    slug?: string;
+                };
+            } | null;
+            /** @description open reports on the same vacancy (open queue only) */
+            open_reports: number;
+        };
+        PresenceState: {
+            /** Format: uuid */
+            user_id: string;
+            online: boolean;
+            /** Format: date-time */
+            last_seen_at: string | null;
+        };
         VacancyInput: {
             title: string;
             /** @description Markdown */
@@ -3640,6 +5090,16 @@ export interface components {
              * @description company members only
              */
             submitted_at?: string;
+            /**
+             * Format: date-time
+             * @description company members and admins: end of the TOP placement
+             */
+            featured_until?: string;
+            /**
+             * @description company members, expired/archived vacancies only: what POST /vacancies/{vacancy}/republish will do
+             * @enum {string}
+             */
+            republish?: "direct" | "moderation";
         };
         VacancyResponse: {
             data?: components["schemas"]["VacancyDetail"];

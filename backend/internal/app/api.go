@@ -13,6 +13,8 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/config"
 	"jobvacancy.uz/backend/internal/jobs"
+	"jobvacancy.uz/backend/internal/modules/account"
+	"jobvacancy.uz/backend/internal/modules/admin"
 	"jobvacancy.uz/backend/internal/modules/application"
 	"jobvacancy.uz/backend/internal/modules/auth"
 	"jobvacancy.uz/backend/internal/modules/catalog"
@@ -20,6 +22,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/company"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/modules/notification"
+	"jobvacancy.uz/backend/internal/modules/report"
 	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
 	"jobvacancy.uz/backend/internal/modules/user"
@@ -94,8 +97,11 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Google:     google,
 		Limiter:    limiter,
 		RefreshTTL: cfg.Auth.RefreshTokenTTL,
-		Log:        log,
+		// TZ FN-08: sign-up records consent to this privacy policy version.
+		ConsentVersion: cfg.Product.ConsentVersion,
+		Log:            log,
 	}
+	user.SetConsentVersion(cfg.Product.ConsentVersion)
 
 	var bot telegram.Bot = telegram.LogBot{Log: log}
 	if cfg.Telegram.BotToken != "" {
@@ -112,7 +118,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	publicCache := vacancy.NewPublicCache(rdb, log)
 	publicCache.PopularMinIPs = cfg.Search.PopularMinIPs
-	companySvc := &company.Service{Pool: pool, Q: q, Catalog: catalogSvc,
+	companySvc := &company.Service{Pool: pool, Q: q, Catalog: catalogSvc, Notify: notifySvc,
 		// Profile, logo and verification changes show on vacancy pages and cards too.
 		Changed: func(ctx context.Context, c gen.Company) { publicCache.CompanyChanged(ctx, q, c) }}
 	vacancySvc := &vacancy.Service{
@@ -126,6 +132,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	fileSvc := &file.Service{Q: q, Storage: st, Log: log}
 	resumeSvc := &resume.Service{Pool: pool, Q: q, Catalog: catalogSvc}
 	hub := realtime.NewHub(ctx, rdb, log)
+	hub.Audience = realtime.DBAudience{Q: q} // TZ SEC-05: presence only among conversation partners
 	defer hub.Close()
 	chatSvc := &chat.Service{Pool: pool, Q: q, Companies: companySvc, Files: fileSvc, Publisher: publisher,
 		Hub: hub, Notify: notifySvc, RDB: rdb, Log: log}
@@ -133,6 +140,16 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Pool: pool, Q: q, Companies: companySvc, Resumes: resumeSvc, Vacancies: vacancySvc,
 		Notify: notifySvc, Log: log,
 	}
+
+	adminSvc := &admin.Service{Pool: pool, Q: q, Companies: companySvc, Revoked: revoked, Cache: publicCache,
+		Jobs: enq, Log: log}
+	reportSvc := &report.Service{Pool: pool, Q: q, Limiter: limiter, Vacancies: vacancySvc, Notify: notifySvc,
+		Threshold: cfg.Product.ReportThreshold, Log: log}
+	accountSvc := &account.Service{Pool: pool, Q: q, Revoked: revoked, Jobs: enq, Cache: publicCache, Log: log}
+	if google != nil {
+		accountSvc.Google = google
+	}
+	cookie := auth.CookieConfig{Domain: cfg.Auth.CookieDomain, Secure: cfg.Auth.CookieSecure}
 
 	var draining atomic.Bool
 	handler := httpapi.NewRouter(httpapi.Deps{
@@ -150,11 +167,12 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Compress:           cfg.CompressEnabled(),
 		Storage:            st,
 		Draining:           &draining,
-		AuthHandler: &auth.Handler{Svc: authSvc, Cookie: auth.CookieConfig{
-			Domain: cfg.Auth.CookieDomain, Secure: cfg.Auth.CookieSecure,
-		}},
-		UserHandler:    &user.Handler{Q: q},
-		CatalogHandler: &catalog.Handler{Svc: catalogSvc},
+		AuthHandler:        &auth.Handler{Svc: authSvc, Cookie: cookie},
+		AccountHandler:     &account.Handler{Svc: accountSvc, Cookie: cookie},
+		AdminHandler:       &admin.Handler{Svc: adminSvc},
+		ReportHandler:      &report.Handler{Svc: reportSvc},
+		UserHandler:        &user.Handler{Q: q, Presence: hub},
+		CatalogHandler:     &catalog.Handler{Svc: catalogSvc},
 		CompanyHandler: &company.Handler{Svc: companySvc, Files: fileSvc, Cache: publicCache.Company,
 			Directory: &company.Directory{Q: q, RDB: rdb, Log: log}},
 		FileHandler: &file.Handler{Svc: fileSvc},

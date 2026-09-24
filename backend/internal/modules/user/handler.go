@@ -1,11 +1,14 @@
 package user
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -17,7 +20,16 @@ import (
 
 var ErrNotFound = apperr.NotFound("user_not_found", "user not found")
 
-type Handler struct{ Q *gen.Queries }
+// PresenceVisibility applies the "hide online status" setting to live presence at once
+// (realtime.Hub).
+type PresenceVisibility interface {
+	SetHidden(ctx context.Context, id uuid.UUID, hidden bool)
+}
+
+type Handler struct {
+	Q        *gen.Queries
+	Presence PresenceVisibility // nil: the change shows on the next connection
+}
 
 // Routes are mounted under /me behind RequireAuth.
 func (h *Handler) Routes(r chi.Router) {
@@ -38,6 +50,8 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 type updateRequest struct {
 	FullName *string `json:"full_name" validate:"omitempty,min=2,max=100"`
 	Locale   *string `json:"locale" validate:"omitempty,oneof=uz uz-Cyrl ru en"`
+	// HideOnline hides the online status from everyone (TZ SEC-05).
+	HideOnline *bool `json:"hide_online"`
 }
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +69,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	params := gen.UpdateProfileParams{ID: p.UserID, FullName: req.FullName}
+	params := gen.UpdateProfileParams{ID: p.UserID, FullName: req.FullName, HideOnline: req.HideOnline}
 	if req.Locale != nil {
 		l := gen.AppLocale(*req.Locale)
 		params.Locale = &l
@@ -64,6 +78,11 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		response.Error(w, r, notFound(err))
 		return
+	}
+	if req.HideOnline != nil && h.Presence != nil {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 2*time.Second)
+		h.Presence.SetHidden(ctx, u.ID, u.HideOnline)
+		cancel()
 	}
 	response.JSON(w, http.StatusOK, ToDTO(u))
 }

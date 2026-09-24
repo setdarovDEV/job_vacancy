@@ -44,6 +44,8 @@ type FrameHandler interface {
 // which it receives events for the users connected here. Channels are subscribed while
 // at least one local connection needs them and unsubscribed afterwards.
 type Hub struct {
+	// Audience limits who sees whose presence (TZ SEC-05); set it before serving.
+	Audience Audience
 	rdb      *redis.Client
 	ps       *redis.PubSub
 	log      *slog.Logger
@@ -211,6 +213,7 @@ func (h *Hub) register(ctx context.Context, c *Conn) {
 			h.log.Warn("subscribe", "err", err)
 		}
 	}
+	h.syncHidden(ctx, c.UserID)
 	h.touchPresence(ctx, c)
 	c.event(Event{Type: "ready", Data: map[string]string{"user_id": c.UserID.String()}})
 }
@@ -241,9 +244,19 @@ func (h *Hub) unregister(ctx context.Context, c *Conn) {
 }
 
 // watch replaces the set of users whose presence c follows and sends their current state.
+// Only users c may see are followed (TZ SEC-05); the others are dropped silently.
 func (h *Hub) watch(ctx context.Context, c *Conn, ids []uuid.UUID) {
 	if len(ids) > maxWatched {
 		ids = ids[:maxWatched]
+	}
+	states, err := h.VisiblePresence(ctx, c.UserID, ids, false)
+	if err != nil {
+		h.log.Warn("presence audience", "err", err)
+		return
+	}
+	ids = make([]uuid.UUID, len(states))
+	for i, st := range states {
+		ids[i] = st.UserID
 	}
 	want := map[uuid.UUID]struct{}{}
 	for _, id := range ids {
@@ -279,10 +292,7 @@ func (h *Hub) watch(ctx context.Context, c *Conn, ids []uuid.UUID) {
 	if len(sub) > 0 {
 		_ = h.ps.Subscribe(ctx, sub...)
 	}
-	states, err := h.Presence(ctx, ids)
-	if err == nil {
-		c.event(Event{Type: "presence.snapshot", Data: states})
-	}
+	c.event(Event{Type: "presence.snapshot", Data: states})
 }
 
 // ---- presence ----------------------------------------------------------------------------
@@ -307,11 +317,12 @@ func (h *Hub) touchPresence(ctx context.Context, c *Conn) {
 	pipe.ZAdd(ctx, key, redis.Z{Score: float64(now.Add(presenceTTL).Unix()), Member: c.id})
 	card := pipe.ZCard(ctx, key)
 	pipe.Expire(ctx, key, 2*presenceTTL)
+	hidden := pipe.Exists(ctx, hiddenKey(c.UserID))
 	if _, err := pipe.Exec(ctx); err != nil {
 		h.log.Warn("presence", "err", err)
 		return
 	}
-	if card.Val() == 1 { // this connection just brought the user online
+	if card.Val() == 1 && hidden.Val() == 0 { // this connection just brought the user online
 		h.announce(ctx, PresenceState{UserID: c.UserID, Online: true})
 	}
 }
@@ -324,15 +335,20 @@ func (h *Hub) dropPresence(ctx context.Context, c *Conn) {
 	pipe.ZRemRangeByScore(ctx, key, "-inf", strconv.FormatInt(now.Unix(), 10))
 	card := pipe.ZCard(ctx, key)
 	pipe.Set(ctx, lastSeenKey(c.UserID), now.Unix(), 30*24*time.Hour)
+	hidden := pipe.Exists(ctx, hiddenKey(c.UserID))
 	if _, err := pipe.Exec(ctx); err != nil {
 		return
 	}
-	if card.Val() == 0 {
+	if card.Val() == 0 && hidden.Val() == 0 {
 		h.announce(ctx, PresenceState{UserID: c.UserID, Online: false, LastSeenAt: &now})
 	}
 }
 
-func (h *Hub) announce(ctx context.Context, st PresenceState) {
+func (h *Hub) announce(ctx context.Context, st PresenceState) { h.publish(ctx, st) }
+
+// publish sends a presence change to everyone watching the user (only viewers allowed by
+// the Audience ever subscribe to it).
+func (h *Hub) publish(ctx context.Context, st PresenceState) {
 	b, _ := json.Marshal(Event{Type: "presence", Data: st})
 	_ = h.rdb.Publish(ctx, presenceChannel(st.UserID), b).Err()
 }

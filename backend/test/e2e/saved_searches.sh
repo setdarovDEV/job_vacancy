@@ -15,12 +15,12 @@ A() { echo "Authorization: Bearer $1"; }
 enc() { jq -rn --arg v "$1" '$v|@uri'; }
 mailcode() { for i in $(seq 1 20); do [ "$(curl -s "$MP/search?query=to:$1" | jq '.messages | length')" -ge 1 ] && break; sleep 0.3; done
   curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
-user() { local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\"}" | jq -r .data.access_token)
+user() { local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\"}" | jq -r .data.access_token)
   c=$(mailcode $1); curl -s -o /dev/null -X POST $API/auth/email/verify -H "$(A $t)" -H "$H" -d "{\"code\":\"$c\"}"; echo $t; }
 R=$RANDOM
 TS=$(user "ss$R@example.com" seeker "Alert Seeker")
 TE=$(user "se$R@example.com" employer "Alert HR")
-curl -s -o /dev/null -X POST $API/auth/register -H "$H" -d "{\"email\":\"sa$R@example.com\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"; $CTL set-role "sa$R@example.com" admin >/dev/null
+curl -s -o /dev/null -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"sa$R@example.com\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"; $CTL set-role "sa$R@example.com" admin >/dev/null
 TA=$(curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"sa$R@example.com\",\"password\":\"Secret123\"}" | jq -r .data.access_token)
 CID=$(curl -s -X POST $API/companies -H "$(A $TE)" -H "$H" -d "{\"name\":\"Alert Co $R\"}" | jq -r .data.id)
 curl -s -o /dev/null -X PUT $API/admin/companies/$CID/verification -H "$(A $TA)"

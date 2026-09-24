@@ -8,7 +8,7 @@ import { groupDigits } from "~/shared/lib/format";
 import { Avatar } from "~/shared/ui/Avatar";
 import { IconButton } from "~/shared/ui/Button";
 import { Card } from "~/shared/ui/Card";
-import { band, est } from "./parts";
+import { est } from "./parts";
 
 export type ProofCompany = Pick<Schemas["Company"], "id" | "name" | "slug" | "logo_url" | "verified">;
 export type ProofStats = { vacancies: { n: number; capped: boolean } | null; companies: number | null };
@@ -39,11 +39,13 @@ export function Proof({ companies, stats }: { companies: ProofCompany[]; stats: 
   const cols: CSSProperties = { gridTemplateColumns: `repeat(${tiles.length}, minmax(0, 1fr))` };
 
   return (
-    <section aria-labelledby="employers-proof" className={band} style={est(18)}>
+    // No top padding: the hero's own bottom padding (room for the floating toast) is the gap.
+    <section aria-labelledby="employers-proof" className="container-page defer-paint pb-8 md:pb-12" style={est(18)}>
       <h2 id="employers-proof" className="sr-only">{t("employersPage.proof.label")}</h2>
       <Card as="dl" padding="none" className="mx-auto grid max-w-3xl divide-x divide-line py-4 text-center md:py-6" style={cols}>
         {tiles.map((s) => (
-          <div key={s.id} className="flex min-w-0 flex-col-reverse px-2 md:px-4">
+          // column-reverse keeps dt before dd in the DOM; justify-end packs both at the top so the numbers line up.
+          <div key={s.id} className="flex min-w-0 flex-col-reverse justify-end px-2 md:px-4">
             <dt className="mt-1 text-xs text-ink-2 md:text-sm">{s.label}</dt>
             <dd className="font-display text-xl font-semibold tracking-heading text-ink md:text-3xl">
               <CountUp to={s.to} suffix={s.suffix} />
@@ -120,7 +122,7 @@ function LogoRow({ companies }: { companies: ProofCompany[] }) {
             className="flex min-h-11 items-center gap-2.5 rounded-pill text-md font-semibold text-ink-2 transition-colors hover:text-ink"
           >
             <Avatar name={c.name} src={c.logo_url} square size="sm" />
-            <span className="max-w-48 truncate">{c.name}</span>
+            <span className="max-w-xs truncate">{c.name}</span>
             {c.verified && (
               <>
                 <BadgeCheck aria-hidden="true" className="size-4 shrink-0 fill-firuza text-surface" />
@@ -136,7 +138,8 @@ function LogoRow({ companies }: { companies: ProofCompany[] }) {
   if (companies.length < 6) return <div className="mt-4">{list(false)}</div>;
   return (
     <div className="mt-4 flex items-center gap-2">
-      <div className="marquee-host edge-mask-x min-w-0 flex-1 overflow-hidden motion-reduce:mask-none" data-paused={paused || undefined}>
+      {/* py-1: room for the links' focus rings inside the clipping host. */}
+      <div className="marquee-host edge-mask-x min-w-0 flex-1 overflow-hidden py-1 motion-reduce:mask-none" data-paused={paused || undefined}>
         <div className="marquee">
           {list(false)}
           {list(true)}

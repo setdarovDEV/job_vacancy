@@ -17,7 +17,7 @@ A() { echo "Authorization: Bearer $1"; }
 mails() { curl -s "$MP/search?query=to:$1" | jq -r '[.messages[].Subject] | join(" | ")'; }
 waitmail() { for i in $(seq 1 20); do [ "$(curl -s "$MP/search?query=to:$1" | jq '.messages | length')" -ge "$2" ] && return; sleep 0.5; done; }
 mailcode() { waitmail $1 1; curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
-user() { local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\",\"locale\":\"$4\"}" | jq -r .data.access_token)
+user() { local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\",\"locale\":\"$4\"}" | jq -r .data.access_token)
   c=$(mailcode $1); curl -s -o /dev/null -X POST $API/auth/email/verify -H "$(A $t)" -H "$H" -d "{\"code\":\"$c\"}"
   curl -s -o /dev/null -X DELETE "$MP/search?query=to:$1"; echo $t; }
 hook() { curl -s -o /dev/null -w '%{http_code}' -X POST $API/telegram/webhook -H "$H" -H "X-Telegram-Bot-Api-Secret-Token: $1" -d "$2"; }
@@ -25,7 +25,7 @@ R=$RANDOM; EE="boss$R@example.com"; ES="seeker$R@example.com"
 
 TE=$(user $EE employer "Bobur Aliyev" uz)
 TS=$(user $ES seeker "Nodira Rahimova" ru)
-curl -s -o /dev/null -X POST $API/auth/register -H "$H" -d "{\"email\":\"adm$R@example.com\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"
+curl -s -o /dev/null -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"adm$R@example.com\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"
 $CTL set-role "adm$R@example.com" admin >/dev/null
 TA=$(curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"adm$R@example.com\",\"password\":\"Secret123\"}" | jq -r .data.access_token)
 CID=$(curl -s -X POST $API/companies -H "$(A $TE)" -H "$H" -d "{\"name\":\"Samarqand Soft $R\"}" | jq -r .data.id)

@@ -9,6 +9,7 @@ import { GirihPattern } from "~/shared/brand/GirihPattern";
 import { indexCatalog, nameOf, useCatalog } from "~/shared/catalog/catalog";
 import { LocalizedLink, useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
+import { cn } from "~/shared/lib/cn";
 import { groupDigits } from "~/shared/lib/format";
 import { plainText, RichText } from "~/shared/lib/markdown";
 import { LoadMore } from "~/shared/query/LoadMore";
@@ -110,22 +111,23 @@ function CompanyView({ company: c, jobs }: { company: Company; jobs: Jobs }) {
               height={304}
               fetchPriority="high"
               decoding="async"
-              className="mt-4 min-h-32 w-full rounded-sheet bg-sunken object-cover"
-              style={{ aspectRatio: "4 / 1" }}
+              className="mt-4 w-full rounded-sheet bg-sunken object-cover"
+              style={{ aspectRatio: "4 / 1", minHeight: "8rem" }}
             />
           ) : (
             <div aria-hidden="true" className="h-14 md:h-24" />
           )}
 
           <div
-            className={
-              c.cover_url
-                ? "-mt-12 flex flex-col gap-4 px-2 md:-mt-14 md:flex-row md:items-end md:gap-6 md:px-6"
-                : "flex flex-col gap-4 md:flex-row md:items-end md:gap-6"
-            }
+            // Logo | name, with the website link under the name on tablets and at the end of
+            // the row from lg (a long name keeps the full width until then).
+            className={cn(
+              "grid gap-4 md:grid-cols-[auto_minmax(0,1fr)] md:items-end md:gap-x-6 lg:grid-cols-[auto_minmax(0,1fr)_auto]",
+              c.cover_url && "-mt-8 px-2 md:px-6",
+            )}
           >
             {/* Concentric: 28px glass badge − 6px padding = the logo's 22px corner. */}
-            <div className="glass-panel w-fit shrink-0 rounded-sheet p-1.5">
+            <div className="glass-panel justify-self-start rounded-sheet p-1.5">
               <Avatar
                 name={c.name}
                 src={c.logo_url}
@@ -136,7 +138,7 @@ function CompanyView({ company: c, jobs }: { company: Company; jobs: Jobs }) {
                 style={{ viewTransitionName: `company-logo-${c.id}` }}
               />
             </div>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0">
               <h1
                 id="company-name"
                 className="break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl"
@@ -150,13 +152,13 @@ function CompanyView({ company: c, jobs }: { company: Company; jobs: Jobs }) {
                     <Badge tone="firuza" icon={<BadgeCheck />}>{t("companiesPage.verified")}</Badge>
                   </li>
                 )}
-                {industry && <MetaItem icon={<Shapes />}>{industry}</MetaItem>}
-                {region && <MetaItem icon={<MapPin />}>{region}</MetaItem>}
-                {size && <MetaItem icon={<Users />}>{t("companiesPage.employees", { size })}</MetaItem>}
+                {industry && <MetaItem icon={<Shapes className="size-4" />}>{industry}</MetaItem>}
+                {region && <MetaItem icon={<MapPin className="size-4" />}>{region}</MetaItem>}
+                {size && <MetaItem icon={<Users className="size-4" />}>{t("companiesPage.employees", { size })}</MetaItem>}
               </ul>
             </div>
             {c.website && (
-              <Button asChild variant="secondary" icon={<Globe className="size-4.5" />} className="max-w-full self-start md:self-end">
+              <Button asChild variant="secondary" icon={<Globe className="size-4.5" />} className="max-w-full justify-self-start md:col-start-2 lg:col-start-3">
                 <a href={siteHref(c.website)} target="_blank" rel="noopener noreferrer nofollow">
                   <span className="truncate">{siteLabel(c.website)}</span>
                   <span className="sr-only"> {t("companiesPage.newTab")}</span>
@@ -178,13 +180,13 @@ function CompanyView({ company: c, jobs }: { company: Company; jobs: Jobs }) {
               { value: "about", label: t("companies.about") },
             ]}
           >
-            {/* Both panels are rendered (inactive one hidden), so the server HTML carries the
-                company's description and facts for search engines and no-JS readers. */}
-            <TabPanel value="jobs" forceMount className="mt-5 data-[state=inactive]:hidden">
+            {/* Both panels are rendered (the inactive one `hidden`), so the server HTML always
+                carries the company's description and facts for search engines. */}
+            <TabPanel value="jobs" forceMount hidden={tab !== "jobs"} className="mt-5">
               <h2 className="sr-only">{t("companies.openJobs")}</h2>
               <JobsPanel c={c} jobs={jobs} />
             </TabPanel>
-            <TabPanel value="about" forceMount className="mt-5 data-[state=inactive]:hidden">
+            <TabPanel value="about" forceMount hidden={tab !== "about"} className="mt-5">
               <h2 className="sr-only">{t("companies.about")}</h2>
               <Card padding="lg">
                 {about ? (
@@ -209,7 +211,7 @@ function CompanyView({ company: c, jobs }: { company: Company; jobs: Jobs }) {
 function MetaItem({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <li className="flex min-w-0 items-center gap-1.5">
-      <span aria-hidden="true" className="shrink-0 text-ink-3 [&>svg]:size-4">{icon}</span>
+      <span aria-hidden="true" className="shrink-0 text-ink-3">{icon}</span>
       <span className="min-w-0 break-words">{children}</span>
     </li>
   );
@@ -306,15 +308,15 @@ function Facts({ c, industry, region, size, open, className }: {
   const link = "text-lapis-ink underline-offset-4 hover:underline";
   const place = [region, c.address].filter(Boolean).join(", ");
   const rows: { id: string; icon: ReactNode; label: string; value: ReactNode }[] = [];
-  if (industry) rows.push({ id: "industry", icon: <Shapes />, label: t("jobs.filters.category"), value: industry });
-  if (place) rows.push({ id: "place", icon: <MapPin />, label: t("jobs.address"), value: place });
-  if (size) rows.push({ id: "size", icon: <Users />, label: t("companies.size"), value: size });
+  if (industry) rows.push({ id: "industry", icon: <Shapes className="size-4.5" />, label: t("jobs.filters.category"), value: industry });
+  if (place) rows.push({ id: "place", icon: <MapPin className="size-4.5" />, label: t("jobs.address"), value: place });
+  if (size) rows.push({ id: "size", icon: <Users className="size-4.5" />, label: t("companies.size"), value: size });
   if (c.founded_year) {
-    rows.push({ id: "founded", icon: <CalendarDays />, label: t("companies.founded"), value: c.founded_year });
+    rows.push({ id: "founded", icon: <CalendarDays className="size-4.5" />, label: t("companies.founded"), value: c.founded_year });
   }
   if (c.website) {
     rows.push({
-      id: "site", icon: <Globe />, label: t("companies.website"),
+      id: "site", icon: <Globe className="size-4.5" />, label: t("companies.website"),
       value: (
         <a className={link} href={siteHref(c.website)} target="_blank" rel="noopener noreferrer nofollow">
           {siteLabel(c.website)}
@@ -323,11 +325,11 @@ function Facts({ c, industry, region, size, open, className }: {
       ),
     });
   }
-  if (c.email) rows.push({ id: "email", icon: <Mail />, label: t("form.email"), value: <a className={link} href={`mailto:${c.email}`}>{c.email}</a> });
+  if (c.email) rows.push({ id: "email", icon: <Mail className="size-4.5" />, label: t("form.email"), value: <a className={link} href={`mailto:${c.email}`}>{c.email}</a> });
   if (c.phone) {
-    rows.push({ id: "phone", icon: <Phone />, label: t("settings.phone"), value: <a className={`num ${link}`} href={`tel:${c.phone.replace(/[^\d+]/g, "")}`}>{c.phone}</a> });
+    rows.push({ id: "phone", icon: <Phone className="size-4.5" />, label: t("settings.phone"), value: <a className={`num ${link}`} href={`tel:${c.phone.replace(/[^\d+]/g, "")}`}>{c.phone}</a> });
   }
-  rows.push({ id: "open", icon: <BriefcaseBusiness />, label: t("companies.openJobs"), value: <span className="num">{groupDigits(open)}</span> });
+  rows.push({ id: "open", icon: <BriefcaseBusiness className="size-4.5" />, label: t("companies.openJobs"), value: <span className="num">{groupDigits(open)}</span> });
 
   return (
     <Card as="section" aria-labelledby={id} className={className}>
@@ -341,7 +343,7 @@ function Facts({ c, industry, region, size, open, className }: {
       <dl className="mt-2 divide-y divide-line">
         {rows.map((r) => (
           <div key={r.id} className="flex gap-3 py-3 last:pb-0">
-            <span aria-hidden="true" className="mt-0.5 shrink-0 text-ink-3 [&>svg]:size-4.5">{r.icon}</span>
+            <span aria-hidden="true" className="mt-0.5 shrink-0 text-ink-3">{r.icon}</span>
             <div className="min-w-0 flex-1">
               <dt className="text-xs text-ink-2">{r.label}</dt>
               <dd className="mt-0.5 break-words text-md text-ink">{r.value}</dd>

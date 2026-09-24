@@ -17,7 +17,7 @@ A() { echo "Authorization: Bearer $1"; }
 uuid() { cat /proc/sys/kernel/random/uuid; }
 mailcode() { for i in $(seq 1 20); do [ "$(curl -s "$MP/search?query=to:$1" | jq '.messages | length')" -ge 1 ] && break; sleep 0.3; done
   curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
-user() { local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\"}" | jq -r .data.access_token)
+user() { local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\"}" | jq -r .data.access_token)
   c=$(mailcode $1); curl -s -o /dev/null -X POST $API/auth/email/verify -H "$(A $t)" -H "$H" -d "{\"code\":\"$c\"}"; echo $t; }
 connect() { # name token → starts a client writing $SP/<name>.events, reading $SP/<name>.frames
   local t; t=$(curl -s -X POST $API/ws/ticket -H "$(A $2)" | jq -r .data.ticket)
@@ -42,10 +42,11 @@ TE2=$(user "hr2$R@example.com" employer "Sardor Recruiter")
 TS=$(user "cand$R@example.com" seeker "Jasur Toshmatov")
 TX=$(user "x$R@example.com" seeker "Stranger")
 CID=$(curl -s -X POST $API/companies -H "$(A $TE)" -H "$H" -d "{\"name\":\"Chat Co $R\"}" | jq -r .data.id)
-curl -s -o /dev/null -X POST "$API/auth/register" -H "$H" -d "{\"email\":\"adm$R@example.com\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"; $CTL set-role "adm$R@example.com" admin >/dev/null
+curl -s -o /dev/null -X POST "$API/auth/register" -H "$H" -d "{\"consent\":true,\"email\":\"adm$R@example.com\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"; $CTL set-role "adm$R@example.com" admin >/dev/null
 TA=$(curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"adm$R@example.com\",\"password\":\"Secret123\"}" | jq -r .data.access_token)
 curl -s -o /dev/null -X PUT $API/admin/companies/$CID/verification -H "$(A $TA)"
 curl -s -o /dev/null -X POST $API/companies/$CID/members -H "$(A $TE)" -H "$H" -d "{\"email\":\"hr2$R@example.com\",\"role\":\"recruiter\"}"
+curl -s -o /dev/null -X POST $API/me/invites/$(curl -s $API/me/invites -H "$(A $TE2)" | jq -r '.data[0].id')/accept -H "$(A $TE2)"  # TZ FN-05
 CAT=$(curl -s $API/catalog/categories | jq '.data[0].children[0].id'); REG=$(curl -s $API/catalog/regions | jq '.data[0].id')
 V=$(curl -s -X POST $API/companies/$CID/vacancies -H "$(A $TE)" -H "$H" -d '{"title":"Operator","description":"Qo'"'"'ng'"'"'iroqlarga javob berish va mijozlarga maslahat berish.","category_id":'$CAT',"region_id":'$REG',"employment_type":"full_time","work_format":"office","experience":"none","schedule":"shift"}' | jq -r .data.id)
 curl -s -o /dev/null -X POST $API/vacancies/$V/submit -H "$(A $TE)"
@@ -129,6 +130,18 @@ echo "== presence & offline push"
 frame S "{\"type\":\"watch_presence\",\"user_ids\":[\"$EID\"]}"
 check "snapshot: employer online" "$(waitev S '.type=="presence.snapshot"' | jq -r '.data[0].online')" true
 check "REST presence" "$(req "$API/ws/presence?ids=$SID" -H "$(A $TE)")$(J '.data[0].online')" "200true"
+# TZ SEC-05: presence only between people who share a conversation.
+XID=$(curl -s $API/me -H "$(A $TX)" | jq -r .data.id)
+check "stranger's presence → 403" "$(req "$API/ws/presence?ids=$SID" -H "$(A $TX)")$(J .error.code)" "403presence_forbidden"
+check "asking about a stranger → 403" "$(req "$API/ws/presence?ids=$SID,$XID" -H "$(A $TE)")$(J .error.code)" "403presence_forbidden"
+frame S "{\"type\":\"watch_presence\",\"user_ids\":[\"$EID\",\"$XID\"]}"; sleep 0.5
+check "WS watch drops strangers" "$(jq -c 'select(.type=="presence.snapshot") | .data | length' $SP/S.events 2>/dev/null | tail -1)" "1"
+frame E "{\"type\":\"watch_presence\",\"user_ids\":[\"$SID\"]}"; sleep 0.3
+curl -s -o /dev/null -X PATCH $API/me -H "$(A $TS)" -H "$H" -d '{"hide_online":true}'
+check "hidden seeker reads offline" "$(req "$API/ws/presence?ids=$SID" -H "$(A $TE)")$(J '"\(.data[0].online)/\(.data[0].last_seen_at)"')" "200false/null"
+check "watchers are told at once" "$(waitev E '.type=="presence" and .data.user_id=="'$SID'" and .data.online==false' | jq -r .data.online)" "false"
+curl -s -o /dev/null -X PATCH $API/me -H "$(A $TS)" -H "$H" -d '{"hide_online":false}'
+check "visible again" "$(req "$API/ws/presence?ids=$SID" -H "$(A $TE)")$(J '.data[0].online')" "200true"
 kill $PID_E 2>/dev/null; wait $PID_E 2>/dev/null
 check "employer went offline" "$(waitev S '.type=="presence" and .data.online==false' | jq -r .data.user_id)" "$EID"
 curl -s -o /dev/null -X POST $API/conversations/$CONV/messages -H "$(A $TS)" -H "$H" -d "{\"client_id\":\"$(uuid)\",\"kind\":\"text\",\"body\":\"Javobingizni kutyapman\"}"

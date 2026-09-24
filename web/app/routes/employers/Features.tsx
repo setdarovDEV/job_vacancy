@@ -26,7 +26,7 @@ export function Features() {
     {
       id: "kanban",
       icon: SquareKanban,
-      visual: (["sent", "interview", "hired"] as const).map((s, i) => (
+      visual: (["viewed", "interview", "hired"] as const).map((s, i) => (
         <Fragment key={s}>
           {i > 0 && <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-ink-3" />}
           <StatusBadge status={s} />
@@ -51,7 +51,7 @@ export function Features() {
           <Avatar name={t("employersPage.features.yourCompany")} square size="sm" />
           <span className="min-w-0 truncate text-md font-semibold text-ink">{t("employersPage.features.yourCompany")}</span>
           <BadgeCheck aria-hidden="true" className="size-4.5 shrink-0 fill-firuza text-surface" />
-          <Badge tone="firuza" className="hidden sm:inline-flex">{t("common.verified")}</Badge>
+          <Badge tone="firuza" className="hidden lg:inline-flex">{t("common.verified")}</Badge>
         </span>
       ),
     },
@@ -62,14 +62,16 @@ export function Features() {
       <SectionHead id="employers-features" title={t("employersPage.features.title")} description={t("employersPage.features.body")} />
       <ul className="mt-8 grid gap-4 md:mt-10 md:grid-cols-2 md:gap-6">
         {cards.map(({ id, icon: Icon, visual }) => (
-          <Card as="li" key={id} padding="lg" className="reveal flex min-w-0 flex-col">
-            <span aria-hidden="true" className="grid size-11 place-items-center rounded-control bg-lapis-soft text-lapis-ink">
-              <Icon className="size-5" />
-            </span>
-            <h3 className="mt-4 break-words text-lead font-semibold tracking-snug text-ink">{t(`employersPage.features.${id}.title`)}</h3>
-            <p className="mt-1.5 text-md text-ink-2">{t(`employersPage.features.${id}.body`)}</p>
+          <Card as="li" key={id} className="reveal flex min-w-0 flex-col md:p-8">
+            <div className="flex items-center gap-3">
+              <span aria-hidden="true" className="grid size-11 shrink-0 place-items-center rounded-control bg-lapis-soft text-lapis-ink">
+                <Icon className="size-5" />
+              </span>
+              <h3 className="min-w-0 break-words text-lead font-semibold tracking-snug text-ink">{t(`employersPage.features.${id}.title`)}</h3>
+            </div>
+            <p className="mt-3 text-md text-ink-2">{t(`employersPage.features.${id}.body`)}</p>
             {/* Decorative: the heading and text above already say it. */}
-            <div aria-hidden="true" className="mt-auto pt-6">
+            <div aria-hidden="true" className="mt-auto pt-5 md:pt-6">
               <div className="flex min-h-14 flex-wrap items-center gap-2 rounded-control bg-sunken/70 p-3">{visual}</div>
             </div>
           </Card>
@@ -86,11 +88,12 @@ export function Steps() {
     <section aria-labelledby="employers-steps" className={band} style={est(34)}>
       <SectionHead id="employers-steps" title={t("employersPage.steps.title")} description={t("employersPage.steps.body")} />
       <div className="relative mt-8 md:mt-12">
-        <div aria-hidden="true" className="absolute bottom-6 left-6 top-6 border-l border-dashed border-line-strong md:hidden" />
+        {/* One rail across the three markers from md; on phones each step draws its own segment down to the next marker. */}
         <div aria-hidden="true" className="absolute inset-x-1/6 top-6 hidden border-t border-dashed border-line-strong md:block" />
         <ol className="relative grid gap-8 md:grid-cols-3 md:gap-6">
           {[1, 2, 3].map((n) => (
-            <li key={n} className="reveal flex min-w-0 gap-4 md:flex-col md:items-center md:text-center">
+            <li key={n} className="reveal group relative flex min-w-0 gap-4 md:flex-col md:items-center md:text-center">
+              <span aria-hidden="true" className="absolute -bottom-8 left-6 top-12 border-l border-dashed border-line-strong group-last:hidden md:hidden" />
               <span
                 aria-hidden="true"
                 className="num grid size-12 shrink-0 place-items-center rounded-full bg-lapis font-display text-lg font-semibold text-on-lapis shadow-2 ring-8 ring-paper"

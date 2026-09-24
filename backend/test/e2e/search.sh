@@ -16,9 +16,9 @@ mailcode() { sleep 1.5; curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].I
 R=$RANDOM; E="search$R@example.com"; A="sadmin$R@example.com"
 
 # --- setup: verified company with vacancies written in different scripts/languages
-T=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"email\":\"$E\",\"password\":\"Secret123\",\"full_name\":\"Search Test\",\"role\":\"employer\"}" | jq -r .data.access_token)
+T=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$E\",\"password\":\"Secret123\",\"full_name\":\"Search Test\",\"role\":\"employer\"}" | jq -r .data.access_token)
 c=$(mailcode $E); curl -s -o /dev/null -X POST $API/auth/email/verify -H "Authorization: Bearer $T" -H "$H" -d "{\"code\":\"$c\"}"
-curl -s -o /dev/null -X POST $API/auth/register -H "$H" -d "{\"email\":\"$A\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"
+curl -s -o /dev/null -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$A\",\"password\":\"Secret123\",\"full_name\":\"Admin\",\"role\":\"seeker\"}"
 $CTL set-role $A admin >/dev/null
 TA=$(curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"$A\",\"password\":\"Secret123\"}" | jq -r .data.access_token)
 CNAME="Zarafshon Texnologiyalari $R"

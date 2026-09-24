@@ -64,9 +64,15 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 	if err != nil {
 		return err
 	}
+	// Search reindexing needs the catalog names (the saved-search service has its own copy).
+	cat := &catalog.Service{Q: gen.New(pool), Log: log}
+	if err := cat.Start(ctx); err != nil {
+		return err
+	}
+	vacancies := &vacancy.Service{Pool: pool, Q: gen.New(pool), Catalog: cat, Cache: lifecycle.Cache, Log: log}
 	client, err := jobs.NewWorkerClient(jobs.Deps{
 		Pool: pool, Redis: rdb, Mailer: m, Storage: st, Bot: bot,
-		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: saved, Lifecycle: lifecycle, Log: log,
+		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: saved, Lifecycle: lifecycle, Vacancies: vacancies, Log: log,
 		CriticalWorkers: cfg.Worker.CriticalWorkers, DefaultWorkers: cfg.Worker.DefaultWorkers,
 	})
 	if err != nil {
