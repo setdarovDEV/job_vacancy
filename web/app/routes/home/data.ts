@@ -56,10 +56,13 @@ export function pickCompanies(items: Schemas["Company"][]): CompanyTile[] {
 }
 
 const cyrillic = /[Ѐ-ӿ]/;
+// Letters only Uzbek Cyrillic uses: a query with them is Uzbek, not Russian.
+const uzCyrillic = /[ЎўҚқҒғҲҳ]/;
 
 /**
- * Popular searches in the page's script (Latin pages don't show Cyrillic queries and
- * vice versa), capitalized, topped up with curated examples so the row is never sparse.
+ * Popular searches in the page's language as far as the script tells (Latin pages don't show
+ * Cyrillic queries and vice versa; the Russian page drops Uzbek Cyrillic ones), capitalized,
+ * topped up with curated examples so the row is never sparse.
  */
 export function popularFor(popular: string[], locale: Locale, examples: string): string[] {
   const wantCyrillic = locale === "ru" || locale === "uz-Cyrl";
@@ -67,7 +70,8 @@ export function popularFor(popular: string[], locale: Locale, examples: string):
   const out: string[] = [];
   for (const q of [...popular, ...examples.split(",")]) {
     const v = q.trim();
-    if (!v || cyrillic.test(v) !== wantCyrillic || seen.has(v.toLowerCase())) continue;
+    if (!v || cyrillic.test(v) !== wantCyrillic || (locale === "ru" && uzCyrillic.test(v))) continue;
+    if (seen.has(v.toLowerCase())) continue;
     seen.add(v.toLowerCase());
     out.push(v[0].toUpperCase() + v.slice(1));
     if (out.length === 6) break;

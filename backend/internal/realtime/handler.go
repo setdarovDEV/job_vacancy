@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
@@ -42,10 +43,12 @@ func (h *Handler) Routes(r chi.Router, auth *mw.Authenticator) {
 	r.With(auth.Require).Get("/presence", h.presence)
 }
 
+// The ticket is bound to the caller's session (TZ BE-15): revoking that session closes
+// the socket opened with it.
 func (h *Handler) ticket(w http.ResponseWriter, r *http.Request) {
 	t := random.Token(24)
-	uid := reqctx.MustPrincipal(r.Context()).UserID
-	if err := h.RDB.Set(r.Context(), "ws:ticket:"+t, uid.String(), ticketTTL).Err(); err != nil {
+	p := reqctx.MustPrincipal(r.Context())
+	if err := h.RDB.Set(r.Context(), "ws:ticket:"+t, p.UserID.String()+"|"+p.SessionID.String(), ticketTTL).Err(); err != nil {
 		response.Error(w, r, err)
 		return
 	}
@@ -54,7 +57,7 @@ func (h *Handler) ticket(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
 	raw, err := h.RDB.GetDel(r.Context(), "ws:ticket:"+r.URL.Query().Get("ticket")).Result()
-	uid, perr := uuid.Parse(raw)
+	uid, sid, perr := parseTicket(raw)
 	if errors.Is(err, redis.Nil) || perr != nil {
 		response.Error(w, r, errTicket)
 		return
@@ -74,7 +77,20 @@ func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
 		h.Log.InfoContext(r.Context(), "websocket accept failed", "err", err)
 		return
 	}
-	h.Hub.Serve(r.Context(), ws, uid, h.Frames)
+	h.Hub.Serve(r.Context(), ws, uid, sid, h.Frames)
+}
+
+// parseTicket reads "user|session"; a ticket from before sessions were bound holds only
+// the user id (session uuid.Nil).
+func parseTicket(v string) (uid, sid uuid.UUID, err error) {
+	u, s, bound := strings.Cut(v, "|")
+	if uid, err = uuid.Parse(u); err != nil {
+		return uid, sid, err
+	}
+	if bound {
+		sid, err = uuid.Parse(s)
+	}
+	return uid, sid, err
 }
 
 // presence answers GET /ws/presence?ids=a,b,c for screens that don't hold a socket.

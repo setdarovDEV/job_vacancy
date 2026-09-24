@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
-import { api } from "~/shared/api/client";
+import { api, apiError } from "~/shared/api/client";
+import { errorText } from "~/shared/api/errors";
 import { signedIn } from "~/shared/auth/session";
 import { useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
+import { useTheme } from "~/shared/layout/Switchers";
 import { Skeleton } from "~/shared/ui/Skeleton";
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
@@ -14,6 +16,11 @@ declare global {
     google?: { accounts: { id: { initialize(o: object): void; renderButton(el: HTMLElement, o: object): void } } };
   }
 }
+
+// Google wants initialize() once per page (it warns and keeps only the last call otherwise), so
+// its callback goes through whichever button is mounted now (login ↔ register swap them).
+let handler: ((credential: string) => void) | null = null;
+let initialized = false;
 
 // Google draws its button in an iframe, so only its own themes apply: pick the one for our theme.
 function darkTheme() {
@@ -27,30 +34,56 @@ function darkTheme() {
  * not on every page. A skeleton holds the button's exact height while it loads (no layout shift),
  * and if the script can't load (offline, blocked) the whole block steps aside for the email form.
  */
-export function GoogleButton({ role, onDone, onError }: { role?: "seeker" | "employer"; onDone: (isNew: boolean) => void; onError: (msg: string) => void }) {
+export function GoogleButton({ role, consent, onDone, onError }: {
+  role?: "seeker" | "employer";
+  /** Register page: the consent box. A new account needs it (TZ FN-08); sign-in pages omit it. */
+  consent?: boolean;
+  onDone: (isNew: boolean) => void;
+  /** `code` is the API error code, e.g. "consent_required" to point at the consent box. */
+  onError: (msg: string, code?: string) => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const locale = useLocale();
+  const [theme] = useTheme();
   const { t } = useTranslation();
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
-  // Latest callbacks without re-rendering Google's button on every parent render.
-  const cb = useRef({ onDone, onError, t });
-  cb.current = { onDone, onError, t };
+  // The latest props for the sign-in call, without re-rendering Google's button on every render.
+  const latest = useRef({ role, consent, locale, onDone, onError, t });
+  latest.current = { role, consent, locale, onDone, onError, t };
+
+  useEffect(() => {
+    handler = async (credential) => {
+      const { role, consent, locale, onDone, onError, t } = latest.current;
+      // Unticked on the register page: say so right away instead of a round trip that fails.
+      if (consent === false) return onError(t("apiErrors.consent_required"), "consent_required");
+      try {
+        const res = await api.POST("/auth/google", { body: { id_token: credential, role, locale, consent } });
+        if (res.data?.data) {
+          signedIn(res.data.data as never);
+          onDone(Boolean((res.data.data as { is_new_user?: boolean }).is_new_user));
+        } else {
+          // The API's own reason (blocked account, Google disabled, rate limit) beats a generic one.
+          const e = apiError(res);
+          onError(e ? errorText(t, e) : t("apiErrors.invalid_google_token"), e?.code);
+        }
+      } catch {
+        onError(t("errors.network"));
+      }
+    };
+    return () => {
+      handler = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!clientId || !ref.current) return;
     const el = ref.current;
-    const init = () => {
+    const render = () => {
       if (!window.google) return setState("failed");
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: async ({ credential }: { credential: string }) => {
-          const res = await api.POST("/auth/google", { body: { id_token: credential, role, locale } });
-          if (res.data?.data) {
-            signedIn(res.data.data as never);
-            cb.current.onDone(Boolean((res.data.data as { is_new_user?: boolean }).is_new_user));
-          } else cb.current.onError(cb.current.t("apiErrors.invalid_google_token"));
-        },
-      });
+      if (!initialized) {
+        window.google.accounts.id.initialize({ client_id: clientId, callback: ({ credential }: { credential: string }) => handler?.(credential) });
+        initialized = true;
+      }
       window.google.accounts.id.renderButton(el, {
         theme: darkTheme() ? "filled_black" : "outline",
         size: "large",
@@ -63,8 +96,9 @@ export function GoogleButton({ role, onDone, onError }: { role?: "seeker" | "emp
       });
       setState("ready");
     };
-    if (window.google) return init();
-    // One script per page, even when the effect re-runs (role or locale change) before it loads.
+    // Re-rendered (not re-initialized) when the locale or our theme changes.
+    if (window.google) return render();
+    // One script per page, even when the effect re-runs before it loads.
     let s = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
     if (!s) {
       s = document.createElement("script");
@@ -74,16 +108,16 @@ export function GoogleButton({ role, onDone, onError }: { role?: "seeker" | "emp
       document.head.appendChild(s);
     }
     const fail = () => setState("failed");
-    s.addEventListener("load", init);
+    s.addEventListener("load", render);
     s.addEventListener("error", fail);
     // Never an endless skeleton: on a stalled connection the email form is the way in.
     const timer = setTimeout(() => !window.google && fail(), 10_000);
     return () => {
       clearTimeout(timer);
-      s.removeEventListener("load", init);
+      s.removeEventListener("load", render);
       s.removeEventListener("error", fail);
     };
-  }, [role, locale]);
+  }, [locale, theme]);
 
   if (!clientId || state === "failed") return null;
   return (

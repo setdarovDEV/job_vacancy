@@ -39,9 +39,9 @@ var (
 	ErrWrongUse    = apperr.BadRequest("file_wrong_purpose", "this file was uploaded for something else")
 )
 
-// rule describes one upload purpose.
+// rule describes one upload purpose. Every upload lands in the private bucket; the only
+// public files are the image variants the worker publishes.
 type rule struct {
-	public  bool
 	maxSize int64
 	// allowed maps a declared content type to the types http.DetectContentType may report
 	// for it ("" = accept any sniff result except active content).
@@ -54,9 +54,13 @@ var images = map[string][]string{
 	"image/jpeg": {"image/jpeg"}, "image/png": {"image/png"}, "image/webp": {"image/webp"},
 }
 
+// Avatars, logos and covers are uploaded privately: the worker publishes re-encoded
+// variants without metadata (package media, TZ BE-14/SEC-06), so the original with its
+// EXIF (GPS position, camera) is never public.
 var rules = map[gen.FilePurpose]rule{
-	gen.FilePurposeAvatar:      {public: true, maxSize: 5 * MB, allowed: images},
-	gen.FilePurposeCompanyLogo: {public: true, maxSize: 5 * MB, allowed: images},
+	gen.FilePurposeAvatar:       {maxSize: 5 * MB, allowed: images},
+	gen.FilePurposeCompanyLogo:  {maxSize: 5 * MB, allowed: images},
+	gen.FilePurposeCompanyCover: {maxSize: 10 * MB, allowed: images},
 	gen.FilePurposeChatImage: {maxSize: 10 * MB, allowed: map[string][]string{
 		"image/jpeg": {"image/jpeg"}, "image/png": {"image/png"}, "image/webp": {"image/webp"}, "image/gif": {"image/gif"},
 	}},
@@ -88,7 +92,7 @@ type Service struct {
 }
 
 type CreateInput struct {
-	Purpose     string          `json:"purpose" validate:"required,oneof=avatar company_logo chat_image chat_file chat_voice"`
+	Purpose     string          `json:"purpose" validate:"required,oneof=avatar company_logo company_cover chat_image chat_file chat_voice"`
 	ContentType string          `json:"content_type" validate:"required,max=127"`
 	Size        int64           `json:"size" validate:"required,min=1"`
 	Name        string          `json:"name" validate:"max=200"`
@@ -117,9 +121,6 @@ func (s *Service) Create(ctx context.Context, owner uuid.UUID, in CreateInput) (
 		return DTO{}, Upload{}, err
 	}
 	bucket := s.Storage.PrivateBucket()
-	if r.public {
-		bucket = s.Storage.PublicBucket()
-	}
 	// Unguessable key; the original name is kept only in the row (for downloads).
 	key := fmt.Sprintf("%s/%s/%s%s", strings.ReplaceAll(in.Purpose, "_", "-"),
 		time.Now().UTC().Format("2006/01"), random.Base36(24), extension(ct))
@@ -200,7 +201,7 @@ func (s *Service) owned(ctx context.Context, owner, id uuid.UUID) (gen.File, err
 
 // URL is a permanent URL for public files and a signed, expiring one for private files.
 func (s *Service) URL(ctx context.Context, f gen.File) (string, error) {
-	if rules[f.Purpose].public {
+	if f.Bucket == s.Storage.PublicBucket() { // uploads from before images were processed
 		return s.Storage.PublicURL(f.ObjectKey), nil
 	}
 	return s.Storage.PresignGet(ctx, f.Bucket, f.ObjectKey, DownloadTTL, f.Name, rules[f.Purpose].attachment)

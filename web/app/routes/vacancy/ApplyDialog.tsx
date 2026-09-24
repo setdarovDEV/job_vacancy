@@ -1,5 +1,5 @@
 import { CircleCheck, FileText, LogIn, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { api, apiError, dataOf, type Schemas } from "~/shared/api/client";
 import { refresh, useSession, withAuth } from "~/shared/auth/session";
@@ -45,9 +45,20 @@ export default function ApplyDialog({
   const [letter, setLetter] = useState("");
   const [done, setDone] = useState<{ kind: "sent" | "already"; id?: string } | null>(null);
   const { pending, error, fields, run } = useSubmit();
+  // Radix skips links when it picks the first focus: signed-out visitors would land on "×".
+  const signIn = useRef<HTMLAnchorElement>(null);
+
+  // The dialog stays mounted between openings (exit animation, cover letter draft kept). Reopened
+  // after sending, it says "already applied" instead of replaying the success.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && done?.kind === "sent") setDone({ kind: "already", id: done.id });
+  }
 
   const fetchData = useCallback(async () => {
-    setLoad({ status: "loading" });
+    // A reopen refreshes quietly: resumes already shown stay until the new list arrives.
+    setLoad((l) => (l.status === "ready" ? l : { status: "loading" }));
     try {
       const [rs, apps] = await Promise.all([
         withAuth(() => api.GET("/me/resumes")),
@@ -66,8 +77,8 @@ export default function ApplyDialog({
   }, [vacancy.id]);
 
   useEffect(() => {
-    if (seeker) void fetchData();
-  }, [seeker, fetchData]);
+    if (seeker && open) void fetchData();
+  }, [seeker, open, fetchData]);
 
   const skeleton = useSkeletonHold(status === "loading" || (seeker && load.status === "loading"));
 
@@ -104,11 +115,11 @@ export default function ApplyDialog({
     footer = (
       <>
         <Button asChild variant="secondary"><LocalizedLink to={`/register?next=${next}`}>{t("nav.signUp")}</LocalizedLink></Button>
-        <Button asChild icon={<LogIn className="size-4.5" />}><LocalizedLink to={`/login?next=${next}`}>{t("nav.signIn")}</LocalizedLink></Button>
+        <Button asChild icon={<LogIn className="size-4.5" />}><LocalizedLink ref={signIn} to={`/login?next=${next}`}>{t("nav.signIn")}</LocalizedLink></Button>
       </>
     );
   } else if (status === "authed" && !seeker) {
-    body = <Callout tone="info">{t("apply.employerNote")}</Callout>;
+    body = <Callout tone="info">{user?.role === "employer" ? t("apply.employerNote") : t("vacancyPage.seekersOnly")}</Callout>;
     footer = closeBtn;
   } else if (done?.kind === "sent") {
     body = <Success title={t("apply.sent")} text={t("apply.sentBody")} />;
@@ -126,7 +137,7 @@ export default function ApplyDialog({
     body = <ErrorState error={load.error} onRetry={fetchData} headingAs="p" />;
     footer = cancel;
   } else if (done?.kind === "already" || load.appliedId) {
-    const id = load.appliedId ?? undefined;
+    const id = load.appliedId ?? done?.id;
     body = (
       <div role="status">
         <EmptyState size="sm" headingAs="p" icon={<CircleCheck />} title={t("apply.alreadySent")} body={t("vacancyPage.alreadyBody")} />
@@ -204,6 +215,7 @@ export default function ApplyDialog({
         description={`${vacancy.title} · ${vacancy.company.name}`}
         closeLabel={t("common.close")}
         dismissible={!pending}
+        initialFocus={status === "anon" && !offline ? signIn : undefined}
         footer={footer}
       >
         {body}

@@ -9,6 +9,8 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/modules/notification"
+	"jobvacancy.uz/backend/internal/pkg/apperr"
+	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/realtime"
 	"jobvacancy.uz/backend/internal/testutil/fixture"
 )
@@ -21,7 +23,7 @@ func newInviteEnv(t *testing.T) (*fixture.World, *Service, *fixture.Jobs) {
 	w.Must(cat.Reload(context.Background()))
 	jobs := &fixture.Jobs{}
 	notify := &notification.Service{Pool: w.Pool, Q: w.Q, Publisher: &realtime.Publisher{RDB: rdb}, Jobs: jobs, Log: w.Log}
-	return w, &Service{Pool: w.Pool, Q: w.Q, Catalog: cat, Notify: notify}, jobs
+	return w, &Service{Pool: w.Pool, Q: w.Q, Catalog: cat, Notify: notify, Limiter: ratelimit.New(rdb)}, jobs
 }
 
 // TZ FN-05 ✅ "Taklif qilingan odam qabul qilmaguncha kompaniya ma'lumotlarini ko'ra olmaydi":
@@ -168,4 +170,18 @@ func contains(ss []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// Invites e-mail any address, so a company may send at most 50 a day.
+func TestInvitesAreLimited(t *testing.T) {
+	w, svc, _ := newInviteEnv(t)
+	owner := w.User(gen.UserRoleEmployer, true)
+	c := w.Company(owner.ID, true)
+	var last error
+	for i := 0; i < 51; i++ {
+		_, last = svc.Invite(context.Background(), fixture.Principal(owner), c.Slug, w.Email(), gen.CompanyMemberRoleRecruiter)
+	}
+	if ae, ok := apperr.As(last); !ok || ae.Code != "rate_limited" {
+		t.Fatalf("51st invite: %v", last)
+	}
 }

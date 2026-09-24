@@ -1,9 +1,9 @@
 import { MailCheck } from "lucide-react";
-import { useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useId, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router";
 
 import type { Route } from "./+types/verify-email";
-import { AuthCard, ResendRow, rich, useCooldown } from "./AuthCard";
+import { AUTH_SUBTITLE_ID, AuthCard, authFooterLink, ResendRow, rich, useCooldown } from "./AuthCard";
 import { useNext } from "./layout";
 import { api, apiError, dataOf } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
@@ -12,7 +12,7 @@ import { CodeInput } from "~/shared/forms/CodeInput";
 import { FormError } from "~/shared/forms/FormError";
 import { useSubmit } from "~/shared/forms/useSubmit";
 import { localizedPath } from "~/shared/i18n/config";
-import { useLocale } from "~/shared/i18n/hooks";
+import { LocalizedLink, useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { metaT } from "~/shared/seo/meta";
 import { seo } from "~/shared/seo/seo";
@@ -30,7 +30,8 @@ export default function VerifyEmail() {
   const navigate = useNavigate();
   const next = useNext();
   const [params] = useSearchParams();
-  const { user } = useSession();
+  const { user, status } = useSession();
+  const { pathname, search } = useLocation();
   const email = params.get("email") ?? user?.email ?? "";
   const { pending, error, run, setError } = useSubmit();
   const [code, setCode] = useState("");
@@ -38,6 +39,7 @@ export default function VerifyEmail() {
   const [codeBad, setCodeBad] = useState(false);
   const [cooldown, setCooldown] = useCooldown(60); // a code was just sent at sign-up
   const [sending, setSending] = useState(false);
+  const codeId = useId();
 
   const goOn = () => navigate(next ?? localizedPath(locale, "/"), { replace: true });
 
@@ -59,25 +61,47 @@ export default function VerifyEmail() {
 
   const resend = async () => {
     setSending(true);
+    setError(null);
     try {
       const res = await withAuth(() => api.POST("/auth/email/send-code"));
       const e = res.response.ok ? null : apiError(res);
       if (e) setError(errorText(t, e));
-      else toast({ tone: "success", title: t("auth.codeSent") });
+      else {
+        // A fresh code: the last attempt's red cells and digits no longer apply.
+        setCode("");
+        setCodeBad(false);
+        toast({ tone: "success", title: t("auth.codeSent") });
+      }
       setCooldown(e?.retry_after ?? 60);
     } catch {
       setError(t("errors.network"));
     } finally {
       setSending(false);
+      // The resend button is now disabled for the cooldown, which would drop focus to <body>:
+      // the next step is typing the new code anyway.
+      document.getElementById(codeId)?.focus();
     }
   };
 
   const body = email
-    ? rich(t("authPage.verifyBody", { email }), { b: (s) => <b className="break-all font-semibold text-ink">{s}</b> })
+    ? rich(t("authPage.verifyBody", { email }), { b: (s) => <b className="font-semibold text-ink">{s}</b> })
     : t("authPage.verifyBodyNoEmail");
 
   return (
-    <AuthCard icon={<MailCheck className="size-6" />} title={t("auth.verifyTitle")} subtitle={body}>
+    <AuthCard
+      icon={<MailCheck className="size-6" />}
+      title={t("auth.verifyTitle")}
+      subtitle={body}
+      // Opened signed out (another browser, expired session): verifying needs the account, so
+      // offer the way in and come straight back here.
+      footer={
+        status === "anon" && (
+          <LocalizedLink to={`/login?next=${encodeURIComponent(pathname + search)}`} viewTransition prefetch="intent" className={authFooterLink}>
+            {t("nav.signIn")}
+          </LocalizedLink>
+        )
+      }
+    >
       <form className="flex flex-col gap-5" onSubmit={(e) => { e.preventDefault(); void submit(code); }}>
         <FormError>{error}</FormError>
         <CodeInput
@@ -89,8 +113,10 @@ export default function VerifyEmail() {
             if (error) setError(null);
           }}
           onComplete={(v) => void submit(v)}
+          id={codeId}
           label={t("auth.code")}
           aria-invalid={codeBad || undefined}
+          aria-describedby={AUTH_SUBTITLE_ID}
         />
         <Button type="submit" size="lg" loading={pending} disabled={code.length !== 6} className="w-full">{t("auth.verifySubmit")}</Button>
         <ResendRow

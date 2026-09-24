@@ -915,8 +915,16 @@
 @view-transition { navigation: auto; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--dur-2); }
 ::view-transition-group(*) { animation-timing-function: var(--ease-out-quint); animation-duration: var(--dur-3); }
-/* Auth card (login ↔ register ↔ reset): the card resizes, its content cross-fades inside it. */
+/* Auth card (login ↔ register ↔ reset): the card resizes, its content cross-fades inside it. Named
+   only while a transition runs: a named element is a backdrop root, so its glass would not blur. */
+:active-view-transition .auth-card { view-transition-name: auth-card; }
 ::view-transition-group(auth-card) { overflow: clip; border-radius: var(--radius-sheet); }
+/* Chat on phones (routes/chat): the thread slides in over the list and back out, like a native
+   push/pop. :only-child = the thread exists on one side of the navigation only. */
+@media (width < 48rem) {
+  ::view-transition-new(chat-thread):only-child { animation: sheet-right-in var(--dur-3) var(--ease-out-quint); }
+  ::view-transition-old(chat-thread):only-child { animation: sheet-right-out var(--dur-2) var(--ease-in-quick); }
+}
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
@@ -973,6 +981,8 @@
   & :where(h2, h3, h4) { color: var(--ink); font-weight: 600; letter-spacing: var(--tracking-snug); line-height: 1.35; margin-top: 1.6em; }
   & :where(h2) { font-size: var(--text-lg); }
   & :where(h3, h4) { font-size: var(--text-lead); }
+  /* A text that opens with a heading ("Vazifalar:") sits flush under the caller's own title. */
+  & > :first-child { margin-top: 0; }
   & :where(strong, b) { color: var(--ink); font-weight: 600; }
   & :where(a) { color: var(--lapis-ink); text-decoration: underline; text-underline-offset: 3px; }
   & :where(ul, ol) { padding-left: 1.25rem; }

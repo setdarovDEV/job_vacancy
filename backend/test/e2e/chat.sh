@@ -8,6 +8,8 @@ MP=http://localhost:8025/api/v1
 SP=$(mktemp -d); trap 'kill $(jobs -p) 2>/dev/null; rm -rf $SP' EXIT
 CTL=${CTL:-./bin/ctl}; WSC=${WSC:-./bin/wsclient}
 WORKER_LOG=${WORKER_LOG:?set WORKER_LOG}
+# Optional: the API binary, to start a second instance for the rolling-restart check (TZ BE-15).
+API_BIN=${API_BIN:-}
 pass=0; fail=0
 check() { if [ "$2" == "$3" ]; then echo "  ✔ $1"; pass=$((pass+1)); else echo "  ✘ $1 (got '$2', want '$3')"; fail=$((fail+1)); fi; }
 req() { curl -s -o $SP/body.json -w '%{http_code}' "$@"; }
@@ -19,10 +21,10 @@ mailcode() { for i in $(seq 1 20); do [ "$(curl -s "$MP/search?query=to:$1" | jq
   curl -s "$MP/search?query=to:$1" | jq -r '.messages[0].ID' | xargs -I{} curl -s "$MP/message/{}" | jq -r '.Text' | grep -oE '\b[0-9]{6}\b' | head -1; }
 user() { local t; t=$(curl -s -X POST $API/auth/register -H "$H" -d "{\"consent\":true,\"email\":\"$1\",\"password\":\"Secret123\",\"full_name\":\"$3\",\"role\":\"$2\"}" | jq -r .data.access_token)
   c=$(mailcode $1); curl -s -o /dev/null -X POST $API/auth/email/verify -H "$(A $t)" -H "$H" -d "{\"code\":\"$c\"}"; echo $t; }
-connect() { # name token → starts a client writing $SP/<name>.events, reading $SP/<name>.frames
-  local t; t=$(curl -s -X POST $API/ws/ticket -H "$(A $2)" | jq -r .data.ticket)
+connect() { # name token [api ws] → starts a client writing $SP/<name>.events, reading $SP/<name>.frames
+  local t; t=$(curl -s -X POST ${3:-$API}/ws/ticket -H "$(A $2)" | jq -r .data.ticket)
   : > $SP/$1.events; : > $SP/$1.frames
-  $WSC -url "$WS?ticket=$t" -out $SP/$1.events -in $SP/$1.frames 2>$SP/$1.err & eval "PID_$1=$!"
+  $WSC -url "${4:-$WS}?ticket=$t" -out $SP/$1.events -in $SP/$1.frames 2>$SP/$1.err & eval "PID_$1=$!"
   for i in $(seq 1 30); do grep -q '"ready"' $SP/$1.events && return; sleep 0.1; done; }
 frame() { echo "$2" >> $SP/$1.frames; }
 waitev() { # name jq-filter → prints first matching event (waits up to 3 s)
@@ -149,6 +151,40 @@ curl -s -o /dev/null -X POST $API/conversations/$CONV/messages -H "$(A $TS)" -H 
 sleep 2.5
 check "offline employer gets one push" "$(grep 'DEV: push' $WORKER_LOG | grep -c "push-e-$R.*Jasur Toshmatov: yangi xabar")" 1
 check "online recruiter gets no push" "$(grep 'DEV: push' $WORKER_LOG | grep -c "hr2$R")" 0
+
+echo "== revoked session loses its socket (TZ BE-15, SEC-05)"
+TS2=$(curl -s -X POST $API/auth/login -H "$H" -d "{\"email\":\"cand$R@example.com\",\"password\":\"Secret123\"}" | jq -r .data.access_token)
+connect S2 $TS2
+check "second session connected" "$(count S2 '.type=="ready"')" 1
+S2ID=$(curl -s $API/me/sessions -H "$(A $TS2)" | jq -r '.data[] | select(.current) | .id')
+check "revoke it from the first session" $(req -X DELETE $API/me/sessions/$S2ID -H "$(A $TS)") 204
+check "its socket is closed with 4001" "$(waitev S2 '.type=="_closed"' | jq -r .code)" 4001
+check "its token is dead too" $(req $API/me -H "$(A $TS2)") 401
+check "the first session's socket stays open" "$(count S '.type=="_closed"')" 0
+
+echo "== rolling restart: reconnect and catch up (TZ BE-15)"
+if [ -n "$API_BIN" ]; then
+  P2=${API2_PORT:-8097}; API2=http://localhost:$P2/api/v1; WS2=ws://localhost:$P2/api/v1/ws
+  (cd "$(dirname "$0")/../.." && HTTP_ADDR=127.0.0.1:$P2 METRICS_ADDR=127.0.0.1:$((P2+1000)) exec "$API_BIN") > $SP/api2.log 2>&1 & A2=$!
+  for i in $(seq 1 50); do curl -sf http://localhost:$P2/readyz >/dev/null && break; sleep 0.2; done
+  connect R $TS $API2 $WS2
+  check "seeker connected to instance 2" "$(count R '.type=="ready"')" 1
+  curl -s -o $SP/body.json -X POST $API/conversations/$CONV/messages -H "$(A $TE)" -H "$H" -d "{\"client_id\":\"$(uuid)\",\"kind\":\"text\",\"body\":\"Ertaga soat 10 da\"}"; MA=$(J .data.id)
+  check "message sent via instance 1 arrives live on instance 2" "$(waitev R '.type=="message.new"' | jq -r .data.id)" "$MA"
+  kill -TERM $A2
+  check "instance 2 stops: socket closed with 1012 (service restart)" "$(waitev R '.type=="_closed"' | jq -r .code)" 1012
+  for i in $(seq 1 50); do kill -0 $A2 2>/dev/null || break; sleep 0.2; done
+  check "instance 2 exited" "$(kill -0 $A2 2>/dev/null && echo running || echo exited)" exited
+  check "…after closing its sockets" "$(grep -c 'websocket connections closed.*count=1' $SP/api2.log)" 1
+  curl -s -o $SP/body.json -X POST $API/conversations/$CONV/messages -H "$(A $TE)" -H "$H" -d "{\"client_id\":\"$(uuid)\",\"kind\":\"text\",\"body\":\"Manzil: Chilonzor 7\"}"; MB=$(J .data.id)
+  connect R2 $TS
+  check "client reconnects to instance 1" "$(count R2 '.type=="ready"')" 1
+  check "missed message fetched after reconnect" "$(req "$API/conversations/$CONV/messages?after=$MA" -H "$(A $TS)")$(J "[.data[].id] | index($MB) != null")" "200true"
+  curl -s -o $SP/body.json -X POST $API/conversations/$CONV/messages -H "$(A $TE)" -H "$H" -d "{\"client_id\":\"$(uuid)\",\"kind\":\"text\",\"body\":\"Kutamiz\"}"; MC=$(J .data.id)
+  check "live delivery resumes on the new socket" "$(waitev R2 '.type=="message.new"' | jq -r .data.id)" "$MC"
+else
+  echo "  - skipped (set API_BIN to the api binary to run a second instance)"
+fi
 
 echo
 echo "passed: $pass  failed: $fail"

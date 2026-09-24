@@ -66,7 +66,7 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] Kompaniyalar: profil, jamoa (owner/admin/recruiter), admin tasdig'i (verified)
   - [x] Vakansiyalar: draft → moderatsiya → e'lon (30 kun) → arxiv/muddati tugagan, filtrlar, cursor
   - [x] Ko'rishlar soni: Redis'da yig'iladi, har daqiqada DB'ga yoziladi (bir kishi 1 soatda 1 marta hisoblanadi)
-  - [ ] Qolgan ~200 tumanni rasmiy SOATO klassifikatoridan import qilish
+  - [x] 206 ta tuman va viloyatga bo'ysunuvchi shahar rasmiy SOATO klassifikatoridan (stat.uz, 2022-04-20 tahriri) 4 tilda: `ctl import-districts` (idempotent), `/catalog/regions/{region}/districts`. Inglizcha nomlar va 2022 yildan keyingi o'zgarishlar odam tomonidan tekshirilishi kerak (`backend/db/data/districts.csv` sarlavhasi)
 - [x] **3. Qidiruv**
   - [x] Lotin/kirill/rus matnlar bitta ko'rinishga normallashadi (`pkg/translit`): "дастурчи" = "dasturchi"
   - [x] Yengil o'zak ajratish + prefiks qidiruv (`pkg/searchq`): "dasturchilar", "продажам"
@@ -112,7 +112,8 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] Header'dagi badge'lar real vaqtda yangilanadi
   - [x] Tekshiruv: 42 ta brauzer tekshiruvi (`web/test/*.mjs`), production'da 11 sahifa sekin 4G'da LCP < 0,9 s, CLS < 0,1, hydration xatosiz;
         bosh sahifa JS 145 KB + CSS 15 KB gzip; `test/i18n-keys.mjs` 4 tildagi kalitlarni tekshiradi
-- [ ] **8. Admin panel**
+- [~] **8. Admin panel** — API tayyor (TZ FN-01): foydalanuvchi qidirish va bloklash, kompaniyani bloklash, ko'nikmalar moderatsiyasi (tasdiqlash, birlashtirish), "TOP" muddati bilan, shikoyatlar navbati, statistika, har bir amal `admin_audit_log`da; UI (PG-15) navbatda
+  - [x] Shikoyatlar (FN-02), akkauntni o'chirish (FN-03), muddat tugashi bildirishnomalari va qayta e'lon (FN-04), jamoaga taklif rozilik bilan (FN-05), ro'yxatdan o'tishda rozilik (FN-08, backend), onlayn holat maxfiyligi (SEC-05)
 - [ ] **9. Mobile (Flutter)**
 - [ ] **10. AI moduli + kreditlar** (to'lov "Tez kunda")
 - [ ] **11. Deploy:** nginx conf, SSL, prod compose, CI/CD, monitoring, backup

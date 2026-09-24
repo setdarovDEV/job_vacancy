@@ -12,6 +12,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
+	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/platform/postgres"
 )
@@ -21,6 +22,10 @@ import (
 // member and see nothing of the company but its public profile.
 
 const InviteDays = 7
+
+// A company may send this many invites a day: invites e-mail any address, so they must
+// not become a spam channel.
+var inviteRule = ratelimit.Rule{Name: "company_invites", Limit: 50, Window: 24 * time.Hour}
 
 var (
 	ErrInviteNotFound  = apperr.NotFound("invite_not_found", "invite not found")
@@ -79,6 +84,11 @@ func (s *Service) Invite(ctx context.Context, p reqctx.Principal, ref, email str
 	inviter, err := s.Q.GetUserByID(ctx, p.UserID)
 	if err != nil {
 		return Invite{}, err
+	}
+	if s.Limiter != nil {
+		if ok, retry, _ := s.Limiter.Allow(ctx, inviteRule, c.ID.String()); !ok {
+			return Invite{}, apperr.TooManyRequests(int(retry.Seconds()) + 1)
+		}
 	}
 
 	var inv gen.CompanyInvite

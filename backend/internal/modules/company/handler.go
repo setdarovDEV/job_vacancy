@@ -42,6 +42,9 @@ type DTO struct {
 	OpenVacancies *int64 `json:"open_vacancies,omitempty"`
 	// Set in "my companies".
 	MyRole string `json:"my_role,omitempty"`
+	// Status is set in "my companies": active, or blocked by an admin (members can't
+	// manage it then).
+	Status string `json:"status,omitempty"`
 }
 
 // Summary is embedded in vacancy cards.
@@ -321,6 +324,7 @@ func (h *Handler) mine(w http.ResponseWriter, r *http.Request) {
 	for i, row := range rows {
 		out[i] = ToDTO(row.Company)
 		out[i].MyRole = string(row.Role)
+		out[i].Status = string(row.Company.Status)
 	}
 	response.JSON(w, http.StatusOK, out)
 }

@@ -6,9 +6,15 @@ import { LocalizedLink } from "~/shared/i18n/hooks";
 // Below-the-fold sections: skipped by rendering until near the viewport. Vertical padding (not
 // margins) makes the section gap, so paint containment never clips a lifted card's shadow.
 export const band = "container-page defer-paint py-6 md:py-10";
-/** Placeholder height while a section is skipped (between its phone and desktop heights, leaning
- *  to phones), so the scrollbar doesn't jump as sections render; `auto` then keeps the real one. */
-export const est = (rem: number) => ({ containIntrinsicSize: `auto ${rem}rem` });
+/**
+ * Placeholder height while a section is skipped: `phone` rem (content box) at a 24rem viewport,
+ * easing linearly to `desktop` rem at 64rem (where the grids reach their widest layout), so the
+ * page is about as tall before a section renders as after, at every width, and the scrollbar
+ * doesn't jump. `auto` then keeps the real height once it has rendered.
+ */
+export const est = (phone: number, desktop: number) => ({
+  containIntrinsicSize: `auto clamp(${desktop}rem, calc(${phone}rem - ${phone - desktop} * (100vw - 24rem) / 40), ${phone}rem)`,
+});
 
 /** Section title row of the landing: H2 (+ one line) on the left, an optional "see all" on the right. */
 export function SectionHead({ id, title, description, action }: {

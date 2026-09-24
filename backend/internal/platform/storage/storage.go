@@ -7,6 +7,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -134,6 +135,49 @@ func (s *Storage) PresignGet(ctx context.Context, bucket, key string, ttl time.D
 		return "", err
 	}
 	return u.String(), nil
+}
+
+// ErrObjectTooLarge: the object is bigger than the caller is willing to hold in memory.
+var ErrObjectTooLarge = fmt.Errorf("storage: object too large")
+
+// Get reads a whole object of at most max bytes.
+func (s *Storage) Get(ctx context.Context, bucket, key string, max int64) ([]byte, error) {
+	obj, err := s.api.GetObject(ctx, bucket, key, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	defer obj.Close()
+	b, err := io.ReadAll(io.LimitReader(obj, max+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > max {
+		return nil, ErrObjectTooLarge
+	}
+	return b, nil
+}
+
+// Put stores data as an object.
+func (s *Storage) Put(ctx context.Context, bucket, key string, data []byte, contentType, cacheControl string) error {
+	_, err := s.api.PutObject(ctx, bucket, key, bytes.NewReader(data), int64(len(data)),
+		minio.PutObjectOptions{ContentType: contentType, CacheControl: cacheControl})
+	return err
+}
+
+// IsNotFound reports a missing object or bucket.
+func IsNotFound(err error) bool {
+	code := minio.ToErrorResponse(err).Code
+	return code == "NoSuchKey" || code == "NoSuchBucket"
+}
+
+// PublicKey returns the object key of a URL in the public bucket (ok false for other URLs,
+// e.g. Google avatars).
+func (s *Storage) PublicKey(u string) (string, bool) {
+	base := strings.TrimRight(s.cfg.PublicBaseURL, "/") + "/"
+	if !strings.HasPrefix(u, base) || len(u) == len(base) {
+		return "", false
+	}
+	return strings.TrimPrefix(u, base), true
 }
 
 func (s *Storage) Remove(ctx context.Context, bucket, key string) error {

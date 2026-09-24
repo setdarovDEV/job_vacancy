@@ -127,23 +127,25 @@ DELETE FROM skills WHERE id = $1;
 
 -- ---- statistics --------------------------------------------------------------------------
 
--- New users, vacancies and applications per day (Asia/Tashkent days) over the last
--- `days` days, oldest first; one range scan per table over its BRIN index (00020).
+-- New users, vacancies and applications per day over the last `days` days, oldest first.
+-- Days are Tashkent days: Uzbekistan keeps UTC+5 all year (no DST since 1992), so a fixed
+-- offset is exact and about twice as cheap per row as AT TIME ZONE 'Asia/Tashkent'. One
+-- range scan per table (BRIN on created_at, 00020); the handler caches the result.
 -- name: AdminDailyStats :many
 WITH days AS (
     SELECT d::date AS day
-    FROM generate_series(((now() AT TIME ZONE 'Asia/Tashkent')::date - (sqlc.arg(days)::int - 1))::timestamp,
-                         (now() AT TIME ZONE 'Asia/Tashkent')::date::timestamp, interval '1 day') AS d
+    FROM generate_series((((now() AT TIME ZONE 'UTC') + interval '5 hours')::date - (sqlc.arg(days)::int - 1))::timestamp,
+                         ((now() AT TIME ZONE 'UTC') + interval '5 hours')::date::timestamp, interval '1 day') AS d
 ), since AS (
-    SELECT (min(day)::timestamp AT TIME ZONE 'Asia/Tashkent') AS t FROM days
+    SELECT ((min(day)::timestamp - interval '5 hours') AT TIME ZONE 'UTC') AS t FROM days
 ), u AS (
-    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    SELECT ((created_at AT TIME ZONE 'UTC') + interval '5 hours')::date AS day, count(*) AS n
     FROM users WHERE created_at >= (SELECT t FROM since) GROUP BY 1
 ), v AS (
-    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    SELECT ((created_at AT TIME ZONE 'UTC') + interval '5 hours')::date AS day, count(*) AS n
     FROM vacancies WHERE created_at >= (SELECT t FROM since) GROUP BY 1
 ), a AS (
-    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    SELECT ((created_at AT TIME ZONE 'UTC') + interval '5 hours')::date AS day, count(*) AS n
     FROM applications WHERE created_at >= (SELECT t FROM since) GROUP BY 1
 )
 SELECT days.day::date AS day, coalesce(u.n, 0)::bigint AS registrations,

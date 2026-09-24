@@ -20,12 +20,22 @@ import (
 const (
 	sendBuffer    = 64               // events queued per connection before it's considered stuck
 	writeTimeout  = 10 * time.Second //
-	heartbeat     = 30 * time.Second // ping + presence refresh
+	heartbeat     = 30 * time.Second // ping + presence refresh + revocation check
 	presenceTTL   = 90 * time.Second // a connection counts as online this long after its last heartbeat
 	maxFrameBytes = 4096
 	maxWatched    = 200
 	framesPerSec  = 20
 )
+
+// Close codes clients act on (TZ BE-15). StatusServiceRestart (1012): this instance is
+// shutting down, reconnect (to another one) and fetch what was missed over REST.
+// StatusSessionRevoked: the session was signed out, revoked or its user blocked; don't
+// reconnect with it.
+const StatusSessionRevoked websocket.StatusCode = 4001
+
+// revokeChannel carries comma-separated ids of revoked sessions (auth.RevocationStore
+// publishes them). Every instance listens and closes their sockets at once.
+const revokeChannel = "rt:revoke"
 
 // Frame is a client → server WebSocket message.
 type Frame struct {
@@ -43,61 +53,150 @@ type FrameHandler interface {
 // Hub owns this instance's WebSocket connections and one Redis subscription through
 // which it receives events for the users connected here. Channels are subscribed while
 // at least one local connection needs them and unsubscribed afterwards.
+//
+// The registry is split into shards (by user, watched user or session id), each with its
+// own lock, so delivering an event to one user never waits for unrelated connects,
+// disconnects or presence watches (TZ BE-15).
 type Hub struct {
 	// Audience limits who sees whose presence (TZ SEC-05); set it before serving.
 	Audience Audience
-	rdb      *redis.Client
-	ps       *redis.PubSub
-	log      *slog.Logger
-	mu       sync.Mutex
-	users    map[uuid.UUID]map[*Conn]struct{} // connections per user
-	watchers map[uuid.UUID]map[*Conn]struct{} // connections watching a user's presence
+	// RevokedKey names the Redis marker of a revoked session (auth.RevokedKey). With it a
+	// connection is refused when its session is already revoked, and the heartbeat closes
+	// it if a revocation message was missed. Set it before serving.
+	RevokedKey func(sessionID uuid.UUID) string
+
+	rdb    *redis.Client
+	ps     *redis.PubSub
+	log    *slog.Logger
+	shards []shard
+
+	life     sync.Mutex // guards stopping and conns.Add
+	stopping bool
+	conns    sync.WaitGroup // Serve calls in flight
 }
 
 func NewHub(ctx context.Context, rdb *redis.Client, log *slog.Logger) *Hub {
-	h := &Hub{
-		rdb: rdb, ps: rdb.Subscribe(ctx), log: log,
-		users: map[uuid.UUID]map[*Conn]struct{}{}, watchers: map[uuid.UUID]map[*Conn]struct{}{},
-	}
+	return newHub(ctx, rdb, log, defaultShards)
+}
+
+func newHub(ctx context.Context, rdb *redis.Client, log *slog.Logger, shards int) *Hub {
+	h := &Hub{rdb: rdb, ps: rdb.Subscribe(ctx, revokeChannel), log: log, shards: newShards(shards)}
 	go h.run()
 	return h
 }
 
+// Close stops the Redis subscription (after Shutdown).
 func (h *Hub) Close() error { return h.ps.Close() }
 
 func (h *Hub) run() {
 	for msg := range h.ps.Channel() {
-		var id uuid.UUID
-		var set map[uuid.UUID]map[*Conn]struct{}
 		switch {
 		case strings.HasPrefix(msg.Channel, "rt:u:"):
-			id, _ = uuid.Parse(msg.Channel[5:])
-			set = h.users
+			h.deliver(msg.Channel[5:], []byte(msg.Payload), false)
 		case strings.HasPrefix(msg.Channel, "rt:p:"):
-			id, _ = uuid.Parse(msg.Channel[5:])
-			set = h.watchers
-		default:
+			h.deliver(msg.Channel[5:], []byte(msg.Payload), true)
+		case msg.Channel == revokeChannel:
+			h.closeSessions(msg.Payload)
+		}
+	}
+}
+
+// deliver queues payload on every local connection of a user (or watching a user's
+// presence). Only that user's shard is read-locked.
+func (h *Hub) deliver(rawID string, payload []byte, presence bool) {
+	id, err := uuid.Parse(rawID)
+	if err != nil {
+		return
+	}
+	sh := h.shardOf(id)
+	sh.mu.RLock()
+	set := sh.users[id]
+	if presence {
+		set = sh.watchers[id]
+	}
+	for c := range set {
+		c.enqueue(payload)
+	}
+	sh.mu.RUnlock()
+}
+
+// closeSessions closes the local connections opened with any of the revoked sessions.
+func (h *Hub) closeSessions(payload string) {
+	for _, raw := range strings.Split(payload, ",") {
+		sid, err := uuid.Parse(strings.TrimSpace(raw))
+		if err != nil {
 			continue
 		}
-		payload := []byte(msg.Payload)
-		h.mu.Lock()
-		for c := range set[id] {
-			c.enqueue(payload)
+		sh := h.shardOf(sid)
+		sh.mu.RLock()
+		conns := make([]*Conn, 0, len(sh.sessions[sid]))
+		for c := range sh.sessions[sid] {
+			conns = append(conns, c)
 		}
-		h.mu.Unlock()
+		sh.mu.RUnlock()
+		for _, c := range conns {
+			c.shutdown(StatusSessionRevoked, "session revoked")
+		}
 	}
+}
+
+// Shutdown closes every connection with 1012 (service restart) so clients reconnect to
+// another instance and catch up over REST, then waits until their handlers returned or
+// ctx ends (TZ BE-15, OPS-07). New connections are refused from now on. It returns the
+// number of connections closed.
+func (h *Hub) Shutdown(ctx context.Context) int {
+	h.life.Lock()
+	h.stopping = true
+	h.life.Unlock()
+
+	var all []*Conn
+	for i := range h.shards {
+		sh := &h.shards[i]
+		sh.mu.RLock()
+		for _, set := range sh.users {
+			for c := range set {
+				all = append(all, c)
+			}
+		}
+		sh.mu.RUnlock()
+	}
+	for _, c := range all {
+		c.shutdown(websocket.StatusServiceRestart, "server restarting")
+	}
+	done := make(chan struct{})
+	go func() { h.conns.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		h.log.Warn("websocket connections still open after the shutdown timeout", "closed", len(all))
+	}
+	return len(all)
+}
+
+// track counts a new connection unless the hub is shutting down.
+func (h *Hub) track() bool {
+	h.life.Lock()
+	defer h.life.Unlock()
+	if h.stopping {
+		return false
+	}
+	h.conns.Add(1)
+	return true
 }
 
 // Conn is one client WebSocket.
 type Conn struct {
-	hub      *Hub
-	ws       *websocket.Conn
-	UserID   uuid.UUID
-	id       string
-	send     chan []byte
-	watching map[uuid.UUID]struct{} // guarded by hub.mu
-	closed   chan struct{}
-	once     sync.Once
+	hub       *Hub
+	ws        *websocket.Conn
+	UserID    uuid.UUID
+	SessionID uuid.UUID // uuid.Nil for tickets issued before sessions were bound
+	id        string
+	send      chan []byte
+	mu        sync.Mutex
+	watching  map[uuid.UUID]struct{} // guarded by mu
+	closed    chan struct{}
+	once      sync.Once
+	code      websocket.StatusCode // why the server closed it; set once, before closed is closed
 }
 
 func (c *Conn) enqueue(b []byte) {
@@ -110,21 +209,34 @@ func (c *Conn) enqueue(b []byte) {
 
 func (c *Conn) shutdown(code websocket.StatusCode, reason string) {
 	c.once.Do(func() {
+		c.code = code
 		close(c.closed)
+		wsClosed.WithLabelValues(closeReason(code)).Inc()
 		go c.ws.Close(code, reason)
 	})
 }
 
-// Serve runs a connection until the client leaves or ctx ends.
-func (h *Hub) Serve(ctx context.Context, ws *websocket.Conn, userID uuid.UUID, frames FrameHandler) {
+// Serve runs a connection until the client leaves, the server closes it, or ctx ends.
+// sessionID binds the socket to the session its ticket was issued for (uuid.Nil: none).
+func (h *Hub) Serve(ctx context.Context, ws *websocket.Conn, userID, sessionID uuid.UUID, frames FrameHandler) {
+	if !h.track() {
+		_ = ws.Close(websocket.StatusServiceRestart, "server restarting")
+		return
+	}
+	defer h.conns.Done()
 	ws.SetReadLimit(maxFrameBytes)
-	c := &Conn{hub: h, ws: ws, UserID: userID, id: random.Base36(12), send: make(chan []byte, sendBuffer),
-		watching: map[uuid.UUID]struct{}{}, closed: make(chan struct{})}
+	c := &Conn{hub: h, ws: ws, UserID: userID, SessionID: sessionID, id: random.Base36(12),
+		send: make(chan []byte, sendBuffer), watching: map[uuid.UUID]struct{}{}, closed: make(chan struct{})}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	h.register(ctx, c)
+	wsConnections.Inc()
+	defer wsConnections.Dec()
+	ok := h.register(ctx, c)
 	defer h.unregister(context.WithoutCancel(ctx), c)
+	if !ok {
+		return // closed with StatusSessionRevoked; Close finishes the handshake itself
+	}
 
 	go c.writeLoop(ctx)
 	c.readLoop(ctx, frames)
@@ -156,7 +268,10 @@ func (c *Conn) writeLoop(ctx context.Context) {
 				c.shutdown(websocket.StatusGoingAway, "ping failed")
 				return
 			}
-			c.hub.touchPresence(ctx, c)
+			if c.hub.touchPresence(ctx, c) {
+				c.shutdown(StatusSessionRevoked, "session revoked")
+				return
+			}
 		}
 	}
 }
@@ -199,48 +314,64 @@ func (c *Conn) event(ev Event) {
 }
 
 // ---- subscriptions -----------------------------------------------------------------------
+//
+// A channel is subscribed by the first local connection that needs it and unsubscribed by
+// the last one leaving, both while holding the key's shard lock, so a connect and a
+// disconnect of the same user can't leave the subscription in the wrong state.
 
-func (h *Hub) register(ctx context.Context, c *Conn) {
-	h.mu.Lock()
-	first := len(h.users[c.UserID]) == 0
-	if first {
-		h.users[c.UserID] = map[*Conn]struct{}{}
-	}
-	h.users[c.UserID][c] = struct{}{}
-	h.mu.Unlock()
-	if first {
+// register adds c to the registry and marks the user online. It returns false (and has
+// closed c) when c's session is already revoked.
+func (h *Hub) register(ctx context.Context, c *Conn) bool {
+	us := h.shardOf(c.UserID)
+	us.mu.Lock()
+	if add(us.users, c.UserID, c) {
 		if err := h.ps.Subscribe(ctx, userChannel(c.UserID)); err != nil {
 			h.log.Warn("subscribe", "err", err)
 		}
 	}
+	us.mu.Unlock()
+	// Registered under its session before the revocation check below, so a revocation
+	// landing in between is caught by one or the other.
+	if c.SessionID != uuid.Nil {
+		ss := h.shardOf(c.SessionID)
+		ss.mu.Lock()
+		add(ss.sessions, c.SessionID, c)
+		ss.mu.Unlock()
+	}
 	h.syncHidden(ctx, c.UserID)
-	h.touchPresence(ctx, c)
+	if h.touchPresence(ctx, c) {
+		c.shutdown(StatusSessionRevoked, "session revoked")
+		return false
+	}
 	c.event(Event{Type: "ready", Data: map[string]string{"user_id": c.UserID.String()}})
+	return true
 }
 
 func (h *Hub) unregister(ctx context.Context, c *Conn) {
-	h.mu.Lock()
-	delete(h.users[c.UserID], c)
-	last := len(h.users[c.UserID]) == 0
-	if last {
-		delete(h.users, c.UserID)
+	us := h.shardOf(c.UserID)
+	us.mu.Lock()
+	if remove(us.users, c.UserID, c) {
+		_ = h.ps.Unsubscribe(ctx, userChannel(c.UserID))
 	}
-	var unwatch []string
-	for id := range c.watching {
-		delete(h.watchers[id], c)
-		if len(h.watchers[id]) == 0 {
-			delete(h.watchers, id)
-			unwatch = append(unwatch, presenceChannel(id))
-		}
+	us.mu.Unlock()
+	if c.SessionID != uuid.Nil {
+		ss := h.shardOf(c.SessionID)
+		ss.mu.Lock()
+		remove(ss.sessions, c.SessionID, c)
+		ss.mu.Unlock()
 	}
-	h.mu.Unlock()
-	if last {
-		unwatch = append(unwatch, userChannel(c.UserID))
+	c.mu.Lock()
+	watching := c.watching
+	c.watching = nil
+	c.mu.Unlock()
+	h.updateWatchers(ctx, c, nil, keys(watching))
+
+	// A restarting instance keeps the user's presence entry: the client reconnects to
+	// another instance within seconds, so watchers see no offline/online flap (the entry
+	// expires by itself after presenceTTL if it doesn't).
+	if c.code != websocket.StatusServiceRestart {
+		h.dropPresence(ctx, c)
 	}
-	if len(unwatch) > 0 {
-		_ = h.ps.Unsubscribe(ctx, unwatch...)
-	}
-	h.dropPresence(ctx, c)
 }
 
 // watch replaces the set of users whose presence c follows and sends their current state.
@@ -254,45 +385,87 @@ func (h *Hub) watch(ctx context.Context, c *Conn, ids []uuid.UUID) {
 		h.log.Warn("presence audience", "err", err)
 		return
 	}
-	ids = make([]uuid.UUID, len(states))
-	for i, st := range states {
-		ids[i] = st.UserID
+	want := make(map[uuid.UUID]struct{}, len(states))
+	for _, st := range states {
+		want[st.UserID] = struct{}{}
 	}
-	want := map[uuid.UUID]struct{}{}
-	for _, id := range ids {
-		want[id] = struct{}{}
+	var added, dropped []uuid.UUID
+	c.mu.Lock()
+	if c.watching == nil { // closing
+		c.mu.Unlock()
+		return
 	}
-	var sub, unsub []string
-	h.mu.Lock()
 	for id := range c.watching {
 		if _, keep := want[id]; !keep {
 			delete(c.watching, id)
-			delete(h.watchers[id], c)
-			if len(h.watchers[id]) == 0 {
-				delete(h.watchers, id)
-				unsub = append(unsub, presenceChannel(id))
-			}
+			dropped = append(dropped, id)
 		}
 	}
 	for id := range want {
-		if _, has := c.watching[id]; has {
-			continue
+		if _, has := c.watching[id]; !has {
+			c.watching[id] = struct{}{}
+			added = append(added, id)
 		}
-		c.watching[id] = struct{}{}
-		if h.watchers[id] == nil {
-			h.watchers[id] = map[*Conn]struct{}{}
-			sub = append(sub, presenceChannel(id))
-		}
-		h.watchers[id][c] = struct{}{}
 	}
-	h.mu.Unlock()
-	if len(unsub) > 0 {
-		_ = h.ps.Unsubscribe(ctx, unsub...)
-	}
-	if len(sub) > 0 {
-		_ = h.ps.Subscribe(ctx, sub...)
-	}
+	c.mu.Unlock()
+	h.updateWatchers(ctx, c, added, dropped)
 	c.event(Event{Type: "presence.snapshot", Data: states})
+}
+
+// updateWatchers adds c as a watcher of added and removes it from dropped, one lock and
+// at most one (un)subscribe command per shard.
+func (h *Hub) updateWatchers(ctx context.Context, c *Conn, added, dropped []uuid.UUID) {
+	if len(added)+len(dropped) == 0 {
+		return
+	}
+	type change struct{ add, drop []uuid.UUID }
+	byShard := map[*shard]*change{}
+	at := func(id uuid.UUID) *change {
+		sh := h.shardOf(id)
+		ch := byShard[sh]
+		if ch == nil {
+			ch = &change{}
+			byShard[sh] = ch
+		}
+		return ch
+	}
+	for _, id := range added {
+		at(id).add = append(at(id).add, id)
+	}
+	for _, id := range dropped {
+		at(id).drop = append(at(id).drop, id)
+	}
+	for sh, ch := range byShard {
+		var sub, unsub []string
+		sh.mu.Lock()
+		for _, id := range ch.drop {
+			if remove(sh.watchers, id, c) {
+				unsub = append(unsub, presenceChannel(id))
+			}
+		}
+		for _, id := range ch.add {
+			if add(sh.watchers, id, c) {
+				sub = append(sub, presenceChannel(id))
+			}
+		}
+		if len(unsub) > 0 {
+			_ = h.ps.Unsubscribe(ctx, unsub...)
+		}
+		if len(sub) > 0 {
+			if err := h.ps.Subscribe(ctx, sub...); err != nil {
+				h.log.Warn("subscribe", "err", err)
+			}
+		}
+		sh.mu.Unlock()
+	}
+}
+
+func keys(m map[uuid.UUID]struct{}) []uuid.UUID {
+	out := make([]uuid.UUID, 0, len(m))
+	for id := range m {
+		out = append(out, id)
+	}
+	return out
 }
 
 // ---- presence ----------------------------------------------------------------------------
@@ -309,7 +482,9 @@ type PresenceState struct {
 func presenceKey(id uuid.UUID) string { return "presence:" + id.String() }
 func lastSeenKey(id uuid.UUID) string { return "presence:last:" + id.String() }
 
-func (h *Hub) touchPresence(ctx context.Context, c *Conn) {
+// touchPresence refreshes c's presence entry and, in the same round trip, checks whether
+// its session has been revoked; it reports the latter (the caller closes the socket).
+func (h *Hub) touchPresence(ctx context.Context, c *Conn) (revoked bool) {
 	key := presenceKey(c.UserID)
 	now := time.Now()
 	pipe := h.rdb.TxPipeline()
@@ -318,13 +493,21 @@ func (h *Hub) touchPresence(ctx context.Context, c *Conn) {
 	card := pipe.ZCard(ctx, key)
 	pipe.Expire(ctx, key, 2*presenceTTL)
 	hidden := pipe.Exists(ctx, hiddenKey(c.UserID))
+	var gone *redis.IntCmd
+	if h.RevokedKey != nil && c.SessionID != uuid.Nil {
+		gone = pipe.Exists(ctx, h.RevokedKey(c.SessionID))
+	}
 	if _, err := pipe.Exec(ctx); err != nil {
 		h.log.Warn("presence", "err", err)
-		return
+		return false // fail open, like the request gate
+	}
+	if gone != nil && gone.Val() > 0 {
+		return true
 	}
 	if card.Val() == 1 && hidden.Val() == 0 { // this connection just brought the user online
 		h.announce(ctx, PresenceState{UserID: c.UserID, Online: true})
 	}
+	return false
 }
 
 func (h *Hub) dropPresence(ctx context.Context, c *Conn) {

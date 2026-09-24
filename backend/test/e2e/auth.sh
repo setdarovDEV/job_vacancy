@@ -98,15 +98,32 @@ echo "== misc"
 check "google disabled 503" $(req -X POST $API/auth/google -H 'Content-Type: application/json' -d '{"id_token":"x"}') 503
 check "unknown route 404 json" "$(req $API/nope)$(jq -r .error.code $SP/body.json)" 404route_not_found
 
+echo "== sign-in protection without lockouts (TZ SEC-04)"
+login() { curl -s -o $SP/body.json -w '%{http_code} %{time_total}' -X POST $API/auth/login -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$1\"}"; }
+check "captcha settings endpoint" "$(req $API/auth/captcha)$(jq -r .data.enabled $SP/body.json)" "200false"
+for i in 1 2 3; do login Wrong-Pass0 >/dev/null; done
+read code secs < <(login Wrong-Pass0)
+check "4th failure from this address is slowed (≥ 0.45 s), not refused" "$code/$(awk "BEGIN{print ($secs >= 0.45)}")" "401/1"
+for i in 1 2; do login Wrong-Pass0 >/dev/null; done
+read code secs < <(login NewSecret456)
+check "the right password still signs in after 6 failures (no lock)" "$code/$(jq -r '.data.access_token != null' $SP/body.json)" "200/true"
+read code secs < <(login Wrong-Pass0)
+check "success cleared the failures: next attempt is instant" "$code/$(awk "BEGIN{print ($secs < 0.4)}")" "401/1"
+check "refresh has its own soft limit (not the 30/min auth one)" "$(redis-cli -p "${REDIS_PORT:-6390}" --no-raw EXISTS rl:refresh_ip:127.0.0.1 2>/dev/null | tr -dc 0-9)" "1"
+
 echo "== change password (TZ BE-12: one statement revokes the other sessions)"
-# The auth endpoints allow 30 calls per minute per IP, shared with anything else hitting
-# this API from the same address: wait for the window to roll over when it's nearly spent
-# (reads the limiter's key; without redis-cli it just continues).
-used=$(redis-cli -p "${REDIS_PORT:-6390}" GET rl:auth_ip:127.0.0.1 2>/dev/null); used=${used:-0}
-if [ "$used" -ge 26 ]; then
-  ms=$(redis-cli -p "${REDIS_PORT:-6390}" PTTL rl:auth_ip:127.0.0.1 2>/dev/null); ms=${ms:-0}
-  [ "$ms" -gt 0 ] && echo "  … waiting $(( (ms+999)/1000 ))s for the auth rate-limit window" && sleep $(( (ms+999)/1000 ))
-fi
+# Sign-in allows 100 calls per minute per IP (login_ip), sign-up and password reset 30
+# (auth_ip), shared with anything else hitting this API from the same address: wait for
+# the window to roll over when one is nearly spent (reads the limiter's keys; without
+# redis-cli it just continues).
+for rule in auth_ip:26 login_ip:90; do
+  used=$(redis-cli -p "${REDIS_PORT:-6390}" GET rl:${rule%%:*}:127.0.0.1 2>/dev/null); used=${used:-0}
+  if [ "$used" -ge "${rule##*:}" ]; then
+    ms=$(redis-cli -p "${REDIS_PORT:-6390}" PTTL rl:${rule%%:*}:127.0.0.1 2>/dev/null); ms=${ms:-0}
+    [ "$ms" -gt 0 ] && echo "  … waiting $(( (ms+999)/1000 ))s for the ${rule%%:*} rate-limit window" && sleep $(( (ms+999)/1000 ))
+  fi
+done
 mlogin() { curl -s -X POST $API/auth/login -H 'X-Client-Type: android' -H 'Content-Type: application/json' \
   -d "{\"email\":\"$EMAIL\",\"password\":\"NewSecret456\"}" | jq -r .data.access_token; }
 PA=$(mlogin); PB=$(mlogin)

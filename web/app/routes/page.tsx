@@ -69,7 +69,7 @@ function Intro({ page }: { page: Page }) {
   const { t } = useTranslation();
   const locale = useLocale();
   return (
-    <header className="mb-8 md:mb-10">
+    <header className="mb-8">
       <Breadcrumbs items={[{ label: t("shell.palette.home"), to: "/" }, { label: page.title }]} className="mb-4" />
       {/* hyphens: one-word titles like «конфиденциальности» are wider than a phone. */}
       <h1 className="break-words font-display text-2xl font-semibold tracking-heading text-ink hyphens-auto md:text-3xl">{page.title}</h1>
@@ -96,7 +96,7 @@ function LegalLayout({ page }: { page: Page }) {
   };
   return (
     <div className="container-page pb-16 pt-6 md:pb-24 md:pt-10">
-      <div className="mx-auto max-w-4xl lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-12">
+      <div className="mx-auto grid max-w-4xl lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-12">
         <article className="min-w-0">
           <Intro page={page} />
           <Card padding="none" className="mb-8 lg:hidden">
@@ -119,7 +119,7 @@ function LegalLayout({ page }: { page: Page }) {
         <div className="max-lg:hidden lg:sticky lg:top-24 lg:order-first lg:self-start">
           <nav aria-label={t("staticPage.onThisPage")}>
             <p className="mb-3 text-xs font-semibold uppercase tracking-caps text-ink-2">{t("staticPage.onThisPage")}</p>
-            <TocList sections={page.sections} active={active} onJump={jump} />
+            <TocList sections={page.sections} active={active} onJump={jump} dense />
           </nav>
         </div>
       </div>
@@ -127,10 +127,12 @@ function LegalLayout({ page }: { page: Page }) {
   );
 }
 
-function TocList({ sections, active, onJump }: {
+function TocList({ sections, active, onJump, dense }: {
   sections: Section[];
   active?: string;
   onJump: (e: MouseEvent<HTMLAnchorElement>, id: string) => void;
+  /** Desktop sidebar: smaller rows (still 44px on touch screens). */
+  dense?: boolean;
 }) {
   return (
     <ol className="border-l border-line">
@@ -145,7 +147,8 @@ function TocList({ sections, active, onJump }: {
               aria-current={on ? "true" : undefined}
               className={cn(
                 // Colour-only change for the current item: no reflow while the reader scrolls.
-                "-ml-px flex min-h-11 items-baseline gap-3 border-l-2 py-2.5 pl-4 pr-2 text-md transition-colors duration-150 lg:min-h-10 lg:py-2 lg:text-sm",
+                "-ml-px flex items-baseline gap-3 border-l-2 pl-4 pr-2 transition-colors duration-150",
+                dense ? "min-h-10 py-2 text-sm pointer-coarse:min-h-11" : "min-h-11 py-2.5 text-md",
                 on ? "border-lapis text-ink" : "border-transparent text-ink-2 hover:border-line-strong hover:text-ink",
               )}
             >
@@ -162,7 +165,8 @@ function TocList({ sections, active, onJump }: {
 /**
  * Smooth in-page jump (instant under reduced motion). The heading's scroll-margin-top (app.css)
  * lands it below the sticky header; focus follows so keyboard and screen-reader users continue
- * from the section. Returns false for modified clicks, which the browser handles itself.
+ * from the section. Returns how long the scroll-spy should keep the clicked item, or false for
+ * modified clicks (new tab etc.), which the browser handles itself.
  */
 function jumpTo(e: MouseEvent<HTMLAnchorElement>, id: string): number | false {
   if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
@@ -174,7 +178,7 @@ function jumpTo(e: MouseEvent<HTMLAnchorElement>, id: string): number | false {
   // A shareable #hash without a history entry per click; React Router's state object is kept.
   window.history.replaceState(window.history.state, "", `#${id}`);
   target.focus({ preventScroll: true });
-  // How long the scroll-spy should keep the clicked item (a smooth scroll passes other headings).
+  // A smooth scroll passes other headings on its way; an instant jump needs no hold.
   return smooth ? 900 : 0;
 }
 

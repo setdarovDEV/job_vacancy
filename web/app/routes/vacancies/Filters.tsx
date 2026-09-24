@@ -76,7 +76,7 @@ export function Filters({
             aria-label={t("vacanciesPage.district", { region: nameOf(region?.name, locale) })}
             value={q.district_id ?? ""}
             onValueChange={(v) => onChange(withValue(q, "district_id", v))}
-            placeholder={t("jobs.filters.allIn", { name: nameOf(region?.name, locale) })}
+            placeholder={t("vacanciesPage.allDistricts")}
             options={districts.map((d) => ({ value: String(d.id), label: nameOf(d.name, locale) }))}
           />
         )}

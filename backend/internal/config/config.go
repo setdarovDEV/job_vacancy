@@ -90,6 +90,13 @@ type Auth struct {
 	CookieSecure bool   `env:"AUTH_COOKIE_SECURE" envDefault:"false"`
 	// Google OAuth client IDs whose ID tokens we accept (web, android, ios).
 	GoogleClientIDs []string `env:"GOOGLE_CLIENT_IDS" envSeparator:","`
+	// Cloudflare Turnstile (TZ SEC-04): after repeated failed sign-ins the next attempt
+	// needs a solved captcha. Empty secret: no captcha, failures only add delays.
+	TurnstileSecret  string `env:"TURNSTILE_SECRET"`
+	TurnstileSiteKey string `env:"TURNSTILE_SITE_KEY"`
+	// Hostname a token must have been solved on; empty = WEB_URL's host in production,
+	// not checked elsewhere (Cloudflare's test keys answer example.com).
+	TurnstileHostname string `env:"TURNSTILE_HOSTNAME"`
 }
 
 type SMTP struct {

@@ -35,6 +35,17 @@ func (c *Config) CompressEnabled() bool {
 	}
 }
 
+// TurnstileHost is the hostname captcha tokens must come from ("" = not checked).
+func (c *Config) TurnstileHost() string {
+	if c.Auth.TurnstileHostname != "" || !c.IsProduction() {
+		return c.Auth.TurnstileHostname
+	}
+	if u, err := url.Parse(c.WebURL); err == nil {
+		return u.Hostname()
+	}
+	return ""
+}
+
 // RedactLogs reports whether log lines are scrubbed of secrets and personal data.
 func (c *Config) RedactLogs() bool {
 	switch c.Log.Redact {
@@ -72,6 +83,9 @@ func (c *Config) validateCommon() error {
 		if c.Auth.JWTPreviousSecret == c.Auth.JWTSecret {
 			errs = append(errs, errors.New("JWT_PREVIOUS_SECRET must differ from JWT_SECRET"))
 		}
+	}
+	if (c.Auth.TurnstileSecret == "") != (c.Auth.TurnstileSiteKey == "") {
+		errs = append(errs, errors.New("TURNSTILE_SECRET and TURNSTILE_SITE_KEY must be set together"))
 	}
 	if c.HTTP.TrustProxy && len(c.HTTP.TrustedProxies) == 0 {
 		errs = append(errs, errors.New("HTTP_TRUSTED_PROXIES must list nginx's network when HTTP_TRUST_PROXY=true"))

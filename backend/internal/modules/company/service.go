@@ -20,6 +20,7 @@ import (
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/phone"
 	"jobvacancy.uz/backend/internal/pkg/random"
+	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/pkg/slug"
 	"jobvacancy.uz/backend/internal/pkg/translit"
@@ -53,6 +54,8 @@ type Service struct {
 	Changed func(ctx context.Context, c gen.Company)
 	// Notify tells invitees about company invites (TZ FN-05); nil sends nothing.
 	Notify *notification.Service
+	// Limiter caps invites per company per day; nil: no limit.
+	Limiter *ratelimit.Limiter
 }
 
 // changed reports c to Changed, if set.

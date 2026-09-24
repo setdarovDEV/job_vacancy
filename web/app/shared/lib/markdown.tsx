@@ -8,10 +8,8 @@ import { Fragment, type ReactNode } from "react";
  * escaped HTML in toHtml), so user text can never inject markup.
  */
 
-type Block =
-  | { kind: "h"; text: string }
-  | { kind: "p"; lines: string[] }
-  | { kind: "ul" | "ol"; items: string[] };
+type List = { kind: "ul" | "ol"; items: string[]; start: number };
+type Block = { kind: "h"; text: string } | { kind: "p"; lines: string[] } | List;
 
 const LIST_ITEM = /^([-•*]|\d{1,3}[.)])\s+(.*)$/;
 const HEADING = /^#{1,6}\s+(.+?)\s*#*$/;
@@ -20,7 +18,10 @@ const WHOLE_BOLD = /^\*\*([^*]+)\*\*$/;
 function parse(text: string): Block[] {
   const blocks: Block[] = [];
   let para: string[] = [];
-  let list: { kind: "ul" | "ol"; items: string[] } | null = null;
+  let list: List | null = null;
+  // A blank line only ends a list if something other than its next item follows: employers often
+  // put empty lines between "1." / "2." items, which must stay one list (not three "1." lists).
+  let gap = false;
   const endPara = () => {
     if (para.length) blocks.push({ kind: "p", lines: para });
     para = [];
@@ -34,9 +35,14 @@ function parse(text: string): Block[] {
     const line = raw.trim();
     if (!line) {
       endPara();
-      endList();
+      gap = true;
       continue;
     }
+    const li = LIST_ITEM.exec(line);
+    const kind = li ? (/\d/.test(li[1]) ? "ol" : "ul") : null;
+    // (cast: TS can't see the closures that reset `list`)
+    if (gap && (!kind || (list as List | null)?.kind !== kind)) endList();
+    gap = false;
     const h = HEADING.exec(line);
     if (h) {
       endPara();
@@ -44,12 +50,10 @@ function parse(text: string): Block[] {
       blocks.push({ kind: "h", text: h[1] });
       continue;
     }
-    const li = LIST_ITEM.exec(line);
-    if (li) {
+    if (li && kind) {
       endPara();
-      const kind = /\d/.test(li[1]) ? "ol" : "ul";
       if (list && list.kind !== kind) endList();
-      list ??= { kind, items: [] };
+      list ??= { kind, items: [], start: kind === "ol" ? parseInt(li[1], 10) : 1 };
       list.items.push(li[2]);
       continue;
     }
@@ -89,12 +93,12 @@ export function RichText({ text, className }: { text: string; className?: string
               ))}
             </p>
           );
-        const List = b.kind;
+        const Tag = b.kind;
         // list-style kept on the element too, for callers that don't use the rich-text utility
         return (
-          <List key={i} className={List === "ol" ? "list-decimal pl-5" : "list-disc pl-5"}>
+          <Tag key={i} start={b.start !== 1 ? b.start : undefined} className={Tag === "ol" ? "list-decimal pl-5" : "list-disc pl-5"}>
             {b.items.map((it, j) => <li key={j}>{inline(it)}</li>)}
-          </List>
+          </Tag>
         );
       })}
     </div>
@@ -116,7 +120,8 @@ export function toHtml(text: string): string {
     .map((b) => {
       if (b.kind === "h") return `<h3>${inlineHtml(b.text)}</h3>`;
       if (b.kind === "p") return `<p>${b.lines.map(inlineHtml).join("<br>")}</p>`;
-      return `<${b.kind}>${b.items.map((it) => `<li>${inlineHtml(it)}</li>`).join("")}</${b.kind}>`;
+      const start = b.start !== 1 ? ` start="${b.start}"` : "";
+      return `<${b.kind}${start}>${b.items.map((it) => `<li>${inlineHtml(it)}</li>`).join("")}</${b.kind}>`;
     })
     .join("");
 }
@@ -125,6 +130,8 @@ export function toHtml(text: string): string {
 export function plainText(text: string, max = 160): string {
   const flat = parse(text)
     .map((b) => (b.kind === "h" ? `${b.text}:` : b.kind === "p" ? b.lines.join(" ") : b.items.join("; ")))
+    // Blocks read as sentences: "Vazifalar: a; b. Matn" rather than "a; b Matn".
+    .map((s, i, all) => (i < all.length - 1 && !/[.!?:;…]$/.test(s) ? `${s}.` : s))
     .join(" ")
     .replace(/\*\*/g, "")
     .replace(/\s+/g, " ")

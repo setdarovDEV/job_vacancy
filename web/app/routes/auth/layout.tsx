@@ -1,5 +1,5 @@
 import { BadgeCheck, LockKeyhole, MessagesSquare } from "lucide-react";
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { Outlet, useNavigate, useSearchParams } from "react-router";
 
 import type { ShellHandle } from "../site";
@@ -33,9 +33,13 @@ export default function AuthLayout() {
   const navigate = useNavigate();
   const locale = useLocale();
   const next = useNext();
-  // Signed-in people have nothing to do on these pages.
+  // Signed-in people have nothing to do on these pages. Only those who *arrive* signed in are sent
+  // on: signing in here (anon → authed) leaves the route to the page itself, or sign-up would be
+  // overridden on its way to verify-email (and a new employer's way to /employer).
+  const seenAnon = useRef(false);
   useEffect(() => {
-    if (status === "authed" && !location.pathname.includes("verify-email")) {
+    if (status === "anon") seenAnon.current = true;
+    else if (status === "authed" && !seenAnon.current && !location.pathname.includes("verify-email")) {
       navigate(next ?? localizedPath(locale, "/"), { replace: true });
     }
   }, [status, next, locale, navigate]);

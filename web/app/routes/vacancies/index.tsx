@@ -6,8 +6,8 @@ import type { Route } from "./+types/index";
 import type { ShellHandle } from "../site";
 import { api, apiError, type ApiError, type Schemas } from "~/shared/api/client";
 import { useSession } from "~/shared/auth/session";
-import { indexCatalog, nameOf, useCatalog } from "~/shared/catalog/catalog";
-import { localizedPath } from "~/shared/i18n/config";
+import { indexCatalog, nameOf, useCatalog, type Catalog } from "~/shared/catalog/catalog";
+import { localizedPath, type Locale } from "~/shared/i18n/config";
 import { useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { cn } from "~/shared/lib/cn";
@@ -42,6 +42,9 @@ type Meta = { next_cursor?: string | null; total?: number; total_capped?: boolea
 /** Why the list couldn't load: the API's error envelope, or status 0 when it was unreachable. */
 type Failure = { status: number; error: ApiError | null };
 
+// Chips in the applied row are 32px (FilterChip's height); on touch their hit area grows to 44px.
+const chipHit = "h-8 pointer-coarse:after:-inset-y-1.5";
+
 // Long list: on phones the site header slides away while scrolling down; the filter bar docks.
 export const handle: ShellHandle = { autoHideHeader: true };
 
@@ -66,9 +69,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export function meta({ matches, location, loaderData: data }: Route.MetaArgs) {
-  const { t } = metaT(matches);
+  const { t, locale } = metaT(matches);
   const q = data?.query ?? {};
-  const title = q.q ? `${q.q[0].toUpperCase()}${q.q.slice(1)}: ${t("jobs.title").toLowerCase()}` : t("jobs.title");
+  // Category and region pages are indexed: each gets its own title ("Buxgalteriya, Toshkent
+  // shahri: vakansiyalar"), not one "Vakansiyalar" shared by all of them.
+  const catalog = (matches.find((m) => m?.id === "root")?.loaderData as { catalog?: Catalog } | undefined)?.catalog;
+  const context = headingOf(q, catalog ? indexCatalog(catalog) : null, locale);
+  const title = context ? `${context}: ${t("jobs.title").toLowerCase()}` : t("jobs.title");
   // Only the plain list, category and region pages are worth indexing.
   const indexable = Object.keys(q).every((k) => k === "category_id" || k === "region_id");
   const keep = canonicalSearch(q, Object.keys(q).filter((k) => k !== "category_id" && k !== "region_id"));
@@ -100,6 +107,12 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
   // Different search words make the old results meaningless: those get skeletons instead.
   const skeleton = useSlowFlag(busy && (shown.q ?? "") !== (query.q ?? ""));
 
+  // Which result set staggers in: the first paint, and results that replace a skeleton. A filter
+  // tweak swaps dimmed results in place; a fade-up from 0 there would flash the whole list out.
+  const [fresh, setFresh] = useState<string | null>(location.search);
+  if (skeleton && pendingSearch != null && fresh !== pendingSearch) setFresh(pendingSearch);
+  else if (fresh != null && fresh !== location.search && fresh !== pendingSearch) setFresh(null);
+
   // Pages fetched with "Load more" append to the server-rendered first page; a new
   // search (different URL) starts over.
   const more = useFetcher<typeof loader>();
@@ -126,9 +139,10 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
   const results = useRef<HTMLElement>(null);
   const apply = (next: Query) => {
     setSearchParams(next, { preventScrollReset: true });
-    // Deep in the list, new results would start mid-page: bring the results' top into view.
+    // Deep in the list, new results would start mid-page: bring the results' top into view. Its
+    // scroll margin is the sticky chrome above it, so "hidden under the header" counts as out of view.
     const el = results.current;
-    if (el && el.getBoundingClientRect().top < 0) {
+    if (el && el.getBoundingClientRect().top < (parseFloat(getComputedStyle(el).scrollMarginTop) || 0)) {
       el.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
     }
   };
@@ -148,19 +162,26 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
   const total = meta.total ?? items.length;
   const countText = meta.total_capped ? t("jobs.totalCapped") : t("vacanciesPage.count", { count: total, n: groupDigits(total) });
   const quoted = (q: string) => t("vacanciesPage.quoted", { q });
+  // The empty state carries its own "Save search" as the way forward: one on screen is enough.
+  const emptyShown = !skeleton && !failure && items.length === 0;
 
-  // After a chip's × the chip is gone: focus moves to the chip that took its place, or the heading.
+  // After a chip's × the chip is gone: focus moves to the chip that took its place, or the heading
+  // (-1: straight to the heading, e.g. after the search words were removed).
   const chipRow = useRef<HTMLUListElement>(null);
   const refocus = useRef<number | null>(null);
   const removeChip = (a: Applied, i: number) => {
     refocus.current = i;
     apply(removeFilter(shown, a));
   };
+  const removeQuery = () => {
+    refocus.current = -1;
+    apply(withValue(shown, "q", null));
+  };
   useLayoutEffect(() => {
     const i = refocus.current;
     if (i == null) return;
     refocus.current = null;
-    const buttons = chipRow.current?.querySelectorAll<HTMLButtonElement>("[data-chip] button");
+    const buttons = i < 0 ? null : chipRow.current?.querySelectorAll<HTMLButtonElement>("[data-chip] button");
     const next = buttons?.length ? buttons[Math.min(i, buttons.length - 1)] : document.getElementById("results-title");
     next?.focus({ preventScroll: true });
   }, [shown]);
@@ -269,8 +290,10 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
                 {heading}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-                <p aria-live="polite" className={cn("num mr-auto text-md text-ink-2 transition-opacity duration-200", busy && "opacity-60")}>
-                  {failure ? "" : countText}
+                {/* No `num`: Onest's tabular "1" is as wide as a "0", so "111" read as "1 1 1". */}
+                <p aria-live="polite" className={cn("mr-auto text-md text-ink-2 transition-opacity duration-200", busy && "opacity-60")}>
+                  {/* A new search has no count yet: a bar, not the previous search's number. */}
+                  {skeleton ? <span aria-hidden="true" className="skeleton inline-block h-4 w-28 align-middle" /> : failure ? "" : countText}
                 </p>
                 <Select
                   aria-label={t("jobs.sort")}
@@ -280,7 +303,7 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
                   onValueChange={setSort}
                   options={sortOptions}
                 />
-                {saveButton}
+                {!emptyShown && saveButton}
               </div>
 
               {(applied.length > 0 || quick.length > 0) && (
@@ -288,8 +311,10 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
                 // desktop: the applied chips wrap, the sidebar has the rest.
                 <div
                   className={cn(
-                    // py-1: a scroller clips vertically too, and focus rings need the room.
-                    "scrollbar-none edge-mask-x -mx-4 -mb-1 mt-3 flex gap-2 overflow-x-auto overscroll-x-contain px-4 py-1 md:-mx-6 md:px-6",
+                    // py-1.5: a scroller clips vertically too; the 32px chips' 44px touch areas and
+                    // focus rings need the room. scroll-px-8: a chip focused by Tab stops clear of
+                    // the faded edges.
+                    "scrollbar-none edge-mask-x -mx-4 -mb-1.5 mt-2.5 flex scroll-px-8 gap-2 overflow-x-auto overscroll-x-contain px-4 py-1.5 md:-mx-6 md:px-6",
                     "lg:mx-0 lg:overflow-visible lg:px-0 lg:mask-none",
                     applied.length === 0 && "lg:hidden",
                   )}
@@ -304,7 +329,7 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
                         </li>
                       ))}
                       <li className="shrink-0">
-                        <Button variant="ghost" size="sm" shape="pill" className="h-8" onClick={() => apply(clearFilters(shown))}>
+                        <Button variant="ghost" size="sm" shape="pill" className={chipHit} onClick={() => apply(clearFilters(shown))}>
                           {t("common.clear")}
                         </Button>
                       </li>
@@ -315,7 +340,7 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
                       {quick.map((a) => (
                         <li key={`${a.key}:${a.value}`} className="shrink-0">
                           <Chip
-                            className="h-8 pl-2.5"
+                            className={cn(chipHit, "pl-2.5")}
                             aria-label={t("vacanciesPage.addFilter", { name: label(a) })}
                             onClick={() => apply(addFilter(shown, a))}
                           >
@@ -346,13 +371,13 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
                 </Card>
               ) : items.length > 0 ? (
                 <div className={cn("transition-opacity duration-200", busy && "opacity-60")}>
-                  <VacancyList key={location.search} items={items} enter={loaderData.items.length} headingAs="h2" />
+                  <VacancyList key={location.search} items={items} enter={fresh === location.search ? loaderData.items.length : 0} headingAs="h2" />
                   <LoadMore
                     hasNext={Boolean(pages.cursor)}
                     loading={more.state !== "idle"}
                     onClick={loadMore}
                     loadedCount={items.length}
-                    className="mt-6"
+                    className={pages.cursor ? "mt-6" : undefined}
                   />
                 </div>
               ) : (
@@ -364,6 +389,7 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
                     quoted={quoted}
                     onApply={apply}
                     onRemove={removeChip}
+                    onRemoveQuery={removeQuery}
                     saveButton={saveButton}
                   />
                 </Card>
@@ -402,7 +428,7 @@ export default function Vacancies({ loaderData }: Route.ComponentProps) {
 
 /** Nothing matched: say why and offer a one-tap way out for every applied condition. */
 function NoResults({
-  query, applied, label, quoted, onApply, onRemove, saveButton,
+  query, applied, label, quoted, onApply, onRemove, onRemoveQuery, saveButton,
 }: {
   query: Query;
   applied: Applied[];
@@ -410,6 +436,7 @@ function NoResults({
   quoted: (q: string) => string;
   onApply: (next: Query) => void;
   onRemove: (a: Applied, i: number) => void;
+  onRemoveQuery: () => void;
   saveButton: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -431,7 +458,7 @@ function NoResults({
             <ul className="flex flex-wrap justify-center gap-2">
               {query.q && (
                 <li className="min-w-0">
-                  <FilterChip removeLabel={t("vacanciesPage.removeQuery", { q: query.q })} onRemove={() => onApply(withValue(query, "q", null))}>
+                  <FilterChip removeLabel={t("vacanciesPage.removeQuery", { q: query.q })} onRemove={onRemoveQuery}>
                     {quoted(query.q)}
                   </FilterChip>
                 </li>
@@ -514,16 +541,21 @@ function useFilterLabel(items: Card[]) {
   };
 }
 
-/** "Dasturchi, Toshkent" style heading from the active search, else "Vacancies". */
+/** "Dasturchi, Toshkent" from the search words (else the category) and the place; "" for none. */
+function headingOf(q: Query, idx: ReturnType<typeof indexCatalog> | null, locale: Locale) {
+  const parts: string[] = [];
+  if (q.q) parts.push(q.q[0].toUpperCase() + q.q.slice(1));
+  else if (q.category_id && idx) parts.push(nameOf(idx.categories.get(Number(q.category_id))?.name, locale));
+  const place = q.district_id ?? q.region_id;
+  if (place && idx) parts.push(nameOf(idx.regions.get(Number(place))?.name, locale));
+  return parts.filter(Boolean).join(", ");
+}
+
+/** The page H1: the search context, else "Vacancies". */
 function useHeading(q: Query) {
   const { t } = useTranslation();
   const locale = useLocale();
   const catalog = useCatalog();
   const idx = useMemo(() => indexCatalog(catalog), [catalog]);
-  const parts: string[] = [];
-  if (q.q) parts.push(q.q[0].toUpperCase() + q.q.slice(1));
-  else if (q.category_id) parts.push(nameOf(idx.categories.get(Number(q.category_id))?.name, locale));
-  const place = q.district_id ?? q.region_id;
-  if (place) parts.push(nameOf(idx.regions.get(Number(place))?.name, locale));
-  return parts.filter(Boolean).join(", ") || t("jobs.title");
+  return headingOf(q, idx, locale) || t("jobs.title");
 }

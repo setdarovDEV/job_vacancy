@@ -40,7 +40,7 @@ export default function NotFound() {
       />
       {/* Tilework around the tile only; the ellipse ends before the header so no hard top edge. */}
       <GirihPattern className="-z-10" focus="ellipse 40% 22% at 50% 18%" />
-      <div className="container-page flex flex-col items-center pb-16 pt-10 text-center md:pb-24 md:pt-20">
+      <div className="container-page flex flex-col items-center pb-16 pt-12 text-center md:pb-24 md:pt-20">
         <LostTile />
         <h1 className="mt-8 max-w-xl break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">
           {t("errors.not_found")}
@@ -92,7 +92,7 @@ function LostTile() {
   return (
     <div aria-hidden="true" className="anim-enter relative">
       <div className="relative grid size-20 place-items-center rounded-sheet border border-line bg-surface text-lapis shadow-3 md:size-24">
-        <Compass className="size-9 md:size-10" strokeWidth={1.5} />
+        <Compass className="size-9" strokeWidth={1.5} />
       </div>
       <span className="num absolute -right-3 -top-3 rounded-pill bg-lapis px-2.5 py-1 font-display text-sm font-semibold text-on-lapis shadow-2">
         404

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 
 import type { Route } from "./+types/login";
-import { AuthCard, authLink } from "./AuthCard";
+import { AuthCard, authFooterLink } from "./AuthCard";
 import { GoogleButton } from "./GoogleButton";
 import { useNext } from "./layout";
 import { api } from "~/shared/api/client";
@@ -47,14 +47,25 @@ export default function Login() {
       footer={
         <>
           {t("auth.noAccount")}{" "}
-          <LocalizedLink to={`/register${next ? `?next=${encodeURIComponent(next)}` : ""}`} viewTransition prefetch="intent" className={authLink}>
+          <LocalizedLink to={`/register${next ? `?next=${encodeURIComponent(next)}` : ""}`} viewTransition prefetch="intent" className={authFooterLink}>
             {t("nav.signUp")}
           </LocalizedLink>
         </>
       }
     >
-      <GoogleButton onDone={() => done()} onError={setError} />
+      <GoogleButton
+        onDone={() => done()}
+        onError={(msg, code) => {
+          if (code !== "consent_required") return setError(msg);
+          // A first Google sign-in creates the account, and that needs the consent box (TZ FN-08).
+          toast({ tone: "info", title: t("authPage.googleConsent") });
+          navigate(`${localizedPath(locale, "/register")}${next ? `?next=${encodeURIComponent(next)}` : ""}`);
+        }}
+      />
+      {/* noValidate: empty or malformed fields come back from the API as inline, localized Field
+          errors (focus lands on the first one), not as a browser bubble in the browser's language. */}
       <form
+        noValidate
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
@@ -102,6 +113,7 @@ export default function Login() {
           <LocalizedLink
             to="/forgot-password"
             viewTransition
+            prefetch="intent"
             className="-mb-2 -mr-1 inline-flex min-h-11 items-center self-end rounded-control px-1 text-sm font-medium text-lapis-ink hover:underline"
           >
             {t("auth.forgot")}

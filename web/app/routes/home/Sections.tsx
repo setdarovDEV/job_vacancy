@@ -3,6 +3,7 @@ import { useMemo, type ReactNode } from "react";
 import { useRevalidator } from "react-router";
 
 import { useSession } from "~/shared/auth/session";
+import { postVacancyHref } from "~/shared/layout/UserArea";
 import { indexCatalog, nameOf, useCatalog } from "~/shared/catalog/catalog";
 import { LocalizedLink, useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
@@ -26,14 +27,17 @@ function useRetry() {
 
 export function FreshVacancies({ data }: { data: Section<VacancyCard[]> }) {
   const { t } = useTranslation();
+  const { user } = useSession();
   const { retry, busy } = useRetry();
   const list = useSpotlight<HTMLUListElement>();
+  // Promise "TOP first" only when there are TOP cards in the list.
+  const featured = data.ok && data.data.some((v) => v.is_featured);
   return (
-    <section aria-labelledby="home-fresh" className={band} style={est(80)}>
+    <section aria-labelledby="home-fresh" className={band} style={est(65, 48)}>
       <SectionHead
         id="home-fresh"
         title={t("homePage.fresh.title")}
-        description={t("homePage.fresh.body")}
+        description={t(featured ? "homePage.fresh.body" : "homePage.fresh.bodyLatest")}
         action={<SeeAll to="/vacancies?sort=newest">{t("shell.footer.allVacancies")}</SeeAll>}
       />
       {!data.ok ? (
@@ -46,7 +50,7 @@ export function FreshVacancies({ data }: { data: Section<VacancyCard[]> }) {
             icon={<SearchX />}
             title={t("homePage.fresh.emptyTitle")}
             body={t("homePage.fresh.emptyBody")}
-            action={<Button asChild variant="secondary"><LocalizedLink to="/employers">{t("nav.postVacancy")}</LocalizedLink></Button>}
+            action={<Button asChild><LocalizedLink to={postVacancyHref(user)}>{t("nav.postVacancy")}</LocalizedLink></Button>}
           />
         </Card>
       ) : (
@@ -73,7 +77,7 @@ export function TopCompanies({ data }: { data: Section<CompanyTile[]> }) {
   const { retry, busy } = useRetry();
   if (data.ok && !data.data.length) return null; // no companies yet: nothing to show, no gap
   return (
-    <section aria-labelledby="home-companies" className={band} style={est(56)}>
+    <section aria-labelledby="home-companies" className={band} style={est(45, 27)}>
       <SectionHead
         id="home-companies"
         title={t("homePage.companies.title")}
@@ -85,7 +89,7 @@ export function TopCompanies({ data }: { data: Section<CompanyTile[]> }) {
           <ErrorState compact error={data.error} onRetry={retry} />
         </Card>
       ) : (
-        <ul ref={list} className="mt-6 grid grid-cols-2 gap-3 md:mt-8 lg:grid-cols-4">
+        <ul ref={list} className="mt-6 grid grid-cols-2 gap-3 md:mt-8 md:grid-cols-3 lg:grid-cols-4">
           {data.data.map((c, i) => {
             const meta = [
               nameOf(idx.categories.get(c.industry_id ?? -1)?.name, locale),
@@ -93,26 +97,25 @@ export function TopCompanies({ data }: { data: Section<CompanyTile[]> }) {
             ].filter(Boolean).join(" · ");
             const open = c.open_vacancies ?? 0;
             return (
-              // Six (three rows of two) below lg, eight (two rows of four) from lg.
+              // Six below lg (three rows of two on phones, two of three on tablets), eight from lg.
               <li key={c.id} className={cn("min-w-0", i >= 6 && "hidden lg:block")}>
                 <Card interactive padding="sm" className="spotlight flex h-full flex-col gap-3 md:p-5">
                   <Avatar name={c.name} src={c.logo_url} square size="lg" />
                   <div className="min-w-0">
-                    <h3 className="flex min-w-0 items-start gap-1.5 text-md font-semibold text-ink">
-                      <CardLink to={`/companies/${c.slug}`} prefetch="intent" className="line-clamp-2 min-w-0 break-words">
-                        {c.name}
-                      </CardLink>
+                    <h3 className="line-clamp-2 break-words text-md font-semibold text-ink">
+                      <CardLink to={`/companies/${c.slug}`} prefetch="intent">{c.name}</CardLink>
                       {c.verified && (
-                        // Same filled mark as on vacancy cards.
+                        // Same filled mark as on vacancy cards, inline so it follows the last word
+                        // of a wrapped name instead of sticking to the card's edge.
                         <>
-                          <BadgeCheck aria-hidden="true" className="mt-0.5 size-4.5 shrink-0 fill-firuza text-surface" />
+                          <BadgeCheck aria-hidden="true" className="ml-1 inline size-4.5 fill-firuza align-middle text-surface" />
                           <span className="sr-only">{t("common.verified")}</span>
                         </>
                       )}
                     </h3>
                     {meta && <p className="mt-0.5 truncate text-sm text-ink-2">{meta}</p>}
                   </div>
-                  <p className={cn("num mt-auto text-sm font-medium", open ? "text-lapis-ink" : "text-ink-2")}>
+                  <p className={cn("mt-auto text-sm font-medium", open ? "text-lapis-ink" : "text-ink-2")}>
                     {open ? t("homePage.companies.open", { count: open, n: groupDigits(open) }) : t("companies.noOpen")}
                   </p>
                 </Card>
@@ -174,7 +177,7 @@ export function TwoPaths() {
       : { to: "/me/resumes/new", label: t("homePage.paths.seeker.ctaResume") };
   const employer = !user ? "/register?role=employer" : user.role === "employer" ? "/employer/vacancies/new" : "/employers";
   return (
-    <section aria-labelledby="home-paths" className={band} style={est(64)}>
+    <section aria-labelledby="home-paths" className={band} style={est(77, 35)}>
       <SectionHead id="home-paths" title={t("homePage.paths.title")} description={t("homePage.paths.body")} />
       <div className="mt-6 grid gap-4 md:mt-8 md:grid-cols-2 md:gap-6">
         <PathCard
@@ -227,7 +230,7 @@ export function Regions() {
   const { regions } = useCatalog();
   if (!regions.length) return null;
   return (
-    <section aria-labelledby="home-regions" className={band} style={est(32)}>
+    <section aria-labelledby="home-regions" className={band} style={est(34, 15.5)}>
       <SectionHead id="home-regions" title={t("homePage.regions.title")} description={t("homePage.regions.body")} />
       <ul className="mt-6 flex flex-wrap gap-2 md:mt-8">
         {regions.map((r) => (
@@ -235,7 +238,7 @@ export function Regions() {
             <LocalizedLink
               to={`/vacancies?region_id=${r.id}`}
               prefetch="intent"
-              className="inline-flex min-h-11 max-w-full items-center rounded-pill border border-line bg-surface px-4 text-md font-medium text-ink-2 shadow-1 transition-colors hover:border-line-strong hover:text-ink active:scale-[0.97]"
+              className="inline-flex min-h-11 max-w-full items-center rounded-pill border border-line bg-surface px-4 text-md font-medium text-ink-2 shadow-1 transition-[background-color,border-color,color,scale] hover:border-line-strong hover:text-ink active:scale-[0.97]"
             >
               <span className="truncate">{nameOf(r.name, locale)}</span>
             </LocalizedLink>
@@ -249,12 +252,16 @@ export function Regions() {
 /** Closing band on the brand light: browse / post CTAs and the Telegram bot on a glass card. */
 export function FinalCta() {
   const { t } = useTranslation();
+  // Same target as the header's CTA: employers go straight to the editor.
+  const { user } = useSession();
   return (
-    <section aria-labelledby="home-final" className={band} style={est(42)}>
+    // The last band keeps only a hairline of bottom padding (room for the card's shadow under
+    // paint containment): the footer's own top margin is the gap that closes the page.
+    <section aria-labelledby="home-final" className="container-page defer-paint pb-2 pt-6 md:pt-10" style={est(44, 24)}>
       <Card radius="sheet" padding="none" className="relative isolate grid gap-8 overflow-hidden p-6 md:p-10 lg:grid-cols-[minmax(0,1fr)_24rem] lg:items-center lg:p-12">
         <div aria-hidden="true" className="aurora-hero pointer-events-none absolute inset-0 -z-10" />
         <div className="min-w-0">
-          <h2 id="home-final" className="reveal break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">
+          <h2 id="home-final" className="reveal text-balance break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">
             {t("homePage.final.title")}
           </h2>
           <p className="mt-3 max-w-xl text-lead text-ink-2">{t("homePage.final.body")}</p>
@@ -263,7 +270,7 @@ export function FinalCta() {
               <LocalizedLink to="/vacancies" prefetch="intent">{t("homePage.final.browse")}</LocalizedLink>
             </Button>
             <Button asChild size="lg" shape="pill" variant="glass">
-              <LocalizedLink to="/employers" prefetch="intent">{t("nav.postVacancy")}</LocalizedLink>
+              <LocalizedLink to={postVacancyHref(user)} prefetch="intent">{t("nav.postVacancy")}</LocalizedLink>
             </Button>
           </div>
         </div>
@@ -275,7 +282,8 @@ export function FinalCta() {
             <h3 className="min-w-0 break-words text-lead font-semibold tracking-snug text-ink">{t("homePage.telegram.title")}</h3>
           </div>
           <p className="mt-3 text-md text-ink-2">{t("homePage.telegram.body")}</p>
-          <div className="mt-5 flex flex-wrap items-center gap-x-2 gap-y-1">
+          {/* Stacked in every language: side by side they wrap unevenly in the narrow card. */}
+          <div className="mt-5 flex flex-col items-start gap-1">
             <Button asChild variant="secondary" shape="pill" icon={<ExternalLink className="size-4" />}>
               <a href={`https://t.me/${TELEGRAM_BOT}`} target="_blank" rel="noopener noreferrer">
                 {t("homePage.telegram.open")}
@@ -284,7 +292,7 @@ export function FinalCta() {
             </Button>
             <LocalizedLink
               to="/me#notifications"
-              className="inline-flex min-h-11 items-center rounded-pill px-3 text-md font-medium text-lapis-ink hover:underline"
+              className="-mx-3 inline-flex min-h-11 items-center rounded-pill px-3 text-md font-medium text-lapis-ink hover:underline"
             >
               {t("homePage.telegram.connect")}
             </LocalizedLink>

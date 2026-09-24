@@ -17,18 +17,18 @@ const adminDailyStats = `-- name: AdminDailyStats :many
 
 WITH days AS (
     SELECT d::date AS day
-    FROM generate_series(((now() AT TIME ZONE 'Asia/Tashkent')::date - ($1::int - 1))::timestamp,
-                         (now() AT TIME ZONE 'Asia/Tashkent')::date::timestamp, interval '1 day') AS d
+    FROM generate_series((((now() AT TIME ZONE 'UTC') + interval '5 hours')::date - ($1::int - 1))::timestamp,
+                         ((now() AT TIME ZONE 'UTC') + interval '5 hours')::date::timestamp, interval '1 day') AS d
 ), since AS (
-    SELECT (min(day)::timestamp AT TIME ZONE 'Asia/Tashkent') AS t FROM days
+    SELECT ((min(day)::timestamp - interval '5 hours') AT TIME ZONE 'UTC') AS t FROM days
 ), u AS (
-    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    SELECT ((created_at AT TIME ZONE 'UTC') + interval '5 hours')::date AS day, count(*) AS n
     FROM users WHERE created_at >= (SELECT t FROM since) GROUP BY 1
 ), v AS (
-    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    SELECT ((created_at AT TIME ZONE 'UTC') + interval '5 hours')::date AS day, count(*) AS n
     FROM vacancies WHERE created_at >= (SELECT t FROM since) GROUP BY 1
 ), a AS (
-    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    SELECT ((created_at AT TIME ZONE 'UTC') + interval '5 hours')::date AS day, count(*) AS n
     FROM applications WHERE created_at >= (SELECT t FROM since) GROUP BY 1
 )
 SELECT days.day::date AS day, coalesce(u.n, 0)::bigint AS registrations,
@@ -48,8 +48,10 @@ type AdminDailyStatsRow struct {
 }
 
 // ---- statistics --------------------------------------------------------------------------
-// New users, vacancies and applications per day (Asia/Tashkent days) over the last
-// `days` days, oldest first; one range scan per table over its BRIN index (00020).
+// New users, vacancies and applications per day over the last `days` days, oldest first.
+// Days are Tashkent days: Uzbekistan keeps UTC+5 all year (no DST since 1992), so a fixed
+// offset is exact and about twice as cheap per row as AT TIME ZONE 'Asia/Tashkent'. One
+// range scan per table (BRIN on created_at, 00020); the handler caches the result.
 func (q *Queries) AdminDailyStats(ctx context.Context, days int32) ([]AdminDailyStatsRow, error) {
 	rows, err := q.db.Query(ctx, adminDailyStats, days)
 	if err != nil {
@@ -77,7 +79,7 @@ func (q *Queries) AdminDailyStats(ctx context.Context, days int32) ([]AdminDaily
 
 const adminListCompanies = `-- name: AdminListCompanies :many
 
-SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies, u.full_name AS owner_name, u.email AS owner_email
+SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies, c.logo_file_id, c.cover_file_id, c.cover_lqip, u.full_name AS owner_name, u.email AS owner_email
 FROM companies c
 JOIN users u ON u.id = c.owner_id
 WHERE ($1::text IS NULL OR lower(c.name) LIKE '%' || $1::text || '%')
@@ -139,6 +141,9 @@ func (q *Queries) AdminListCompanies(ctx context.Context, arg AdminListCompanies
 			&i.Company.CreatedAt,
 			&i.Company.UpdatedAt,
 			&i.Company.OpenVacancies,
+			&i.Company.LogoFileID,
+			&i.Company.CoverFileID,
+			&i.Company.CoverLqip,
 			&i.OwnerName,
 			&i.OwnerEmail,
 		); err != nil {
@@ -537,7 +542,7 @@ func (q *Queries) MergeSkill(ctx context.Context, arg MergeSkillParams) (MergeSk
 const setCompanyStatus = `-- name: SetCompanyStatus :one
 UPDATE companies SET status = $1
 WHERE id = $2 AND status = $3
-RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
+RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip
 `
 
 type SetCompanyStatusParams struct {
@@ -570,6 +575,9 @@ func (q *Queries) SetCompanyStatus(ctx context.Context, arg SetCompanyStatusPara
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }
@@ -601,7 +609,7 @@ func (q *Queries) SetSkillVerified(ctx context.Context, arg SetSkillVerifiedPara
 const setUserStatus = `-- name: SetUserStatus :one
 UPDATE users SET status = $1
 WHERE id = $2 AND status = $3
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type SetUserStatusParams struct {
@@ -636,6 +644,7 @@ func (q *Queries) SetUserStatus(ctx context.Context, arg SetUserStatusParams) (U
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }

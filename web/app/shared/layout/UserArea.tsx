@@ -20,7 +20,10 @@ import { toast } from "../ui/toast-store";
 export type AccountLink = { to: string; key: string; icon?: LucideIcon };
 
 export function accountLinks(user: User): AccountLink[] {
-  return user.role === "employer"
+  // Platform admins get their panel first, above the regular account links (an icon the header
+  // already ships, so the core bundle doesn't grow).
+  const admin: AccountLink[] = user.role === "admin" ? [{ to: "/admin", key: "adminPage.title", icon: LayoutDashboard }] : [];
+  return admin.concat(user.role === "employer"
     ? [
         { to: "/employer", key: "account.dashboard", icon: LayoutDashboard },
         { to: "/employer/candidates", key: "account.candidates", icon: Users },
@@ -37,7 +40,7 @@ export function accountLinks(user: User): AccountLink[] {
         { to: "/chat", key: "nav.messages", icon: MessageSquare },
         { to: "/me/notifications", key: "account.notifications", icon: Bell },
         { to: "/me", key: "account.settings", icon: Settings },
-      ];
+      ]);
 }
 
 /** Where the primary "Post a vacancy" CTA leads: the editor for employers, the pitch for everyone else. */

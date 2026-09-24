@@ -36,7 +36,8 @@ async function load(userId: string) {
 export function useSaved(id: string) {
   const { status, user } = useSession();
   useEffect(() => {
-    if (status === "authed" && user) void load(user.id);
+    // Employers get no hearts (SaveButton renders nothing): no request for them either.
+    if (status === "authed" && user && user.role !== "employer") void load(user.id);
   }, [status, user]);
   const saved = useSyncExternalStore(subscribe, () => ids.has(id), () => false);
   // After signing out the ids of the previous session are stale.

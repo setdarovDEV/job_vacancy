@@ -26,7 +26,7 @@ export default function CategorySheet({ open, onOpenChange }: { open: boolean; o
               <li key={c.id} className="py-1.5">
                 <LocalizedLink
                   to={`/vacancies?category_id=${c.id}`}
-                  className="flex min-h-12 items-center gap-3 rounded-control px-2 transition-colors hover:bg-sunken"
+                  className="flex min-h-12 items-center gap-3 rounded-control px-2 transition-colors hover:bg-sunken active:bg-sunken"
                 >
                   <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-control bg-lapis-soft text-lapis-ink">
                     <Icon className="size-4.5" />
@@ -40,7 +40,7 @@ export default function CategorySheet({ open, onOpenChange }: { open: boolean; o
                       <li key={s.id}>
                         <LocalizedLink
                           to={`/vacancies?category_id=${s.id}`}
-                          className="inline-flex h-9 items-center rounded-pill bg-sunken px-3 text-sm text-ink-2 transition-colors hover:bg-lapis-soft hover:text-lapis-ink pointer-coarse:h-11"
+                          className="inline-flex h-9 items-center rounded-pill bg-sunken px-3 text-sm text-ink-2 transition-[background-color,color,scale] hover:bg-lapis-soft hover:text-lapis-ink active:scale-[0.97] pointer-coarse:h-11"
                         >
                           {nameOf(s.name, locale)}
                         </LocalizedLink>

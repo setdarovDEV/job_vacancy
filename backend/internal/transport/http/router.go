@@ -25,6 +25,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/report"
 	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
+	"jobvacancy.uz/backend/internal/modules/telemetry"
 	"jobvacancy.uz/backend/internal/modules/user"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
@@ -69,21 +70,29 @@ type Deps struct {
 	AdminHandler   *admin.Handler
 	ReportHandler  *report.Handler
 	AccountHandler *account.Handler
+	// Browser reports: Web Vitals (TZ FE-06) and CSP violations (TZ SEC-03); nil: not mounted.
+	TelemetryHandler *telemetry.Handler
 }
 
 // Request limits. api_ip and api_user are counted by the request gate for every API
 // request; the others guard sensitive routes (password guessing, sign-up spam, codes).
+//
+// Per-IP numbers are sized for mobile carriers' CGNAT, where dozens of people share one
+// address (TZ SEC-04): the IP ceilings stop floods, while password guessing is handled
+// per e-mail and IP+e-mail by the login guard (delays and a captcha, never a lock).
 var (
-	apiIPRule   = ratelimit.Rule{Name: "api_ip", Limit: 1200, Window: time.Minute}
-	authIPRule  = ratelimit.Rule{Name: "auth_ip", Limit: 30, Window: time.Minute}
-	codeIPRule  = ratelimit.Rule{Name: "code_ip", Limit: 10, Window: 10 * time.Minute}
+	apiIPRule   = ratelimit.Rule{Name: "api_ip", Limit: 3000, Window: time.Minute}
+	authIPRule  = ratelimit.Rule{Name: "auth_ip", Limit: 30, Window: time.Minute}      // sign-up, password reset
+	loginIPRule = ratelimit.Rule{Name: "login_ip", Limit: 100, Window: time.Minute}    // sign-in (password, Google)
+	refreshRule = ratelimit.Rule{Name: "refresh_ip", Limit: 120, Window: time.Minute}  // token refresh, sign-out
+	codeIPRule  = ratelimit.Rule{Name: "code_ip", Limit: 10, Window: 10 * time.Minute} // per user despite the name
 	apiUserRule = ratelimit.Rule{Name: "api_user", Limit: 600, Window: time.Minute}
 )
 
 func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(mw.RequestID, mw.ClientIP(d.TrustProxy, d.TrustedProxies), mw.Observe(d.Log), mw.Recover(d.Log),
-		mw.CORS(d.CORSOrigins), mw.RejectBadURL)
+		mw.SecurityHeaders, mw.CORS(d.CORSOrigins), mw.RejectBadURL)
 	if d.RequestTimeout > 0 {
 		r.Use(mw.Timeout(d.RequestTimeout, d.SlowRequestTimeout))
 	}
@@ -123,6 +132,9 @@ func NewRouter(d Deps) http.Handler {
 			})
 		})
 		r.Route("/search", d.VacancyHandler.SearchRoutes)
+		if d.TelemetryHandler != nil {
+			d.TelemetryHandler.Routes(r)
+		}
 		d.NotifyHandler.WebhookRoutes(r)
 		r.Route("/ws", func(r chi.Router) { d.WSHandler.Routes(r, d.Auth) })
 
@@ -130,6 +142,14 @@ func NewRouter(d Deps) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(mw.RateLimit(d.Limiter, authIPRule, mw.KeyByIP))
 				d.AuthHandler.PublicRoutes(r)
+			})
+			r.Group(func(r chi.Router) {
+				r.Use(mw.RateLimit(d.Limiter, loginIPRule, mw.KeyByIP))
+				d.AuthHandler.LoginRoutes(r)
+			})
+			r.Group(func(r chi.Router) {
+				r.Use(mw.RateLimit(d.Limiter, refreshRule, mw.KeyByIP))
+				d.AuthHandler.SessionRoutes(r)
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(d.Auth.Require, mw.RateLimit(d.Limiter, codeIPRule, mw.KeyByUser))

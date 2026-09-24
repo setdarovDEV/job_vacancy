@@ -10,7 +10,6 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/jobs"
 	"jobvacancy.uz/backend/internal/pkg/otp"
-	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/pkg/token"
 	"jobvacancy.uz/backend/internal/testutil/fixture"
 )
@@ -26,7 +25,7 @@ func TestRegisterRequiresConsent(t *testing.T) {
 	_, rdb := fixture.Redis(t)
 	svc := &Service{Q: w.Q, Tokens: token.NewManager(strings.Repeat("s", 40), "t", time.Minute),
 		OTP: otp.NewStore(rdb, strings.Repeat("o", 40)), Revoked: NewRevocationStore(rdb, time.Minute),
-		Emails: noMail{}, Limiter: ratelimit.New(rdb), RefreshTTL: time.Hour, ConsentVersion: "2026-09-24", Log: w.Log}
+		Emails: noMail{}, RefreshTTL: time.Hour, ConsentVersion: "2026-09-24", Log: w.Log}
 	ctx := context.Background()
 	in := RegisterInput{Email: w.Email(), Password: "Secret123", FullName: "Ali", Role: gen.UserRoleSeeker, Locale: gen.AppLocaleUz}
 

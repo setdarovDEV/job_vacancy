@@ -23,7 +23,6 @@ import (
 	"jobvacancy.uz/backend/internal/pkg/otp"
 	"jobvacancy.uz/backend/internal/pkg/phone"
 	"jobvacancy.uz/backend/internal/pkg/random"
-	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/pkg/token"
 	"jobvacancy.uz/backend/internal/platform/mailer"
 	"jobvacancy.uz/backend/internal/platform/telegram"
@@ -36,22 +35,21 @@ const (
 	refreshRaceWin = 30 * time.Second
 )
 
-// Per-account brute-force protection, on top of the per-IP limit in the router.
-var loginRule = ratelimit.Rule{Name: "login_email", Limit: 10, Window: 15 * time.Minute}
-
 type EmailQueue interface {
 	EnqueueEmailCode(ctx context.Context, a jobs.EmailCodeArgs) error
 }
 
 type Service struct {
-	Q          *gen.Queries
-	Tokens     *token.Manager
-	OTP        *otp.Store
-	Revoked    *RevocationStore
-	Emails     EmailQueue
-	Phone      telegram.CodeSender
-	Google     *GoogleVerifier // nil when Google sign-in is disabled
-	Limiter    *ratelimit.Limiter
+	Q       *gen.Queries
+	Tokens  *token.Manager
+	OTP     *otp.Store
+	Revoked *RevocationStore
+	Emails  EmailQueue
+	Phone   telegram.CodeSender
+	Google  *GoogleVerifier // nil when Google sign-in is disabled
+	// Guard slows down and captcha-gates repeated failed sign-ins without ever locking an
+	// account (TZ SEC-04); nil disables it (tests).
+	Guard      *LoginGuard
 	RefreshTTL time.Duration
 	// ConsentVersion is the current privacy policy version users agree to (TZ FN-08).
 	ConsentVersion string
@@ -153,17 +151,26 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, meta ClientMet
 }
 
 func (s *Service) Login(ctx context.Context, email, password string, meta ClientMeta) (*Result, error) {
-	email = normalizeEmail(email)
-	if ok, retry, _ := s.Limiter.Allow(ctx, loginRule, email); !ok {
-		return nil, apperr.TooManyRequests(int(retry.Seconds()) + 1)
-	}
+	return s.LoginWithCaptcha(ctx, email, password, "", meta)
+}
 
+// LoginWithCaptcha signs in with e-mail and password. After repeated failures the guard
+// delays the attempt or requires captcha, a solved Turnstile token (TZ SEC-04); nothing
+// ever locks the account, so the owner's right password always gets in.
+func (s *Service) LoginWithCaptcha(ctx context.Context, email, password, captcha string, meta ClientMeta) (*Result, error) {
+	email = normalizeEmail(email)
+	if s.Guard != nil {
+		if err := s.Guard.Check(ctx, meta.IP, email, captcha); err != nil {
+			return nil, err
+		}
+	}
 	u, err := s.Q.GetUserByEmail(ctx, &email)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
 	if err != nil || u.PasswordHash == nil {
 		_, _ = hash.VerifyPasswordCtx(ctx, password, dummyHash)
+		s.loginFailed(ctx, meta.IP, email)
 		return nil, ErrInvalidCredentials
 	}
 	ok, err := hash.VerifyPasswordCtx(ctx, password, *u.PasswordHash)
@@ -171,12 +178,22 @@ func (s *Service) Login(ctx context.Context, email, password string, meta Client
 		return nil, err
 	}
 	if !ok {
+		s.loginFailed(ctx, meta.IP, email)
 		return nil, ErrInvalidCredentials
 	}
 	if err := checkStatus(u); err != nil {
 		return nil, err
 	}
+	if s.Guard != nil {
+		s.Guard.Succeeded(ctx, meta.IP, email)
+	}
 	return s.startSession(ctx, u, meta)
+}
+
+func (s *Service) loginFailed(ctx context.Context, ip netip.Addr, email string) {
+	if s.Guard != nil {
+		s.Guard.Failed(ctx, ip, email)
+	}
 }
 
 // GoogleLogin signs in with a Google ID token. New users are created with the given role

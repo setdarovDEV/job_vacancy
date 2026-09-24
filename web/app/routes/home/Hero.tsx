@@ -11,7 +11,7 @@ import { SearchBar } from "~/shared/ui/SearchBar";
 import { StatCard } from "~/shared/ui/StatCard";
 import { popularFor, type Count } from "./data";
 
-export type HeroStats = { total: Count | null; remote: number | null; withSalary: number | null; lastDay: Count | null };
+export type HeroStats = { total: Count | null; companies: Count | null; withSalary: Count | null; lastDay: Count | null };
 
 const shown = (c: Count) => `${groupDigits(c.n)}${c.capped ? "+" : ""}`;
 
@@ -49,11 +49,11 @@ export function Hero({ popular, stats }: { popular: string[]; stats: HeroStats }
         {stats.lastDay && stats.lastDay.n > 0 && <LastDayPill count={stats.lastDay} />}
         <h1
           id="home-title"
-          className="mx-auto max-w-4xl break-words font-display text-2xl font-semibold tracking-display text-ink sm:text-4xl md:text-5xl"
+          className="mx-auto max-w-4xl text-balance break-words font-display text-2xl font-semibold tracking-display text-ink sm:text-4xl md:text-5xl"
         >
           {accent(t("homePage.title"))}
         </h1>
-        <p className="mx-auto mt-4 max-w-2xl text-lead text-ink-2 md:mt-5">{t("homePage.lead")}</p>
+        <p className="mx-auto mt-4 max-w-2xl text-balance text-lead text-ink-2 md:mt-5">{t("homePage.lead")}</p>
         <SearchBar
           action="/vacancies"
           size="lg"
@@ -84,9 +84,10 @@ function LastDayPill({ count }: { count: Count }) {
     >
       <span className="glass-panel glass-interactive flex min-w-0 items-center gap-2 rounded-pill px-3.5 py-1.5 text-sm font-medium text-ink-2">
         <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-firuza" />
+        {/* No `num` in running text: Onest's tabular "1" is as wide as a "0", so "12" reads "1 2". */}
         <span className="min-w-0">
           {before}
-          <b className="num font-semibold text-ink">{shown(count)}</b>
+          <b className="font-semibold text-ink">{shown(count)}</b>
           {after}
         </span>
         <ArrowRight aria-hidden="true" className="size-3.5 shrink-0" />
@@ -133,10 +134,10 @@ function Stats({ stats }: { stats: HeroStats }) {
   const { t } = useTranslation();
   const tiles: Tile[] = [];
   if (stats.total) tiles.push({ id: "total", label: t("homePage.stats.vacancies"), value: shown(stats.total) });
-  if (stats.remote != null) tiles.push({ id: "remote", label: t("homePage.stats.remote"), value: groupDigits(stats.remote) });
-  if (stats.withSalary != null) {
+  if (stats.companies) tiles.push({ id: "companies", label: t("homePage.stats.companies"), value: shown(stats.companies) });
+  if (stats.withSalary) {
     // Firuza is the money colour: this stat is about salaries being shown.
-    tiles.push({ id: "salary", label: t("homePage.stats.withSalary"), value: groupDigits(stats.withSalary), tone: "firuza" });
+    tiles.push({ id: "salary", label: t("homePage.stats.withSalary"), value: shown(stats.withSalary), tone: "firuza" });
   }
   // Nothing to show, or a brand-new site with no vacancies yet: zeros sell nothing.
   if (!tiles.length || stats.total?.n === 0) return null;

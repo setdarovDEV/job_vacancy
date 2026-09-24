@@ -1,20 +1,36 @@
 package admin
 
 import (
+	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/redis/go-redis/v9"
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/cursor"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
+	"jobvacancy.uz/backend/internal/platform/respcache"
 	"jobvacancy.uz/backend/internal/transport/http/response"
 )
 
-type Handler struct{ Svc *Service }
+type Handler struct {
+	Svc *Service
+	// StatsCache holds the dashboard statistics for a few minutes (they scan a month of
+	// sign-ups, vacancies and applications); nil computes them on every request.
+	StatsCache *respcache.Cache
+}
+
+// NewStatsCache is the dashboard statistics cache: 5 minutes, then served stale for
+// another 5 while one request refreshes it.
+func NewStatsCache(rdb *redis.Client, log *slog.Logger) *respcache.Cache {
+	return &respcache.Cache{RDB: rdb, Log: log, Name: "admin_stats", TTL: 5 * time.Minute, Stale: 5 * time.Minute}
+}
 
 // Routes are mounted under /admin (behind RequireRole("admin")).
 func (h *Handler) Routes(r chi.Router) {
@@ -336,13 +352,31 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
 		}
 		days = n
 	}
-	st, err := h.Svc.Stats(r.Context(), days)
+	load := func(ctx context.Context) (respcache.Loaded, error) {
+		st, err := h.Svc.Stats(ctx, days)
+		if err != nil {
+			return respcache.Loaded{}, err
+		}
+		body, err := response.Encode(st, nil)
+		return respcache.Loaded{Body: body}, err
+	}
+	if h.StatsCache == nil {
+		l, err := load(r.Context())
+		if err != nil {
+			response.Error(w, r, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.Header().Set("Cache-Control", "private, no-cache")
+		_, _ = w.Write(l.Body)
+		return
+	}
+	e, st, err := h.StatsCache.Get(r.Context(), "days:"+strconv.Itoa(days), load)
 	if err != nil {
 		response.Error(w, r, err)
 		return
 	}
-	w.Header().Set("Cache-Control", "private, max-age=60")
-	response.JSON(w, http.StatusOK, st)
+	h.StatsCache.Serve(w, r, e, st, "private, no-cache")
 }
 
 func (h *Handler) auditLog(w http.ResponseWriter, r *http.Request) {

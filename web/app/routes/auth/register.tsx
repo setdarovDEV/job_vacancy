@@ -1,9 +1,9 @@
 import { BriefcaseBusiness, UserRound } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useId, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import type { Route } from "./+types/register";
-import { AuthCard, authLink, rich } from "./AuthCard";
+import { AuthCard, authFooterLink, authLink, rich } from "./AuthCard";
 import { GoogleButton } from "./GoogleButton";
 import { useNext } from "./layout";
 import { api } from "~/shared/api/client";
@@ -19,6 +19,7 @@ import { seo } from "~/shared/seo/seo";
 import { Button } from "~/shared/ui/Button";
 import { Field, Input } from "~/shared/ui/Field";
 import { SelectableCard, SelectableCardGroup } from "~/shared/ui/SelectableCard";
+import { Checkbox } from "~/shared/ui/Toggle";
 
 export function meta({ matches, location }: Route.MetaArgs) {
   const { t } = metaT(matches);
@@ -38,6 +39,22 @@ export default function Register() {
   const [form, setForm] = useState({ full_name: "", email: "", password: "" });
   // "Email taken" arrives as a form-level error: also mark the email field, so focus lands there.
   const [taken, setTaken] = useState(false);
+  // Explicit consent to the processing of personal data (TZ FN-08): unticked by default, required
+  // by the API for new accounts (email and Google). When missing, the reason shows under the box
+  // and the box takes focus.
+  const [consent, setConsent] = useState(false);
+  const [consentMissing, setConsentMissing] = useState(false);
+  const consentBox = useRef<HTMLDivElement>(null);
+  const newTabId = useId();
+  // Terms and privacy open in a new tab: following them must not throw away a half-filled form.
+  // "Opens in a new tab" is a description, so it stays out of the checkbox's own name.
+  const legal = (to: string) => (text: string) => (
+    <LocalizedLink to={to} target="_blank" rel="noopener" aria-describedby={newTabId} className={authLink}>{text}</LocalizedLink>
+  );
+  const flagConsent = () => {
+    setConsentMissing(true);
+    consentBox.current?.querySelector<HTMLElement>('[role="checkbox"]')?.focus();
+  };
   const upd = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((f) => ({ ...f, [k]: e.target.value }));
     if (k === "email") setTaken(false);
@@ -62,7 +79,7 @@ export default function Register() {
       footer={
         <>
           {t("auth.haveAccount")}{" "}
-          <LocalizedLink to={`/login${next ? `?next=${encodeURIComponent(next)}` : ""}`} viewTransition prefetch="intent" className={authLink}>
+          <LocalizedLink to={`/login${next ? `?next=${encodeURIComponent(next)}` : ""}`} viewTransition prefetch="intent" className={authFooterLink}>
             {t("nav.signIn")}
           </LocalizedLink>
         </>
@@ -77,18 +94,32 @@ export default function Register() {
           <SelectableCard value="employer" icon={<BriefcaseBusiness />} title={t("auth.roleEmployer")} description={t("auth.roleEmployerHint")} />
         </SelectableCardGroup>
       </div>
-      <GoogleButton role={role} onDone={onGoogle} onError={setError} />
+      <GoogleButton
+        role={role}
+        consent={consent}
+        onDone={onGoogle}
+        onError={(msg, code) => (code === "consent_required" ? flagConsent() : setError(msg))}
+      />
+      {/* noValidate: the API's field errors show inline in the page's language (see login). */}
       <form
+        noValidate
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
           void run(
-            () => api.POST("/auth/register", { body: { ...form, role, locale } }),
+            () => api.POST("/auth/register", { body: { ...form, role, locale, consent } }),
             (res) => {
               signedIn(res.data!.data as never);
               afterSignup(form.email);
             },
-            (e) => setTaken(e.code === "email_taken"),
+            (e) => {
+              setTaken(e.code === "email_taken");
+              // The API checks fields first: show the missing consent together with them.
+              if (!consent) setConsentMissing(true);
+              if (e.code !== "consent_required") return;
+              flagConsent();
+              return true; // its reason is under the box, not in the summary
+            },
           );
         }}
       >
@@ -113,13 +144,21 @@ export default function Register() {
         <Field label={t("form.password")} hint={t("auth.passwordHint")} error={fields.password}>
           <PasswordInput strength autoComplete="new-password" enterKeyHint="go" required minLength={8} value={form.password} onChange={upd("password")} />
         </Field>
+        {/* The box lines up with the first line of a label that wraps to 2–3 lines. */}
+        <div ref={consentBox} className="[&_label]:items-start">
+          <Field error={consentMissing ? t("apiErrors.consent_required") : undefined}>
+            <Checkbox
+              checked={consent}
+              onCheckedChange={(v) => {
+                setConsent(v);
+                if (v) setConsentMissing(false);
+              }}
+              label={rich(t("authPage.consentLabel"), { terms: legal("/terms"), privacy: legal("/privacy") })}
+            />
+          </Field>
+          <span id={newTabId} hidden>{t("vacancyPage.newTab")}</span>
+        </div>
         <Button type="submit" size="lg" loading={pending} className="mt-1 w-full">{t("auth.submitRegister")}</Button>
-        <p className="text-center text-sm text-ink-2">
-          {rich(t("authPage.consent"), {
-            terms: (s) => <LocalizedLink to="/terms" className={authLink}>{s}</LocalizedLink>,
-            privacy: (s) => <LocalizedLink to="/privacy" className={authLink}>{s}</LocalizedLink>,
-          })}
-        </p>
       </form>
     </AuthCard>
   );

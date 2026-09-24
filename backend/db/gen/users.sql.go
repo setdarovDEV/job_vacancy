@@ -15,7 +15,7 @@ const createGoogleUser = `-- name: CreateGoogleUser :one
 INSERT INTO users (email, email_verified_at, google_sub, full_name, avatar_url, role, locale,
                    consent_version, consent_at)
 VALUES ($1, now(), $2, $3, $4, $5, $6, $7::text, now())
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type CreateGoogleUserParams struct {
@@ -62,6 +62,7 @@ func (q *Queries) CreateGoogleUser(ctx context.Context, arg CreateGoogleUserPara
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
@@ -69,7 +70,7 @@ func (q *Queries) CreateGoogleUser(ctx context.Context, arg CreateGoogleUserPara
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, full_name, role, locale, consent_version, consent_at)
 VALUES ($1, $2, $3, $4, $5, $6::text, now())
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type CreateUserParams struct {
@@ -116,12 +117,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online FROM users WHERE email = $1
+SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, error) {
@@ -150,12 +152,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, erro
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
 
 const getUserByGoogleSub = `-- name: GetUserByGoogleSub :one
-SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online FROM users WHERE google_sub = $1
+SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id FROM users WHERE google_sub = $1
 `
 
 func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub *string) (User, error) {
@@ -184,12 +187,13 @@ func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub *string) (Us
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online FROM users WHERE id = $1
+SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -218,6 +222,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
@@ -244,7 +249,7 @@ SET google_sub        = $2,
     email_verified_at = COALESCE(email_verified_at, now()),
     avatar_url        = COALESCE(avatar_url, $3)
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type LinkGoogleAccountParams struct {
@@ -279,6 +284,7 @@ func (q *Queries) LinkGoogleAccount(ctx context.Context, arg LinkGoogleAccountPa
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
@@ -286,7 +292,7 @@ func (q *Queries) LinkGoogleAccount(ctx context.Context, arg LinkGoogleAccountPa
 const markEmailVerified = `-- name: MarkEmailVerified :one
 UPDATE users SET email_verified_at = COALESCE(email_verified_at, now())
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) (User, error) {
@@ -315,6 +321,7 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) (User, er
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
@@ -322,7 +329,7 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) (User, er
 const setUserConsent = `-- name: SetUserConsent :one
 UPDATE users SET consent_version = $2::text, consent_at = now()
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type SetUserConsentParams struct {
@@ -356,12 +363,13 @@ func (q *Queries) SetUserConsent(ctx context.Context, arg SetUserConsentParams) 
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
 
 const setUserRole = `-- name: SetUserRole :one
-UPDATE users SET role = $2 WHERE email = $1 RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+UPDATE users SET role = $2 WHERE email = $1 RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type SetUserRoleParams struct {
@@ -395,6 +403,7 @@ func (q *Queries) SetUserRole(ctx context.Context, arg SetUserRoleParams) (User,
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
@@ -402,7 +411,7 @@ func (q *Queries) SetUserRole(ctx context.Context, arg SetUserRoleParams) (User,
 const setVerifiedPhone = `-- name: SetVerifiedPhone :one
 UPDATE users SET phone = $2, phone_verified_at = now()
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type SetVerifiedPhoneParams struct {
@@ -436,6 +445,7 @@ func (q *Queries) SetVerifiedPhone(ctx context.Context, arg SetVerifiedPhonePara
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }
@@ -469,7 +479,7 @@ SET full_name   = COALESCE($2, full_name),
     locale      = COALESCE($3, locale),
     hide_online = COALESCE($4, hide_online)
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online, avatar_file_id
 `
 
 type UpdateProfileParams struct {
@@ -510,6 +520,7 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (U
 		&i.ConsentVersion,
 		&i.ConsentAt,
 		&i.HideOnline,
+		&i.AvatarFileID,
 	)
 	return i, err
 }

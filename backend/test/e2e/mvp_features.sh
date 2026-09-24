@@ -97,6 +97,8 @@ UNTIL=$(date -u -d '+2 days' +%Y-%m-%dT%H:%M:%SZ)
 check "TOP until a date" "$(req -X PUT $API/admin/vacancies/$V3/featured -H "$(A $TA)" -H "$H" -d "{\"until\":\"$UNTIL\"}")$(J .data.is_featured)" "200true"
 check "past date 422" $(req -X PUT $API/admin/vacancies/$V3/featured -H "$(A $TA)" -H "$H" -d '{"until":"2020-01-01T00:00:00Z"}') 422
 check "public page shows TOP" "$(req $API/vacancies/$V3)$(J .data.is_featured)" "200true"
+check "district filter finds it (FN-06)" "$(req "$API/vacancies?region_id=$SAM&district_id=$DIST")$(J "[.data[].id] | index(\"$V3\") != null")" "200true"
+check "another district doesn't" "$(req "$API/vacancies?region_id=$SAM&district_id=$(curl -s $API/catalog/regions/samarkand/districts | jq '.data[0].id')")$(J "[.data[].id] | index(\"$V3\") == null")" "200true"
 check "end TOP" "$(req -X DELETE $API/admin/vacancies/$V3/featured -H "$(A $TA)")$(J .data.is_featured)" "200false"
 
 echo "== skills (FN-01)"

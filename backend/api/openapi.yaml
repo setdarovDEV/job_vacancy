@@ -195,6 +195,7 @@ components:
             created_at: { type: string, format: date-time }
             open_vacancies: { type: integer, description: public profile only }
             my_role: { type: string, enum: [owner, admin, recruiter], description: "/me/companies only" }
+            status: { type: string, enum: [active, blocked, deleted], description: "/me/companies only; blocked companies can't be managed" }
     CompanySummary:
       type: object
       required: [id, name, slug, logo_url, verified]
@@ -828,6 +829,7 @@ paths:
         with the account. Personal data is removed (name, e-mail, phone, avatar, uploads,
         resumes; applications stay with employers, shown with an empty full_name), every
         session is revoked and the e-mail can register again. Clears the refresh cookie.
+        At most 10 attempts per 15 minutes (429 rate_limited).
       requestBody:
         content:
           application/json:
@@ -842,6 +844,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /me/consent:
     put:
       tags: [me]
@@ -1090,7 +1093,8 @@ paths:
         otherwise (a link to /me/invites). They become a member only after accepting; until
         then they can't read the company's team, vacancies or applications. Admins invite
         recruiters; the owner also invites admins. Errors: 409 already_member,
-        404 member_not_found (the address belongs to a non-employer or blocked account).
+        404 member_not_found (the address belongs to a non-employer or blocked account),
+        429 rate_limited (a company sends at most 50 invites a day).
       requestBody:
         required: true
         content:

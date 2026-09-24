@@ -16,22 +16,35 @@ import (
 const MaxStatsDays = 90
 
 // Stats returns the dashboard totals and new registrations, vacancies and applications
-// per day for the last days days (Asia/Tashkent): two queries.
+// per day for the last days days (Asia/Tashkent).
+//
+// The daily series aggregates a month of rows, which makes its estimated cost cross
+// jit_above_cost: JIT compilation then costs more than the query (measured on 196k
+// applications: 530-670 ms with JIT, 133-140 ms without), so it is turned off for this
+// read-only transaction.
 func (s *Service) Stats(ctx context.Context, days int) (Stats, error) {
-	t, err := s.Q.AdminTotals(ctx)
-	if err != nil {
-		return Stats{}, err
-	}
-	rows, err := s.Q.AdminDailyStats(ctx, int32(days))
-	if err != nil {
-		return Stats{}, err
-	}
-	out := Stats{Totals: Totals(t), Days: make([]DayStats, len(rows))}
-	for i, r := range rows {
-		out.Days[i] = DayStats{Date: r.Day.Format("2006-01-02"), Registrations: r.Registrations,
-			Vacancies: r.Vacancies, Applications: r.Applications}
-	}
-	return out, nil
+	var out Stats
+	err := postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, "SET LOCAL jit = off"); err != nil {
+			return err
+		}
+		q := gen.New(tx)
+		t, err := q.AdminTotals(ctx)
+		if err != nil {
+			return err
+		}
+		rows, err := q.AdminDailyStats(ctx, int32(days))
+		if err != nil {
+			return err
+		}
+		out = Stats{Totals: Totals(t), Days: make([]DayStats, len(rows))}
+		for i, r := range rows {
+			out.Days[i] = DayStats{Date: r.Day.Format("2006-01-02"), Registrations: r.Registrations,
+				Vacancies: r.Vacancies, Applications: r.Applications}
+		}
+		return nil
+	})
+	return out, err
 }
 
 // AuditFilter selects a page of the audit log.

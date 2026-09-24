@@ -79,8 +79,9 @@ export default function SaveSearchDialog({
           <div>
             <p className="text-sm font-medium text-ink">{t("vacanciesPage.saveSummary")}</p>
             <ul className="mt-2 flex flex-wrap gap-1.5">
-              {(summary.length ? summary : [t("vacanciesPage.allVacancies")]).map((s) => (
-                <li key={s} className="flex max-w-full"><Badge tone="lapis">{s}</Badge></li>
+              {(summary.length ? summary : [t("vacanciesPage.allVacancies")]).map((s, i) => (
+                // Index key: two filters can share a label (a district named like its region).
+                <li key={i} className="flex max-w-full"><Badge tone="lapis">{s}</Badge></li>
               ))}
             </ul>
           </div>

@@ -186,6 +186,9 @@ type Drag = {
   /** Hovering a chip of the phone drop dock rather than a column. */
   dock: boolean;
   touch: boolean;
+  /** Phones: the card floats above the finger and targets sit in a dock (top when lifted low). */
+  phone: boolean;
+  dockTop: boolean;
 };
 type Press = {
   pointerId: number;
@@ -201,6 +204,9 @@ type Press = {
   offX: number;
   offY: number;
   lifted: boolean;
+  liftAt: number;
+  /** Travelled after the lift: a press released in place is not a drop. */
+  moved: boolean;
   swipe: boolean;
   timer: number;
 };
@@ -216,7 +222,7 @@ const validTarget = (d: Drag | null, c: Col | null): c is EmployerTarget => !!d 
 function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const narrow = useMedia("(width < 48rem)");
+  const narrow = useMedia("(max-width: 47.99rem)"); // below md
   const [picked, setPicked] = useState<Col | null>(null);
   // Phones open on the first stage that has someone in it.
   const current: Col = picked ?? COLUMNS.find((c) => (counts?.[c] ?? 0) > 0) ?? "sent";
@@ -291,9 +297,10 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
   const moveTo = useCallback((app: App, to: EmployerTarget, via: Via) => {
     if (app.status !== to && app.status !== "withdrawn") move.mutate({ app, to, via });
   }, [move]);
-  const onMenuMove = useCallback((app: App, to: EmployerTarget) => moveTo(app, to, "menu"), [moveTo]);
   const moveRef = useRef(moveTo);
   moveRef.current = moveTo;
+  // Stable, so the memoized cards don't re-render whenever the mutation's state changes.
+  const onMenuMove = useCallback((app: App, to: EmployerTarget) => moveRef.current(app, to, "menu"), []);
 
   // ---- phone pager: tabs + swipe ----
   const pickTab = useCallback((c: Col) => {
@@ -381,13 +388,29 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
       else if (bottom < EDGE) scrollBy(0, EDGE_SPEED * (1 - Math.max(0, bottom) / EDGE));
     };
 
+    // Where the ghost's top-left goes. Mouse: under the grab point. Phones: it eases away from the
+    // finger, so the dock target under the finger stays visible.
+    const ghostAt = (p: Press, d: Drag): [number, number] => {
+      const gx = p.x - p.offX;
+      const gy = p.y - p.offY;
+      if (!d.phone) return [gx, gy];
+      const k = Math.min(1, (performance.now() - p.liftAt) / 180);
+      const e = 1 - (1 - k) ** 3;
+      const tx = Math.min(Math.max(8, p.x - d.w / 2), innerWidth - d.w - 8);
+      // Opposite the dock: above the finger when the dock is below, under it when the dock is on top.
+      const ty = d.dockTop ? p.y + 24 : p.y - d.h - 24;
+      return [gx + (tx - gx) * e, gy + (ty - gy) * e];
+    };
+
     const frame = () => {
       const p = press.current;
       if (!p?.lifted || !dragRef.current) {
         raf.current = 0;
         return;
       }
-      if (ghost.current) ghost.current.style.transform = `translate3d(${p.x - p.offX}px, ${p.y - p.offY}px, 0)`;
+      const [gx, gy] = ghostAt(p, dragRef.current);
+      if (ghost.current) ghost.current.style.transform = `translate3d(${gx}px, ${gy}px, 0)`;
+      if (!p.moved && Math.hypot(p.x - p.x0, p.y - p.y0) > 12) p.moved = true;
       autoScroll(p);
       hitTest(p);
       raf.current = requestAnimationFrame(frame);
@@ -398,6 +421,8 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
       if (!p?.app || !p.card || p.lifted) return;
       clearTimeout(p.timer);
       p.lifted = true;
+      p.liftAt = performance.now();
+      p.moved = !p.touch; // a mouse lift already is a movement
       const r = p.card.getBoundingClientRect();
       p.offX = p.x0 - r.left;
       p.offY = p.y0 - r.top;
@@ -414,6 +439,7 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
       setDragState({
         app: p.app, from: (p.app.status ?? "sent") as Col, x: r.left, y: r.top, w: r.width, h: r.height,
         over: null, dock: false, touch: p.touch,
+        phone: live.current.narrow, dockTop: p.y0 > innerHeight * 0.5,
       });
       announce(live.current.t("kanbanPage.lifted", { name: p.app.candidate.full_name }));
       window.addEventListener("keydown", onKey);
@@ -441,10 +467,11 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
         return;
       }
       const d = dragRef.current!;
-      const from = `translate3d(${p.x - p.offX}px, ${p.y - p.offY}px, 0)`;
+      const [gx, gy] = ghostAt(p, d);
+      const from = `translate3d(${gx}px, ${gy}px, 0)`;
       const x = absorb ? rect.left + rect.width / 2 - d.w / 2 : rect.left;
       const y = absorb ? rect.top + rect.height / 2 - d.h / 2 : rect.top;
-      const lifted = { rotate: "1.5deg", scale: "1.03", opacity: 1 };
+      const lifted = { rotate: "1.5deg", scale: d.phone ? "0.94" : "1.03", opacity: 1 };
       play(inner, [lifted, absorb ? { rotate: "0deg", scale: "0.4", opacity: 0 } : { rotate: "0deg", scale: "1", opacity: 1 }], 320, "forwards");
       const anim = play(g, [{ transform: from }, { transform: `translate3d(${x}px, ${y}px, 0)` }], 320, "forwards");
       anim.finished.then(finish, finish);
@@ -460,7 +487,7 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
       const d = dragRef.current;
       if (!d) return;
       const to = d.over;
-      if (!validTarget(d, to)) {
+      if (!validTarget(d, to) || !press.current?.moved) {
         cancelDrag();
         return;
       }
@@ -569,6 +596,7 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape" || !dragRef.current || !press.current?.lifted) return;
       e.preventDefault();
+      if (!press.current.touch) swallowClick(); // the button is still down: its release is no click
       cancelDrag();
       end();
     }
@@ -585,7 +613,7 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
       press.current = {
         pointerId: e.pointerId, touch, app: app && app.status !== "withdrawn" ? app : null, card,
         x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, t: e.timeStamp, vx: 0,
-        offX: 0, offY: 0, lifted: false, swipe: false, timer: 0,
+        offX: 0, offY: 0, lifted: false, liftAt: 0, moved: false, swipe: false, timer: 0,
       };
       if (touch && press.current.app) press.current.timer = window.setTimeout(lift, LONG_PRESS);
       window.addEventListener("pointermove", onMove, { passive: true });
@@ -614,10 +642,11 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
 
   // The ghost lifts off the board: a small tilt and scale with the spring.
   const dragId = drag?.app.id;
+  const dragPhone = drag?.phone;
   useLayoutEffect(() => {
     if (!dragId || !ghostCard.current || reducedMotion()) return;
-    play(ghostCard.current, [{ rotate: "0deg", scale: "1" }, { rotate: "1.5deg", scale: "1.03" }], 200, "forwards");
-  }, [dragId]);
+    play(ghostCard.current, [{ rotate: "0deg", scale: "1" }, { rotate: "1.5deg", scale: dragPhone ? "0.94" : "1.03" }], 200, "forwards");
+  }, [dragId, dragPhone]);
 
   const hintPointer = t("kanbanPage.hintPointer");
   const hintTouch = t("kanbanPage.hintTouch");
@@ -702,8 +731,12 @@ function Board({ vacancyId, counts }: { vacancyId: string; counts?: Counts }) {
       )}
 
       {/* Phones show one stage at a time, so a lifted card is dropped on this dock of stages. */}
-      {drag && narrow && (
-        <div aria-hidden="true" className="glass-chrome anim-enter fixed inset-x-3 bottom-above-tabbar z-40 rounded-sheet p-3">
+      {drag?.phone && (
+        <div
+          aria-hidden="true"
+          className={cn("glass-chrome anim-enter fixed inset-x-3 z-40 rounded-sheet p-3", !drag.dockTop && "bottom-above-tabbar")}
+          style={drag.dockTop ? { top: "calc(env(safe-area-inset-top) + 0.75rem)" } : undefined}
+        >
           <p className="px-1 pb-2 text-sm font-medium text-ink">{t("kanbanPage.dropTo")}</p>
           <div className="grid grid-cols-2 gap-2">
             {COLUMNS.filter((c) => validTarget(drag, c)).map((c) => (
@@ -906,7 +939,8 @@ const KanbanCard = memo(function KanbanCard({ a, state, onMove }: {
       // The browser's own link drag would fight the pointer drag.
       onDragStart={(e: React.DragEvent) => e.preventDefault()}
       className={cn(
-        "spotlight group select-none",
+        // No text selection or iOS link callout on the long press that lifts the card.
+        "spotlight group select-none [-webkit-touch-callout:none]",
         movable && "pointer-fine:cursor-grab",
         state === "dragging" && "opacity-40",
         state === "settling" && "opacity-0",
@@ -915,7 +949,7 @@ const KanbanCard = memo(function KanbanCard({ a, state, onMove }: {
       <CardFace a={a} link />
       {movable && (
         // Keyboard and touch path to the same move: always visible on touch, on hover or focus with a mouse.
-        <div data-no-drag className="absolute right-2 top-2 z-10">
+        <div data-no-drag className={cn("absolute right-2 top-2 z-10", state !== "idle" && "invisible")}>
           <Popover
             label={t("kanbanPage.cardMenu", { name: a.candidate.full_name })}
             className="w-64"

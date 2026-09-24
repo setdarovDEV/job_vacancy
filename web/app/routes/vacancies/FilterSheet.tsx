@@ -89,13 +89,16 @@ export default function FilterSheet({
         closeLabel={t("common.close")}
         footer={
           <>
-            <Button variant="secondary" disabled={activeCount(draft) === 0} onClick={() => setDraft(clearFilters(draft))}>
+            {/* A quiet text action beside the primary (Airbnb's "Clear all"): the live count keeps
+                the room it needs at 360px in the longest locales. */}
+            <Button variant="ghost" className="px-3" disabled={activeCount(draft) === 0} onClick={() => setDraft(clearFilters(draft))}>
               {t("common.clear")}
             </Button>
             <Button
-              className="min-w-0 flex-1"
+              className="min-w-0 flex-1 px-3"
               onClick={() => {
-                onApply(draft);
+                // Nothing changed: just close, no refetch of the same page.
+                if (canonicalSearch(draft) !== canonicalSearch(query)) onApply(draft);
                 onOpenChange(false);
               }}
             >

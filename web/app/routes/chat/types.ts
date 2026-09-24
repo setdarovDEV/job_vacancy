@@ -18,3 +18,16 @@ export function counterpart(c: Conversation) {
     ? { name: c.company.name, avatar: c.company.logo_url, square: true, userId: null as string | null }
     : { name: c.seeker.full_name, avatar: c.seeker.avatar_url, square: false, userId: c.seeker.id };
 }
+
+/** The application behind a conversation, from the viewer's side. */
+export function applicationHref(c: Conversation) {
+  return c.side === "company" ? `/employer/applications/${c.application_id}` : `/me/applications/${c.application_id}`;
+}
+
+/** Messages from one sender this close together stack as a group (tight gaps, shared corners). */
+export const GROUP_MS = 5 * 60_000;
+
+export function sameGroup(a: Message | undefined, b: Message | undefined): boolean {
+  if (!a || !b || a.kind === "system" || b.kind === "system" || a.sender?.id !== b.sender?.id) return false;
+  return Math.abs(new Date(b.created_at).getTime() - new Date(a.created_at).getTime()) < GROUP_MS;
+}

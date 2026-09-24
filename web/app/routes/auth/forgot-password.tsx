@@ -1,9 +1,10 @@
 import { KeyRound, MailCheck } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
+import { flushSync } from "react-dom";
 import { useNavigate } from "react-router";
 
 import type { Route } from "./+types/forgot-password";
-import { AuthCard, authLink, ResendRow, rich, useCooldown } from "./AuthCard";
+import { AUTH_SUBTITLE_ID, AuthCard, authFooterLink, ResendRow, rich, useCooldown } from "./AuthCard";
 import { api, apiError } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
 import { CodeInput } from "~/shared/forms/CodeInput";
@@ -41,10 +42,22 @@ export default function ForgotPassword() {
   const [password, setPassword] = useState("");
   const [cooldown, setCooldown] = useCooldown(0);
   const [sending, setSending] = useState(false);
+  const codeId = useId();
 
   const backToLogin = (
-    <LocalizedLink to="/login" viewTransition prefetch="intent" className={authLink}>{t("authPage.backToLogin")}</LocalizedLink>
+    <LocalizedLink to="/login" viewTransition prefetch="intent" className={authFooterLink}>{t("authPage.backToLogin")}</LocalizedLink>
   );
+
+  // The step change morphs the card like a route change does (app.css names it while a view
+  // transition runs); browsers without view transitions just swap the content.
+  const toStep = (next: "email" | "reset", before?: () => void) => {
+    const apply = () => {
+      before?.();
+      setStep(next);
+    };
+    if (!document.startViewTransition) return apply();
+    document.startViewTransition(() => flushSync(apply));
+  };
 
   const resend = async () => {
     setSending(true);
@@ -53,26 +66,35 @@ export default function ForgotPassword() {
       const res = await api.POST("/auth/password/forgot", { body: { email } });
       const e = res.response.ok ? null : apiError(res);
       if (e) setError(errorText(t, e));
-      else toast({ tone: "success", title: t("auth.codeSent") });
+      else {
+        // A fresh code: the last attempt's red cells and digits no longer apply.
+        setCode("");
+        setCodeBad(false);
+        toast({ tone: "success", title: t("auth.codeSent") });
+      }
       setCooldown(e?.retry_after ?? 60);
     } catch {
       setError(t("errors.network"));
     } finally {
       setSending(false);
+      // The resend button is disabled for the cooldown now: keep focus on the next step, the code.
+      document.getElementById(codeId)?.focus();
     }
   };
 
   if (step === "email") {
     return (
       <AuthCard icon={<KeyRound className="size-6" />} title={t("auth.forgotTitle")} subtitle={t("auth.forgotBody")} footer={backToLogin}>
-        <form className="flex flex-col gap-4" onSubmit={(e) => {
+        {/* noValidate: the API's field errors show inline in the page's language. */}
+        <form noValidate className="flex flex-col gap-4" onSubmit={(e) => {
           e.preventDefault();
-          void run(() => api.POST("/auth/password/forgot", { body: { email } }), () => {
-            setCode("");
-            setCodeBad(false);
-            setCooldown(60);
-            setStep("reset");
-          });
+          void run(() => api.POST("/auth/password/forgot", { body: { email } }), () =>
+            toStep("reset", () => {
+              setCode("");
+              setCodeBad(false);
+              setCooldown(60);
+            }),
+          );
         }}>
           <FormError>{error}</FormError>
           <Field label={t("form.email")} error={fields.email}>
@@ -99,10 +121,10 @@ export default function ForgotPassword() {
     <AuthCard
       icon={<MailCheck className="size-6" />}
       title={t("auth.resetTitle")}
-      subtitle={rich(t("authPage.resetBody", { email }), { b: (s) => <b className="break-all font-semibold text-ink">{s}</b> })}
+      subtitle={rich(t("authPage.resetBody", { email }), { b: (s) => <b className="font-semibold text-ink">{s}</b> })}
       footer={backToLogin}
     >
-      <form className="flex flex-col gap-5" onSubmit={(e) => {
+      <form noValidate className="flex flex-col gap-5" onSubmit={(e) => {
         e.preventDefault();
         void run(
           () => api.POST("/auth/password/reset", { body: { email, code, password } }),
@@ -120,6 +142,7 @@ export default function ForgotPassword() {
         <FormError>{error}</FormError>
         <Field error={fields.code}>
           <CodeInput
+            id={codeId}
             value={code}
             onChange={(v) => {
               setCode(v);
@@ -127,6 +150,7 @@ export default function ForgotPassword() {
             }}
             label={t("auth.code")}
             aria-invalid={codeBad || undefined}
+            aria-describedby={AUTH_SUBTITLE_ID}
           />
         </Field>
         <Field label={t("auth.newPassword")} hint={t("auth.passwordHint")} error={fields.password}>
@@ -142,10 +166,7 @@ export default function ForgotPassword() {
               type="button"
               variant="ghost"
               className="px-2"
-              onClick={() => {
-                setError(null);
-                setStep("email");
-              }}
+              onClick={() => toStep("email", () => setError(null))}
             >
               {t("authPage.changeEmail")}
             </Button>

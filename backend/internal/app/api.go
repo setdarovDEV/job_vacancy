@@ -25,6 +25,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/report"
 	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
+	"jobvacancy.uz/backend/internal/modules/telemetry"
 	"jobvacancy.uz/backend/internal/modules/user"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/otp"
@@ -34,6 +35,7 @@ import (
 	"jobvacancy.uz/backend/internal/platform/redis"
 	"jobvacancy.uz/backend/internal/platform/storage"
 	"jobvacancy.uz/backend/internal/platform/telegram"
+	"jobvacancy.uz/backend/internal/platform/turnstile"
 	"jobvacancy.uz/backend/internal/realtime"
 	httpapi "jobvacancy.uz/backend/internal/transport/http"
 	mw "jobvacancy.uz/backend/internal/transport/http/middleware"
@@ -82,6 +84,14 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		return err
 	}
 
+	// TZ SEC-04: repeated failed sign-ins need a Cloudflare Turnstile captcha.
+	var captcha auth.CaptchaVerifier
+	if cfg.Auth.TurnstileSecret != "" {
+		captcha = turnstile.New(cfg.Auth.TurnstileSecret, cfg.TurnstileHost())
+	} else {
+		log.Warn("TURNSTILE_SECRET not set: no captcha after failed sign-ins, only delays")
+	}
+
 	q := gen.New(pool)
 	tokens := accessTokens(cfg.Auth)
 	revoked := auth.NewRevocationStore(rdb, cfg.Auth.AccessTokenTTL)
@@ -95,7 +105,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Emails:     enq,
 		Phone:      phoneSender,
 		Google:     google,
-		Limiter:    limiter,
+		Guard:      auth.NewLoginGuard(rdb, captcha, log),
 		RefreshTTL: cfg.Auth.RefreshTokenTTL,
 		// TZ FN-08: sign-up records consent to this privacy policy version.
 		ConsentVersion: cfg.Product.ConsentVersion,
@@ -118,7 +128,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	publicCache := vacancy.NewPublicCache(rdb, log)
 	publicCache.PopularMinIPs = cfg.Search.PopularMinIPs
-	companySvc := &company.Service{Pool: pool, Q: q, Catalog: catalogSvc, Notify: notifySvc,
+	companySvc := &company.Service{Pool: pool, Q: q, Catalog: catalogSvc, Notify: notifySvc, Limiter: limiter,
 		// Profile, logo and verification changes show on vacancy pages and cards too.
 		Changed: func(ctx context.Context, c gen.Company) { publicCache.CompanyChanged(ctx, q, c) }}
 	vacancySvc := &vacancy.Service{
@@ -133,6 +143,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	resumeSvc := &resume.Service{Pool: pool, Q: q, Catalog: catalogSvc}
 	hub := realtime.NewHub(ctx, rdb, log)
 	hub.Audience = realtime.DBAudience{Q: q} // TZ SEC-05: presence only among conversation partners
+	hub.RevokedKey = auth.RevokedKey         // TZ BE-15: revoked sessions lose their sockets
 	defer hub.Close()
 	chatSvc := &chat.Service{Pool: pool, Q: q, Companies: companySvc, Files: fileSvc, Publisher: publisher,
 		Hub: hub, Notify: notifySvc, RDB: rdb, Log: log}
@@ -145,7 +156,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Jobs: enq, Log: log}
 	reportSvc := &report.Service{Pool: pool, Q: q, Limiter: limiter, Vacancies: vacancySvc, Notify: notifySvc,
 		Threshold: cfg.Product.ReportThreshold, Log: log}
-	accountSvc := &account.Service{Pool: pool, Q: q, Revoked: revoked, Jobs: enq, Cache: publicCache, Log: log}
+	accountSvc := &account.Service{Pool: pool, Q: q, Limiter: limiter, Revoked: revoked, Jobs: enq, Cache: publicCache, Log: log}
 	if google != nil {
 		accountSvc.Google = google
 	}
@@ -167,9 +178,9 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Compress:           cfg.CompressEnabled(),
 		Storage:            st,
 		Draining:           &draining,
-		AuthHandler:        &auth.Handler{Svc: authSvc, Cookie: cookie},
+		AuthHandler:        &auth.Handler{Svc: authSvc, Cookie: cookie, CaptchaSiteKey: cfg.Auth.TurnstileSiteKey},
 		AccountHandler:     &account.Handler{Svc: accountSvc, Cookie: cookie},
-		AdminHandler:       &admin.Handler{Svc: adminSvc},
+		AdminHandler:       &admin.Handler{Svc: adminSvc, StatsCache: admin.NewStatsCache(rdb, log)},
 		ReportHandler:      &report.Handler{Svc: reportSvc},
 		UserHandler:        &user.Handler{Q: q, Presence: hub},
 		CatalogHandler:     &catalog.Handler{Svc: catalogSvc},
@@ -182,9 +193,10 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		WSHandler: &realtime.Handler{Hub: hub, RDB: rdb, Frames: chatSvc, Origins: cfg.HTTP.CORSOrigins, Log: log},
 		NotifyHandler: &notification.Handler{Svc: notifySvc, RDB: rdb, Bot: bot,
 			WebhookSecret: cfg.Telegram.WebhookSecret},
-		VacancyHandler: &vacancy.Handler{Svc: vacancySvc},
-		ResumeHandler:  &resume.Handler{Svc: resumeSvc},
-		AppHandler:     &application.Handler{Svc: appSvc},
+		VacancyHandler:   &vacancy.Handler{Svc: vacancySvc},
+		ResumeHandler:    &resume.Handler{Svc: resumeSvc},
+		AppHandler:       &application.Handler{Svc: appSvc},
+		TelemetryHandler: &telemetry.Handler{},
 	})
 
 	srv := &http.Server{
@@ -220,5 +232,12 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	time.Sleep(cfg.HTTP.DrainDelay)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 	defer cancel()
+	// http.Server.Shutdown doesn't track hijacked (WebSocket) connections: close them with
+	// 1012 first so clients reconnect to another instance and fetch what they missed over
+	// REST (TZ BE-15), then drain the plain requests.
+	wsCtx, wsCancel := context.WithTimeout(shutdownCtx, 6*time.Second)
+	n := hub.Shutdown(wsCtx)
+	wsCancel()
+	log.Info("websocket connections closed", "count", n)
 	return srv.Shutdown(shutdownCtx)
 }

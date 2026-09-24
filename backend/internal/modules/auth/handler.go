@@ -31,17 +31,32 @@ type CookieConfig struct {
 type Handler struct {
 	Svc    *Service
 	Cookie CookieConfig
+	// CaptchaSiteKey is the public Turnstile key the web shows the widget with; empty when
+	// the captcha is disabled.
+	CaptchaSiteKey string
 }
 
-// PublicRoutes are mounted under /auth (rate-limited by the router).
+// PublicRoutes are mounted under /auth behind the strict per-IP limit (sign-up and
+// password-reset e-mails, code guessing).
 func (h *Handler) PublicRoutes(r chi.Router) {
 	r.Post("/register", h.register)
-	r.Post("/login", h.login)
-	r.Post("/google", h.google)
-	r.Post("/refresh", h.refresh)
-	r.Post("/logout", h.logout)
 	r.Post("/password/forgot", h.forgotPassword)
 	r.Post("/password/reset", h.resetPassword)
+}
+
+// LoginRoutes are mounted under /auth behind a CGNAT-sized per-IP limit; failed
+// passwords are handled by the login guard (TZ SEC-04).
+func (h *Handler) LoginRoutes(r chi.Router) {
+	r.Post("/login", h.login)
+	r.Post("/google", h.google)
+	r.Get("/captcha", h.captcha)
+}
+
+// SessionRoutes (token refresh, sign-out) run for every open tab every few minutes, so
+// they get their own soft per-IP limit (TZ SEC-04).
+func (h *Handler) SessionRoutes(r chi.Router) {
+	r.Post("/refresh", h.refresh)
+	r.Post("/logout", h.logout)
 }
 
 // ProtectedRoutes are mounted under /auth behind RequireAuth.
@@ -86,6 +101,8 @@ type registerRequest struct {
 type loginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
 	Password string `json:"password" validate:"required,max=72"`
+	// Solved Cloudflare Turnstile token; needed only after captcha_required (TZ SEC-04).
+	CaptchaToken string `json:"captcha_token" validate:"max=2048"`
 }
 
 type googleRequest struct {
@@ -162,8 +179,18 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	if !response.DecodeValid(w, r, &req) {
 		return
 	}
-	res, err := h.Svc.Login(r.Context(), req.Email, req.Password, clientMeta(r))
+	res, err := h.Svc.LoginWithCaptcha(r.Context(), req.Email, req.Password, req.CaptchaToken, clientMeta(r))
 	h.writeAuth(w, r, res, err, http.StatusOK)
+}
+
+// captcha tells clients which captcha to show after captcha_required.
+func (h *Handler) captcha(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"enabled": false, "provider": nil, "site_key": nil}
+	if h.CaptchaSiteKey != "" && h.Svc != nil && h.Svc.Guard != nil && h.Svc.Guard.Captcha != nil {
+		out = map[string]any{"enabled": true, "provider": "turnstile", "site_key": h.CaptchaSiteKey}
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	response.JSON(w, http.StatusOK, out)
 }
 
 func (h *Handler) google(w http.ResponseWriter, r *http.Request) {

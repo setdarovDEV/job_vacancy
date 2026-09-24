@@ -498,6 +498,7 @@ export interface paths {
          *     with the account. Personal data is removed (name, e-mail, phone, avatar, uploads,
          *     resumes; applications stay with employers, shown with an empty full_name), every
          *     session is revoked and the e-mail can register again. Clears the refresh cookie.
+         *     At most 10 attempts per 15 minutes (429 rate_limited).
          */
         delete: {
             parameters: {
@@ -520,6 +521,7 @@ export interface paths {
                 403: components["responses"]["Error"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
             };
         };
         options?: never;
@@ -1226,7 +1228,8 @@ export interface paths {
          *     otherwise (a link to /me/invites). They become a member only after accepting; until
          *     then they can't read the company's team, vacancies or applications. Admins invite
          *     recruiters; the owner also invites admins. Errors: 409 already_member,
-         *     404 member_not_found (the address belongs to a non-employer or blocked account).
+         *     404 member_not_found (the address belongs to a non-employer or blocked account),
+         *     429 rate_limited (a company sends at most 50 invites a day).
          */
         post: {
             parameters: {
@@ -4820,6 +4823,11 @@ export interface components {
              * @enum {string}
              */
             my_role?: "owner" | "admin" | "recruiter";
+            /**
+             * @description /me/companies only; blocked companies can't be managed
+             * @enum {string}
+             */
+            status?: "active" | "blocked" | "deleted";
         };
         CompanySummary: {
             /** Format: uuid */

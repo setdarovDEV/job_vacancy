@@ -35,7 +35,7 @@ export function Categories() {
   const subs = lead.children ?? [];
 
   return (
-    <section aria-labelledby="home-categories" className={band} style={est(60)}>
+    <section aria-labelledby="home-categories" className={band} style={est(55, 38)}>
       <SectionHead id="home-categories" title={t("homePage.categories.title")} description={t("homePage.categories.body")} />
       <ul ref={list} className="mt-6 grid grid-cols-2 gap-3 md:mt-8 md:grid-cols-4">
         <li className="col-span-2 md:row-span-2">
@@ -49,7 +49,7 @@ export function Categories() {
                   <CardLink to={href(lead)} prefetch="intent">{nameOf(lead.name, locale)}</CardLink>
                 </h3>
                 {subs.length > 0 && (
-                  <p className="num text-md text-ink-2">
+                  <p className="text-md text-ink-2">
                     {t("homePage.categories.directions", { count: subs.length, n: groupDigits(subs.length) })}
                   </p>
                 )}
@@ -64,7 +64,7 @@ export function Categories() {
                     <LocalizedLink
                       to={href(s)}
                       prefetch="intent"
-                      className="inline-flex h-9 items-center rounded-pill bg-sunken px-3 text-sm font-medium text-ink-2 transition-colors hover:bg-lapis-soft hover:text-lapis-ink pointer-coarse:h-11"
+                      className="inline-flex h-9 items-center rounded-pill bg-sunken px-3 text-sm font-medium text-ink-2 transition-[background-color,color,scale] hover:bg-lapis-soft hover:text-lapis-ink active:scale-[0.97] pointer-coarse:h-11"
                     >
                       {nameOf(s.name, locale)}
                     </LocalizedLink>
@@ -111,7 +111,7 @@ export function Categories() {
             </span>
             <span className="min-w-0">
               <span className="block text-md font-semibold text-lapis-ink">{t("homePage.categories.all")}</span>
-              <span className="num block text-sm text-ink-2">
+              <span className="block text-sm text-ink-2">
                 {t("homePage.categories.count", { count: catalog.categories.length, n: groupDigits(catalog.categories.length) })}
               </span>
             </span>

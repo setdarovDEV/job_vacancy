@@ -45,12 +45,12 @@ func newEnv(t *testing.T) *env {
 	revoked := auth.NewRevocationStore(rdb, 15*time.Minute)
 	a := &auth.Service{Q: w.Q, Tokens: token.NewManager(strings.Repeat("s", 40), "test", 15*time.Minute),
 		OTP: otp.NewStore(rdb, strings.Repeat("o", 40)), Revoked: revoked, Emails: noMail{},
-		Limiter: ratelimit.New(rdb), RefreshTTL: time.Hour, ConsentVersion: "2026-09-24", Log: w.Log}
+		Guard: auth.NewLoginGuard(rdb, nil, w.Log), RefreshTTL: time.Hour, ConsentVersion: "2026-09-24", Log: w.Log}
 	cat := &catalog.Service{Q: w.Q, Log: w.Log}
 	w.Must(cat.Reload(context.Background()))
 	j := &fixture.Jobs{}
 	return &env{World: w, auth: a, jobs: j, companies: &company.Service{Pool: w.Pool, Q: w.Q, Catalog: cat},
-		svc: &account.Service{Pool: w.Pool, Q: w.Q, Revoked: revoked, Jobs: j,
+		svc: &account.Service{Pool: w.Pool, Q: w.Q, Limiter: ratelimit.New(rdb), Revoked: revoked, Jobs: j,
 			Cache: vacancy.NewPublicCache(rdb, w.Log), Log: w.Log}}
 }
 
@@ -212,5 +212,18 @@ func TestDeleteGoogleAccountNeedsRecentSignIn(t *testing.T) {
 	fresh := e.Session(u, time.Minute)
 	if err := e.svc.Delete(context.Background(), fresh, account.DeleteInput{}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A stolen access token can't be used to guess the password through DELETE /me.
+func TestDeleteAttemptsAreLimited(t *testing.T) {
+	e := newEnv(t)
+	_, p := e.register(e.Email(), gen.UserRoleSeeker)
+	var last error
+	for i := 0; i < 11; i++ {
+		last = e.svc.Delete(context.Background(), p, account.DeleteInput{Password: fmt.Sprintf("Guess%04d", i)})
+	}
+	if code(last) != "rate_limited" {
+		t.Fatalf("11th attempt: %v", last)
 	}
 }

@@ -2,14 +2,14 @@ import {
   ArrowRight, BadgeCheck, BriefcaseBusiness, Building2, CalendarClock, CalendarDays, Clock3, ExternalLink, Eye,
   Hourglass, House, Layers, MapPin, PencilLine, SearchX, Star, Users,
 } from "lucide-react";
-import { lazy, Suspense, useEffect, useMemo, useState, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ComponentType } from "react";
 import { useRevalidator, useViewTransitionState } from "react-router";
 
 import type { Route } from "./+types/index";
 import type { ShellHandle } from "../site";
 import { ShareMenu } from "./ShareMenu";
-import { api, orThrow, soft, type Schemas } from "~/shared/api/client";
-import { useSession } from "~/shared/auth/session";
+import { api, dataOf, orThrow, soft, type Schemas } from "~/shared/api/client";
+import { useSession, withAuth } from "~/shared/auth/session";
 import { GirihPattern } from "~/shared/brand/GirihPattern";
 import { indexCatalog, nameOf, useCatalog } from "~/shared/catalog/catalog";
 import { htmlLang, localizedPath, type Locale } from "~/shared/i18n/config";
@@ -62,7 +62,7 @@ export function meta({ matches, loaderData: data, location }: Route.MetaArgs) {
   const { t, locale } = metaT(matches);
   const v = data.v;
   return seo({
-    title: `${v.title}, ${v.company.name} | Job Vacancy`,
+    title: `${t("vacancyPage.metaTitle", { title: v.title, company: v.company.name })} | Job Vacancy`,
     description: `${salary(v.salary, t, locale)}. ${plainText(v.description, 140)}`,
     path: location.pathname,
     image: v.company.logo_url,
@@ -95,13 +95,17 @@ const CARD_PAD = "p-5 sm:p-6 md:p-8";
 const H2_SUB = "text-lead font-semibold tracking-snug text-ink";
 
 export default function VacancyPage({ loaderData }: Route.ComponentProps) {
-  const { v, similar } = loaderData;
+  const { similar } = loaderData;
+  const v = useOwnerView(loaderData.v);
   const { t } = useTranslation();
   const locale = useLocale();
   const catalog = useCatalog();
   const idx = useMemo(() => indexCatalog(catalog), [catalog]);
   const { user } = useSession();
   const [applyOpen, setApplyOpen] = useState(false);
+  // Mounted on first use and kept, so closing plays the exit animation and a reopen keeps the draft.
+  const [applyUsed, setApplyUsed] = useState(false);
+  const [asideRef, asideFits] = useStickyFit<HTMLElement>();
 
   const region = nameOf(idx.regions.get(v.region_id)?.name, locale);
   const district = v.district_id ? nameOf(idx.regions.get(v.district_id)?.name, locale) : "";
@@ -113,7 +117,10 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
   const hasPay = v.salary != null && (v.salary.min != null || v.salary.max != null);
   const pay = salary(v.salary, t, locale);
   const categoryHref = `/vacancies?category_id=${v.category_id}`;
-  const apply = () => setApplyOpen(true);
+  const apply = () => {
+    setApplyUsed(true);
+    setApplyOpen(true);
+  };
   // Hovering or focusing an Apply button fetches the dialog's code before the click.
   const preload = { onPointerEnter: () => void loadApply(), onFocus: () => void loadApply() };
 
@@ -133,7 +140,7 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
   const lastSpan = cn(n % 2 === 1 && "col-span-2", n % 3 === 1 && "md:col-span-3", n % 3 === 2 && "md:col-span-2");
 
   return (
-    <article aria-labelledby="vacancy-title" className="container-page pb-6 pt-4 md:pb-24 md:pt-8">
+    <article aria-labelledby="vacancy-title" className={cn("container-page pt-4 md:pb-24 md:pt-8", canApply ? "pb-6" : "pb-16")}>
       <JobPostingLd v={v} region={region} district={district} category={category} />
       <Breadcrumbs
         items={[
@@ -169,7 +176,8 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
                   <LocalizedLink
                     to={`/companies/${v.company.slug}`}
                     prefetch="intent"
-                    className="truncate underline-offset-3 hover:text-lapis-ink hover:underline"
+                    // -my-3 py-3: a 44px tap area around the one-line name, layout unchanged.
+                    className="-my-3 truncate py-3 underline-offset-3 hover:text-lapis-ink hover:underline"
                   >
                     {v.company.name}
                   </LocalizedLink>
@@ -201,7 +209,7 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
               <span
                 className={
                   hasPay
-                    ? "num font-display text-xl font-semibold tracking-heading text-firuza-ink sm:text-2xl md:text-3xl"
+                    ? "num font-display text-xl font-semibold tracking-heading text-firuza-ink sm:text-2xl"
                     : "text-lead font-medium text-ink-2"
                 }
               >
@@ -211,37 +219,40 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
             </p>
 
             <div className="mt-6 flex flex-wrap items-center gap-2">
-              {canApply && (
-                // Phones apply from the sticky bar at the bottom.
-                <Button size="lg" onClick={apply} {...preload} className="max-md:hidden">
-                  {t("common.apply")}
-                </Button>
-              )}
-              <SaveButton id={v.id} withLabel className="max-md:flex-1 max-md:px-3 md:h-13 md:px-5" />
-              <ShareMenu title={v.title} className="max-md:flex-1 max-md:px-3 md:h-13 md:px-5" />
-              {v.can_edit && (
+              {v.can_edit ? (
+                // The owner's view: applications first, then edit; employers can't apply or save.
                 <>
+                  <Button size="lg" asChild icon={<Users className="size-4.5" />} className="max-md:w-full">
+                    <LocalizedLink to={`/employer/vacancies/${v.id}/applications`}>{t("employer.applications")}</LocalizedLink>
+                  </Button>
                   <Button variant="secondary" asChild icon={<PencilLine className="size-4.5" />} className="max-md:flex-1 md:h-13 md:px-5">
                     <LocalizedLink to={`/employer/vacancies/${v.id}/edit`}>{t("common.edit")}</LocalizedLink>
                   </Button>
-                  <Button variant="ghost" asChild icon={<Users className="size-4.5" />} className="max-md:flex-1 md:h-13 md:px-5">
-                    <LocalizedLink to={`/employer/vacancies/${v.id}/applications`}>{t("employer.applications")}</LocalizedLink>
-                  </Button>
+                </>
+              ) : (
+                <>
+                  {canApply && (
+                    // Phones apply from the sticky bar at the bottom.
+                    <Button size="lg" onClick={apply} {...preload} className="max-md:hidden">
+                      {t("common.apply")}
+                    </Button>
+                  )}
+                  <SaveButton id={v.id} withLabel className="max-md:flex-1 max-md:px-3 md:h-13 md:px-5" />
                 </>
               )}
+              <ShareMenu title={v.title} className="max-md:flex-1 max-md:px-3 md:h-13 md:px-5" />
             </div>
 
             <dl className="mt-6 grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line md:grid-cols-3">
               {facts.map((f, i) => (
-                <div
-                  key={f.id}
-                  className={cn("flex min-w-0 flex-col gap-2.5 bg-surface p-4 sm:flex-row", i === n - 1 && lastSpan)}
-                >
-                  <f.Icon aria-hidden="true" className="size-5 shrink-0 text-lapis" />
-                  <div className="min-w-0">
-                    <dt className="text-xs text-ink-2">{f.label}</dt>
-                    <dd className="mt-0.5 break-words text-md font-medium text-ink">{f.value}</dd>
-                  </div>
+                // dl > div > dt + dd only (valid markup, read as term/value pairs): the icon sits in
+                // the dt, the value is indented under the label from sm (icon 20px + gap 10px).
+                <div key={f.id} className={cn("min-w-0 bg-surface p-4", i === n - 1 && lastSpan)}>
+                  <dt className="flex flex-col items-start gap-2.5 text-xs text-ink-2 sm:flex-row sm:items-center">
+                    <f.Icon aria-hidden="true" className="size-5 shrink-0 text-lapis" />
+                    {f.label}
+                  </dt>
+                  <dd className="mt-0.5 break-words text-md font-medium text-ink sm:pl-7.5">{f.value}</dd>
                 </div>
               ))}
             </dl>
@@ -339,7 +350,7 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
           </Card>
         </div>
 
-        <aside className="flex min-w-0 flex-col gap-6 lg:sticky lg:top-24">
+        <aside ref={asideRef} className={cn("flex min-w-0 flex-col gap-6", asideFits && "lg:sticky lg:top-24")}>
           <CompanyCard company={v.company} />
           <SimilarCard items={similar} categoryHref={categoryHref} />
         </aside>
@@ -347,13 +358,64 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
 
       {canApply && <ApplyBar v={v} pay={pay} hasPay={hasPay} onApply={apply} preload={preload} />}
 
-      {applyOpen && (
+      {applyUsed && (
         <Suspense>
-          <ApplyDialog open={applyOpen} onOpenChange={setApplyOpen} vacancy={v} />
+          {/* key: another vacancy (a similar row) starts with a fresh dialog state. */}
+          <ApplyDialog key={v.id} open={applyOpen} onOpenChange={setApplyOpen} vacancy={v} />
         </Suspense>
       )}
     </article>
   );
+}
+
+/**
+ * The server render is anonymous (the access token lives only in the browser), so `can_edit`,
+ * the moderation status and the reject reason come from a second, signed-in read. Only
+ * employers can own a vacancy: nobody else pays for the extra request.
+ */
+function useOwnerView(v: Vacancy): Vacancy {
+  const { user } = useSession();
+  const employer = user?.role === "employer";
+  const [own, setOwn] = useState<Vacancy | null>(null);
+  useEffect(() => {
+    if (!employer) return;
+    let live = true;
+    withAuth(() => api.GET("/vacancies/{vacancy}", { params: { path: { vacancy: v.slug } } }))
+      .then((res) => {
+        const d = dataOf<Vacancy>(res);
+        if (live && d?.can_edit) setOwn(d);
+      })
+      .catch(() => {}); // the public view stays as it is
+    return () => {
+      live = false;
+    };
+  }, [employer, v.slug]);
+  return own && own.id === v.id ? own : v;
+}
+
+/**
+ * Sticky only while the whole aside fits below the header: a taller one (short laptop screens)
+ * would keep its last rows out of reach until the end of the page.
+ */
+function useStickyFit<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  const [fits, setFits] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const check = () => {
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      setFits(el.offsetHeight + 7.5 * rem <= window.innerHeight); // top-24 + 1.5rem of air
+    };
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    window.addEventListener("resize", check, { passive: true });
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", check);
+    };
+  }, []);
+  return [ref, fits] as const;
 }
 
 /** Closed / not yet published: owners see the moderation status, visitors a way out. */
@@ -391,8 +453,9 @@ function CompanyCard({ company }: { company: Vacancy["company"] }) {
         <div className="mt-3 flex items-center gap-3">
           <Avatar name={company.name} src={company.logo_url} square size="md" />
           <div className="min-w-0 flex-1">
-            <h2 id="company-card-title" className="truncate text-lead font-semibold tracking-snug text-ink">
-              <LocalizedLink to={to} prefetch="intent" className="underline-offset-3 hover:text-lapis-ink hover:underline">
+            <h2 id="company-card-title" className="text-lead font-semibold tracking-snug text-ink">
+              {/* -my-2.5 py-2.5: a 44px tap area for the one-line name, layout unchanged. */}
+              <LocalizedLink to={to} prefetch="intent" className="-my-2.5 block truncate py-2.5 underline-offset-3 hover:text-lapis-ink hover:underline">
                 {company.name}
               </LocalizedLink>
             </h2>
@@ -518,7 +581,12 @@ function ApplyBar({ v, pay, hasPay, onApply, preload }: {
     return () => void root.style.removeProperty("--toast-lift");
   }, []);
   return (
-    <div className="glass-chrome sticky bottom-above-tabbar z-30 mt-6 flex items-center gap-3 rounded-pill p-2 pl-5 md:hidden">
+    <>
+      {/* The shell's scroll-edge scrim comes with its tab bar, hidden here: this bar brings its own,
+          tall enough that cards fade into paper before they pass under the glass. Same z-30 as the
+          scrim but later in the DOM, so the bar paints above it and still below the header (z-40). */}
+      <div aria-hidden="true" className="edge-fade-b md:hidden" style={{ height: "calc(env(safe-area-inset-bottom) + 5rem)" }} />
+      <div className="glass-chrome sticky bottom-above-tabbar z-30 mt-6 flex items-center gap-3 rounded-pill p-2 pl-5 md:hidden">
       <div className="min-w-0 flex-1">
         {/* Only ink levels on chrome glass: the salary keeps the display face, not the colour. */}
         <p className={cn("truncate", hasPay ? "num font-display text-md font-semibold tracking-heading text-ink" : "text-md font-medium text-ink")}>
@@ -529,7 +597,8 @@ function ApplyBar({ v, pay, hasPay, onApply, preload }: {
       <Button shape="pill" onClick={onApply} {...preload} className="shrink-0">
         {t("common.apply")}
       </Button>
-    </div>
+      </div>
+    </>
   );
 }
 

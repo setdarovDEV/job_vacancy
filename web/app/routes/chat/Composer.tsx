@@ -1,8 +1,9 @@
-import { MapPin, Mic, Paperclip, SendHorizontal, Square, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { MapPin, Mic, Paperclip, SendHorizontal, X } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { useTranslation } from "~/shared/i18n/i18n";
+import { useTranslation, type TFunction } from "~/shared/i18n/i18n";
 import { cn } from "~/shared/lib/cn";
+import { IconButton } from "~/shared/ui/Button";
 import { toast } from "~/shared/ui/toast-store";
 import { LIMITS } from "~/shared/upload/upload";
 
@@ -14,6 +15,23 @@ export type Outgoing =
 
 const IMAGE = /^image\/(jpeg|png|webp|gif)$/;
 
+/** A picked, pasted or dropped file as an outgoing message (null + toast when it's too large). */
+export function fileMessage(f: File, t: TFunction, caption?: string): Outgoing | null {
+  const image = IMAGE.test(f.type);
+  if (f.size > (image ? LIMITS.chat_image : LIMITS.chat_file)) {
+    toast({ tone: "error", title: t("validation.too_large") });
+    return null;
+  }
+  return { kind: image ? "image" : "file", file: f, body: image ? caption : undefined };
+}
+
+// Browsers without `field-sizing: content` (Safari < 26, Firefox) grow the textarea by hand.
+const fieldSizing = typeof CSS !== "undefined" && CSS.supports?.("field-sizing", "content");
+
+/**
+ * The composer dock: a glass capsule floating over the thread (the messages scroll under it).
+ * Concentric geometry: rounded-sheet (28px) with p-1.5 holds 44px round buttons (22px radius).
+ */
 export function Composer({ onSend, onTyping }: { onSend: (o: Outgoing) => void; onTyping: () => void }) {
   const { t } = useTranslation();
   const [text, setText] = useState("");
@@ -21,6 +39,14 @@ export function Composer({ onSend, onTyping }: { onSend: (o: Outgoing) => void; 
   const area = useRef<HTMLTextAreaElement>(null);
   const lastTyping = useRef(0);
   const rec = useRecorder();
+  const has = text.trim().length > 0;
+
+  useLayoutEffect(() => {
+    const el = area.current;
+    if (!el || fieldSizing) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [text]);
 
   const submit = () => {
     const body = text.trim();
@@ -31,10 +57,11 @@ export function Composer({ onSend, onTyping }: { onSend: (o: Outgoing) => void; 
   };
 
   const pickFile = (f: File) => {
-    const image = IMAGE.test(f.type);
-    if (f.size > (image ? LIMITS.chat_image : LIMITS.chat_file)) return toast({ tone: "error", title: t("validation.too_large") });
-    onSend({ kind: image ? "image" : "file", file: f, body: image ? text.trim() || undefined : undefined });
-    if (image) setText("");
+    // A photo takes the typed text as its caption.
+    const o = fileMessage(f, t, text.trim() || undefined);
+    if (!o) return;
+    onSend(o);
+    if (o.kind === "image") setText("");
   };
 
   const shareLocation = () => {
@@ -48,64 +75,94 @@ export function Composer({ onSend, onTyping }: { onSend: (o: Outgoing) => void; 
 
   if (rec.state !== "idle") {
     return (
-      <div className="flex items-center gap-3 border-t border-line px-3 py-3">
-        <button type="button" onClick={rec.cancel} aria-label={t("common.cancel")} className="grid size-10 place-items-center rounded-full text-ink-3 hover:bg-sunken hover:text-ink">
+      <div role="group" aria-label={t("chat.recording")} className="glass-chrome flex items-center gap-2 rounded-sheet p-1.5">
+        <IconButton type="button" label={t("common.cancel")} shape="pill" onClick={rec.cancel}>
           <X className="size-5" />
-        </button>
-        <span className="flex flex-1 items-center gap-2.5 text-sm text-ink" aria-live="polite">
-          <span className="size-2.5 animate-pulse rounded-full bg-anor" aria-hidden="true" />
-          {t("chat.recording")}
-          <span className="num text-ink-3">{Math.floor(rec.seconds / 60)}:{String(rec.seconds % 60).padStart(2, "0")}</span>
-        </span>
-        <button type="button" aria-label={t("chat.sendVoice")}
+        </IconButton>
+        <p className="flex min-w-0 flex-1 items-center gap-2.5 text-md text-ink">
+          <span className="size-2.5 shrink-0 animate-pulse rounded-full bg-anor" aria-hidden="true" />
+          <span className="truncate" aria-live="polite">{t("chat.recording")}</span>
+          <span role="timer" className="num text-ink-2">{Math.floor(rec.seconds / 60)}:{String(rec.seconds % 60).padStart(2, "0")}</span>
+        </p>
+        <button
+          type="button"
+          aria-label={t("chat.sendVoice")}
+          title={t("chat.sendVoice")}
           onClick={async () => { const r = await rec.stop(); if (r && r.durationMs > 700) onSend({ kind: "voice", ...r }); }}
-          className="grid size-10 place-items-center rounded-full bg-lapis text-on-lapis hover:bg-lapis-hover">
-          <Square className="size-4 fill-current" />
+          className="grid size-11 shrink-0 place-items-center rounded-full bg-lapis text-on-lapis shadow-2 transition-[background-color,scale] duration-150 ease-spring hover:bg-lapis-hover active:scale-95"
+        >
+          <SendHorizontal className="size-5" />
         </button>
       </div>
     );
   }
 
   return (
-    <form className="flex items-end gap-1 border-t border-line px-2 py-2.5 md:px-3" onSubmit={(e) => { e.preventDefault(); submit(); }}>
-      <input ref={fileRef} type="file" className="sr-only" tabIndex={-1} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) pickFile(f); }} />
-      <Tool label={t("chat.attach")} onClick={() => fileRef.current?.click()}><Paperclip className="size-5" /></Tool>
-      <Tool label={t("chat.shareLocation")} onClick={shareLocation} className="max-sm:hidden"><MapPin className="size-5" /></Tool>
-      <label className="flex min-h-11 flex-1 items-center rounded-[1.375rem] border border-line-strong bg-surface px-4 focus-within:border-lapis">
+    <form
+      className="glass-chrome flex items-end gap-1 rounded-sheet p-1.5 has-[textarea:focus-visible]:outline-2 has-[textarea:focus-visible]:outline-focus"
+      onSubmit={(e) => { e.preventDefault(); submit(); }}
+    >
+      <input ref={fileRef} type="file" className="sr-only" tabIndex={-1} aria-hidden="true" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) pickFile(f); }} />
+      <IconButton type="button" label={t("chat.attach")} shape="pill" onClick={() => fileRef.current?.click()}>
+        <Paperclip className="size-5" />
+      </IconButton>
+      <label className="min-w-0 flex-1">
         <span className="sr-only">{t("chat.placeholder")}</span>
         <textarea
           ref={area}
           rows={1}
           value={text}
           maxLength={4000}
+          enterKeyHint="send"
           placeholder={t("chat.placeholder")}
           onChange={(e) => {
             setText(e.target.value);
             if (Date.now() - lastTyping.current > 3000) { lastTyping.current = Date.now(); onTyping(); }
           }}
           onKeyDown={(e) => {
+            // Enter sends with a keyboard; on touch keyboards Enter is a new line and the button sends.
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && window.matchMedia("(pointer: fine)").matches) { e.preventDefault(); submit(); }
           }}
-          className="max-h-40 w-full resize-none bg-transparent py-2.5 text-[0.9375rem] leading-snug text-ink outline-none placeholder:text-ink-3 [field-sizing:content]"
+          onPaste={(e) => {
+            const f = e.clipboardData.files?.[0];
+            if (f) { e.preventDefault(); pickFile(f); }
+          }}
+          className="block max-h-40 min-h-11 w-full resize-none overflow-y-auto bg-transparent px-1 py-2.5 text-md leading-snug text-ink field-sizing-content placeholder:text-ink-2 focus-visible:outline-none"
         />
       </label>
-      {text.trim() ? (
-        <button type="submit" aria-label={t("chat.send")} className="grid size-11 shrink-0 place-items-center rounded-full bg-lapis text-on-lapis transition-transform hover:bg-lapis-hover active:scale-95">
+      {/* Location steps aside while typing, so the field grows to the right and the text never moves. */}
+      {!has && (
+        <IconButton type="button" label={t("chat.shareLocation")} shape="pill" onClick={shareLocation}>
+          <MapPin className="size-5" />
+        </IconButton>
+      )}
+      <div className="relative size-11 shrink-0">
+        <IconButton
+          type="button"
+          label={t("chat.recordVoice")}
+          shape="pill"
+          inert={has}
+          onClick={() => void rec.start()}
+          className={cn("absolute inset-0 transition-[opacity,scale] duration-200 ease-spring", has && "scale-50 opacity-0")}
+        >
+          <Mic className="size-5" />
+        </IconButton>
+        <button
+          type="submit"
+          aria-label={t("chat.send")}
+          title={t("chat.send")}
+          inert={!has}
+          // Keep the focus (and the phone keyboard) in the field when the send button is tapped.
+          onPointerDown={(e) => e.preventDefault()}
+          className={cn(
+            "absolute inset-0 grid place-items-center rounded-full bg-lapis text-on-lapis shadow-2 transition-[background-color,opacity,scale] duration-200 ease-spring hover:bg-lapis-hover active:scale-90",
+            !has && "scale-50 opacity-0",
+          )}
+        >
           <SendHorizontal className="size-5" />
         </button>
-      ) : (
-        <Tool label={t("chat.recordVoice")} onClick={() => void rec.start()}><Mic className="size-5" /></Tool>
-      )}
+      </div>
     </form>
-  );
-}
-
-function Tool({ label, onClick, children, className }: { label: string; onClick: () => void; children: React.ReactNode; className?: string }) {
-  return (
-    <button type="button" onClick={onClick} aria-label={label} title={label}
-      className={cn("grid size-11 shrink-0 place-items-center rounded-full text-ink-3 transition-colors hover:bg-sunken hover:text-ink", className)}>
-      {children}
-    </button>
   );
 }
 

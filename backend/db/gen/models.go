@@ -662,11 +662,12 @@ func AllExperienceLevelValues() []ExperienceLevel {
 type FilePurpose string
 
 const (
-	FilePurposeAvatar      FilePurpose = "avatar"
-	FilePurposeCompanyLogo FilePurpose = "company_logo"
-	FilePurposeChatImage   FilePurpose = "chat_image"
-	FilePurposeChatFile    FilePurpose = "chat_file"
-	FilePurposeChatVoice   FilePurpose = "chat_voice"
+	FilePurposeAvatar       FilePurpose = "avatar"
+	FilePurposeCompanyLogo  FilePurpose = "company_logo"
+	FilePurposeChatImage    FilePurpose = "chat_image"
+	FilePurposeChatFile     FilePurpose = "chat_file"
+	FilePurposeChatVoice    FilePurpose = "chat_voice"
+	FilePurposeCompanyCover FilePurpose = "company_cover"
 )
 
 func (e *FilePurpose) Scan(src interface{}) error {
@@ -710,7 +711,8 @@ func (e FilePurpose) Valid() bool {
 		FilePurposeCompanyLogo,
 		FilePurposeChatImage,
 		FilePurposeChatFile,
-		FilePurposeChatVoice:
+		FilePurposeChatVoice,
+		FilePurposeCompanyCover:
 		return true
 	}
 	return false
@@ -723,6 +725,7 @@ func AllFilePurposeValues() []FilePurpose {
 		FilePurposeChatImage,
 		FilePurposeChatFile,
 		FilePurposeChatVoice,
+		FilePurposeCompanyCover,
 	}
 }
 
@@ -1687,6 +1690,9 @@ type Company struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	OpenVacancies int32
+	LogoFileID    *uuid.UUID
+	CoverFileID   *uuid.UUID
+	CoverLqip     *string
 }
 
 type CompanyInvite struct {
@@ -1923,6 +1929,7 @@ type User struct {
 	ConsentVersion  *string
 	ConsentAt       *time.Time
 	HideOnline      bool
+	AvatarFileID    *uuid.UUID
 }
 
 type UserSession struct {

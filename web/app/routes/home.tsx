@@ -7,7 +7,7 @@ import { forwardHeaders, seo, SITE } from "~/shared/seo/seo";
 import { Categories } from "./home/Categories";
 import {
   lastDay, LATEST_WINDOW, pickCompanies, pickFresh, settle, TELEGRAM_BOT,
-  type CompanyTile, type Section, type VacancyCard,
+  type CompanyTile, type Count, type Section, type VacancyCard,
 } from "./home/data";
 import { Hero } from "./home/Hero";
 import { FinalCta, FreshVacancies, Regions, TopCompanies, TwoPaths } from "./home/Sections";
@@ -18,25 +18,22 @@ import { FinalCta, FreshVacancies, Regions, TopCompanies, TwoPaths } from "./hom
  */
 export async function loader({ request }: Route.LoaderArgs) {
   const headers = forwardHeaders(request);
-  const total = (query: { work_format?: string; with_salary?: boolean }) =>
-    settle<VacancyCard[]>(api.GET("/vacancies", { params: { query: { ...query, limit: 1 } }, headers }));
-  const [latest, remote, withSalary, companies, popular] = await Promise.all([
+  const [latest, withSalary, companies, popular] = await Promise.all([
     settle<VacancyCard[]>(api.GET("/vacancies", { params: { query: { sort: "newest", limit: LATEST_WINDOW } }, headers })),
-    total({ work_format: "remote" }),
-    total({ with_salary: true }),
+    // limit=1: only meta.total is read.
+    settle<VacancyCard[]>(api.GET("/vacancies", { params: { query: { with_salary: true, limit: 1 } }, headers })),
     settle<Parameters<typeof pickCompanies>[0]>(api.GET("/companies", { headers })),
     soft<string[]>(api.GET("/search/popular", { headers }) as never, []),
   ]);
-  const count = (s: typeof remote) => (s.ok && s.data.meta.total != null ? s.data.meta.total : null);
+  const count = (s: typeof withSalary | typeof companies): Count | null =>
+    s.ok && s.data.meta.total != null ? { n: s.data.meta.total, capped: Boolean(s.data.meta.total_capped) } : null;
   const fresh: Section<VacancyCard[]> = latest.ok ? { ok: true, data: pickFresh(latest.data.items) } : latest;
   const top: Section<CompanyTile[]> = companies.ok ? { ok: true, data: pickCompanies(companies.data.items) } : companies;
   return {
     popular,
     stats: {
-      total: latest.ok && latest.data.meta.total != null
-        ? { n: latest.data.meta.total, capped: Boolean(latest.data.meta.total_capped) }
-        : null,
-      remote: count(remote),
+      total: count(latest),
+      companies: count(companies),
       withSalary: count(withSalary),
       lastDay: latest.ok ? lastDay(latest.data.items, latest.data.meta, Date.now()) : null,
     },
@@ -59,14 +56,12 @@ export default function Home({ loaderData }: Route.ComponentProps) {
     <>
       <JsonLd />
       <Hero popular={loaderData.popular} stats={loaderData.stats} />
-      <div className="pb-10 md:pb-14">
-        <Categories />
-        <FreshVacancies data={loaderData.fresh} />
-        <TopCompanies data={loaderData.companies} />
-        <TwoPaths />
-        <Regions />
-        <FinalCta />
-      </div>
+      <Categories />
+      <FreshVacancies data={loaderData.fresh} />
+      <TopCompanies data={loaderData.companies} />
+      <TwoPaths />
+      <Regions />
+      <FinalCta />
     </>
   );
 }

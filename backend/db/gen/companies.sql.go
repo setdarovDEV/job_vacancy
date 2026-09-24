@@ -100,7 +100,7 @@ const createCompany = `-- name: CreateCompany :one
 INSERT INTO companies (owner_id, name, slug, industry_id, size, website, email, phone,
                        region_id, address, about, founded_year)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
+RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip
 `
 
 type CreateCompanyParams struct {
@@ -155,12 +155,15 @@ func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (C
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }
 
 const getCompanyByID = `-- name: GetCompanyByID :one
-SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies FROM companies WHERE id = $1
+SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip FROM companies WHERE id = $1
 `
 
 func (q *Queries) GetCompanyByID(ctx context.Context, id uuid.UUID) (Company, error) {
@@ -187,12 +190,15 @@ func (q *Queries) GetCompanyByID(ctx context.Context, id uuid.UUID) (Company, er
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }
 
 const getCompanyBySlug = `-- name: GetCompanyBySlug :one
-SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies FROM companies WHERE slug = $1
+SELECT id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip FROM companies WHERE slug = $1
 `
 
 func (q *Queries) GetCompanyBySlug(ctx context.Context, slug string) (Company, error) {
@@ -219,6 +225,9 @@ func (q *Queries) GetCompanyBySlug(ctx context.Context, slug string) (Company, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }
@@ -240,7 +249,7 @@ func (q *Queries) GetMemberRole(ctx context.Context, arg GetMemberRoleParams) (C
 }
 
 const listCompaniesDirectory = `-- name: ListCompaniesDirectory :many
-SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies
+SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies, c.logo_file_id, c.cover_file_id, c.cover_lqip
 FROM companies c
 WHERE c.status = 'active'
   AND ((c.verified_at IS NULL), -c.open_vacancies, c.name, c.id)
@@ -307,6 +316,9 @@ func (q *Queries) ListCompaniesDirectory(ctx context.Context, arg ListCompaniesD
 			&i.Company.CreatedAt,
 			&i.Company.UpdatedAt,
 			&i.Company.OpenVacancies,
+			&i.Company.LogoFileID,
+			&i.Company.CoverFileID,
+			&i.Company.CoverLqip,
 		); err != nil {
 			return nil, err
 		}
@@ -362,7 +374,7 @@ func (q *Queries) ListCompanyMembers(ctx context.Context, companyID uuid.UUID) (
 }
 
 const listUserCompanies = `-- name: ListUserCompanies :many
-SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies, m.role
+SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at, c.open_vacancies, c.logo_file_id, c.cover_file_id, c.cover_lqip, m.role
 FROM company_members m JOIN companies c ON c.id = m.company_id
 WHERE m.user_id = $1
 ORDER BY m.created_at
@@ -403,6 +415,9 @@ func (q *Queries) ListUserCompanies(ctx context.Context, userID uuid.UUID) ([]Li
 			&i.Company.CreatedAt,
 			&i.Company.UpdatedAt,
 			&i.Company.OpenVacancies,
+			&i.Company.LogoFileID,
+			&i.Company.CoverFileID,
+			&i.Company.CoverLqip,
 			&i.Role,
 		); err != nil {
 			return nil, err
@@ -433,7 +448,7 @@ func (q *Queries) RemoveCompanyMember(ctx context.Context, arg RemoveCompanyMemb
 }
 
 const setCompanyLogo = `-- name: SetCompanyLogo :one
-UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
+UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip
 `
 
 type SetCompanyLogoParams struct {
@@ -465,12 +480,15 @@ func (q *Queries) SetCompanyLogo(ctx context.Context, arg SetCompanyLogoParams) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }
 
 const setCompanyLogoURL = `-- name: SetCompanyLogoURL :one
-UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
+UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip
 `
 
 type SetCompanyLogoURLParams struct {
@@ -502,6 +520,9 @@ func (q *Queries) SetCompanyLogoURL(ctx context.Context, arg SetCompanyLogoURLPa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }
@@ -510,7 +531,7 @@ const setCompanyVerified = `-- name: SetCompanyVerified :one
 UPDATE companies
 SET verified_at = CASE WHEN $2::boolean THEN COALESCE(verified_at, now()) END
 WHERE id = $1
-RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
+RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip
 `
 
 type SetCompanyVerifiedParams struct {
@@ -542,6 +563,9 @@ func (q *Queries) SetCompanyVerified(ctx context.Context, arg SetCompanyVerified
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }
@@ -551,7 +575,7 @@ UPDATE companies
 SET name = $2, industry_id = $3, size = $4, website = $5, email = $6, phone = $7,
     region_id = $8, address = $9, about = $10, founded_year = $11
 WHERE id = $1
-RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies
+RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip
 `
 
 type UpdateCompanyParams struct {
@@ -604,6 +628,9 @@ func (q *Queries) UpdateCompany(ctx context.Context, arg UpdateCompanyParams) (C
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.OpenVacancies,
+		&i.LogoFileID,
+		&i.CoverFileID,
+		&i.CoverLqip,
 	)
 	return i, err
 }

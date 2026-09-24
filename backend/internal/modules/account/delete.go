@@ -33,6 +33,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/hash"
+	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/platform/postgres"
 )
@@ -71,9 +72,14 @@ type GoogleVerifier interface {
 	Verify(raw string) (*auth.GoogleIdentity, error)
 }
 
+// Wrong passwords on DELETE /me are limited like sign-ins, so a stolen access token can't
+// be used to guess the password.
+var deleteRule = ratelimit.Rule{Name: "account_delete", Limit: 10, Window: 15 * time.Minute}
+
 type Service struct {
 	Pool    *pgxpool.Pool
 	Q       *gen.Queries
+	Limiter *ratelimit.Limiter // nil: no limit
 	Revoked Revoker
 	Google  GoogleVerifier
 	Jobs    Inserter
@@ -95,6 +101,11 @@ func (s *Service) Delete(ctx context.Context, p reqctx.Principal, in DeleteInput
 	}
 	if u.Status != gen.UserStatusActive {
 		return auth.ErrAccountBlocked
+	}
+	if s.Limiter != nil {
+		if ok, retry, _ := s.Limiter.Allow(ctx, deleteRule, u.ID.String()); !ok {
+			return apperr.TooManyRequests(int(retry.Seconds()) + 1)
+		}
 	}
 	if err := s.reauth(ctx, u, p.SessionID, in); err != nil {
 		return err

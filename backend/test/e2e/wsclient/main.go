@@ -1,5 +1,6 @@
 // Command wsclient is a tiny WebSocket client for the e2e scripts: it appends every
-// received event as a JSON line to -out, and sends each new line appended to -in.
+// received event as a JSON line to -out, and sends each new line appended to -in. When the
+// server closes the socket it appends {"type":"_closed","code":<close code>,"reason":…}.
 //
 //	wsclient -url ws://localhost:8090/api/v1/ws?ticket=… -out events.jsonl -in frames.jsonl
 package main
@@ -7,6 +8,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -64,6 +67,11 @@ func main() {
 	for {
 		_, data, err := c.Read(ctx)
 		if err != nil {
+			var ce websocket.CloseError
+			if errors.As(err, &ce) {
+				b, _ := json.Marshal(map[string]any{"type": "_closed", "code": int(ce.Code), "reason": ce.Reason})
+				f.Write(append(b, '\n'))
+			}
 			return
 		}
 		f.Write(append(data, '\n'))
