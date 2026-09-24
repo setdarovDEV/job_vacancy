@@ -28,9 +28,33 @@ FROM deps AS build
 ARG VITE_SITE_URL=https://jobvacancy.uz
 ARG VITE_GOOGLE_CLIENT_ID=
 ARG VITE_TELEGRAM_BOT=jobvacancy_uz_bot
-ENV NODE_ENV=production VITE_SITE_URL=${VITE_SITE_URL} VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} VITE_TELEGRAM_BOT=${VITE_TELEGRAM_BOT}
+# Browser error reporting (OPS-05): https://<key>@<site>/errors/<project>; the release name
+# ties events to the uploaded source maps.
+ARG VITE_SENTRY_DSN=
+ARG VERSION=dev
+ENV NODE_ENV=production VITE_SITE_URL=${VITE_SITE_URL} VITE_GOOGLE_CLIENT_ID=${VITE_GOOGLE_CLIENT_ID} VITE_TELEGRAM_BOT=${VITE_TELEGRAM_BOT} \
+    VITE_SENTRY_DSN=${VITE_SENTRY_DSN} VITE_APP_VERSION=${VERSION}
 COPY . .
 RUN pnpm build
+# Source maps (TZ OPS-05): if the build emitted them (vite build.sourcemap "hidden"), upload
+# them to GlitchTip for this release and never ship them. The API token is a BuildKit secret
+# (id=glitchtip_token, never in a layer); without it, or without GLITCHTIP_URL, the maps are
+# only deleted. sentry-cli speaks GlitchTip's Sentry-compatible API.
+ARG GLITCHTIP_URL=
+ARG GLITCHTIP_ORG=jobvacancy
+ARG GLITCHTIP_PROJECT=web
+ARG SENTRY_CLI_VERSION=2.58.6
+RUN --mount=type=secret,id=glitchtip_token,required=false \
+    set -eu; \
+    if ls build/client/assets/*.map >/dev/null 2>&1; then \
+      if [ -s /run/secrets/glitchtip_token ] && [ -n "$GLITCHTIP_URL" ]; then \
+        export SENTRY_AUTH_TOKEN="$(cat /run/secrets/glitchtip_token)" SENTRY_URL="$GLITCHTIP_URL" \
+          SENTRY_ORG="$GLITCHTIP_ORG" SENTRY_PROJECT="$GLITCHTIP_PROJECT"; \
+        npx --yes "@sentry/cli@${SENTRY_CLI_VERSION}" sourcemaps inject build/client/assets; \
+        npx --yes "@sentry/cli@${SENTRY_CLI_VERSION}" sourcemaps upload --release "$VERSION" build/client/assets; \
+      fi; \
+      find build -name '*.map' -delete; \
+    fi
 
 FROM ${NODE_IMAGE}
 ARG VERSION=dev

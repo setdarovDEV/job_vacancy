@@ -154,7 +154,7 @@ func (q *Queries) MarkFileReady(ctx context.Context, arg MarkFileReadyParams) (F
 }
 
 const setUserAvatar = `-- name: SetUserAvatar :one
-UPDATE users SET avatar_url = $2 WHERE id = $1 RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+UPDATE users SET avatar_url = $2 WHERE id = $1 RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 type SetUserAvatarParams struct {
@@ -184,6 +184,10 @@ func (q *Queries) SetUserAvatar(ctx context.Context, arg SetUserAvatarParams) (U
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }

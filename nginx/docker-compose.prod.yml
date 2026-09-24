@@ -79,6 +79,11 @@ x-backend-env: &backend-env
   LOG_LEVEL: ${LOG_LEVEL:-info}
   LOG_FORMAT: json
   LOG_REDACT: auto
+  # Error tracking (TZ OPS-05): GlitchTip in monitoring/docker-compose.monitoring.yml, reached
+  # over the private networks (http://<key>@glitchtip:8000/<project id>). Empty = off.
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_ENVIRONMENT: ${APP_ENV:-production}
+  SENTRY_RELEASE: ${IMAGE_TAG:-dev}
 
 x-api: &api
   <<: *hardening
@@ -124,6 +129,8 @@ x-web: &web
       VITE_SITE_URL: https://${DOMAIN}
       VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
       VITE_TELEGRAM_BOT: ${TELEGRAM_BOT_USERNAME:-jobvacancy_uz_bot}
+      # Browser error reports (OPS-05): https://<key>@<domain>/errors/<project id>, same origin.
+      VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
   environment:
     NODE_ENV: production
     HOST: 0.0.0.0
@@ -281,6 +288,9 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD}
       MINIO_BROWSER_REDIRECT: "false"
       MINIO_UPDATE: "off"
+      # /minio/v2/metrics/cluster without a token: MinIO is only on the private networks and
+      # nginx never routes that path (Prometheus scrapes it, OPS-04).
+      MINIO_PROMETHEUS_AUTH_TYPE: public
     ports:
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9201}:9001"   # console via SSH tunnel only
     volumes:

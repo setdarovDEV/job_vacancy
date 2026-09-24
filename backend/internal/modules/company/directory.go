@@ -116,9 +116,9 @@ func (d *Directory) List(ctx context.Context, q *string, after DirKey) (DirPage,
 	return out, nil
 }
 
-// Anchors returns the page anchors of a listing: one HGETALL-free Redis round trip on a
-// hit (only the requested page's anchor and the total are read), one index pass on a miss.
-// Redis errors fall back to computing the anchors.
+// Anchors returns the page anchors of a listing. A hit is one HMGET that reads only the
+// total and the requested page's anchor; a miss is one ordered pass over the index,
+// shared by concurrent requests. When Redis fails the anchors are computed and not stored.
 func (d *Directory) Anchors(ctx context.Context, q *string, page int64) (Anchors, error) {
 	if d.RDB == nil {
 		return d.loadAnchors(ctx, q)
@@ -139,6 +139,7 @@ func (d *Directory) Anchors(ctx context.Context, q *string, page int64) (Anchors
 	} else {
 		anchorLookups.WithLabelValues("miss").Inc()
 	}
+	cacheable := err == nil || errors.Is(err, redis.Nil)
 	// Share one build per instance; it runs detached from the caller (TZ BE-01) so a
 	// client that goes away doesn't fail the others waiting for it.
 	ch := d.group.DoChan(key, func() (any, error) {
@@ -148,7 +149,9 @@ func (d *Directory) Anchors(ctx context.Context, q *string, page int64) (Anchors
 		if err != nil {
 			return a, err
 		}
-		d.store(lctx, key, a)
+		if cacheable {
+			d.store(lctx, key, a)
+		}
 		return a, nil
 	})
 	select {

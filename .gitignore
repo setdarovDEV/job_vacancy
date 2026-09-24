@@ -40,3 +40,6 @@ nginx/ssl/live/
 nginx/ssl/archive/
 nginx/backups/
 nginx/.deploy/
+
+# e2e stack reports (e2e/a11y.mjs, web/test screenshots)
+e2e/reports/

@@ -28,14 +28,19 @@ jobs:
       DATABASE_URL: postgres://jobvacancy:jobvacancy@localhost:5432/jobvacancy?sslmode=disable
       JWT_SECRET: ci-secret-0123456789abcdef0123456789abcdef
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
-      - name: sqlc code is up to date
+      # The same sqlc as the generated code (db/gen headers), from the release tarball pinned
+      # by checksum (TZ SEC-08: no :latest images in CI).
+      - name: sqlc code is up to date (sqlc v1.31.1)
         run: |
-          docker run --rm -v "$PWD":/src -w /src sqlc/sqlc:latest diff
+          curl -fsSL -o /tmp/sqlc.tgz https://github.com/sqlc-dev/sqlc/releases/download/v1.31.1/sqlc_1.31.1_linux_amd64.tar.gz
+          echo "497ae4fcdfa64c5b0c311ffe4c2bd991e43991e82e5367792ed78bc2dca27354  /tmp/sqlc.tgz" | sha256sum -c -
+          tar -xzf /tmp/sqlc.tgz -C /tmp sqlc
+          /tmp/sqlc diff
       - run: go vet ./...
       - run: go test -race ./...
       - name: migrations apply cleanly (up, down, up)

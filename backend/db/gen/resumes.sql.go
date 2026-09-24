@@ -7,97 +7,9 @@ package gen
 
 import (
 	"context"
-	"time"
 
 	"github.com/google/uuid"
 )
-
-const addResumeEducation = `-- name: AddResumeEducation :exec
-INSERT INTO resume_educations (resume_id, institution, level, field, start_year, end_year, sort_order)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-`
-
-type AddResumeEducationParams struct {
-	ResumeID    uuid.UUID
-	Institution string
-	Level       EducationLevel
-	Field       string
-	StartYear   *int16
-	EndYear     *int16
-	SortOrder   int32
-}
-
-func (q *Queries) AddResumeEducation(ctx context.Context, arg AddResumeEducationParams) error {
-	_, err := q.db.Exec(ctx, addResumeEducation,
-		arg.ResumeID,
-		arg.Institution,
-		arg.Level,
-		arg.Field,
-		arg.StartYear,
-		arg.EndYear,
-		arg.SortOrder,
-	)
-	return err
-}
-
-const addResumeExperience = `-- name: AddResumeExperience :exec
-INSERT INTO resume_experiences (resume_id, company, position, start_date, end_date, description, sort_order)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-`
-
-type AddResumeExperienceParams struct {
-	ResumeID    uuid.UUID
-	Company     string
-	Position    string
-	StartDate   time.Time
-	EndDate     *time.Time
-	Description string
-	SortOrder   int32
-}
-
-func (q *Queries) AddResumeExperience(ctx context.Context, arg AddResumeExperienceParams) error {
-	_, err := q.db.Exec(ctx, addResumeExperience,
-		arg.ResumeID,
-		arg.Company,
-		arg.Position,
-		arg.StartDate,
-		arg.EndDate,
-		arg.Description,
-		arg.SortOrder,
-	)
-	return err
-}
-
-const addResumeLanguage = `-- name: AddResumeLanguage :exec
-INSERT INTO resume_languages (resume_id, language, level) VALUES ($1, $2, $3)
-`
-
-type AddResumeLanguageParams struct {
-	ResumeID uuid.UUID
-	Language string
-	Level    LanguageLevel
-}
-
-func (q *Queries) AddResumeLanguage(ctx context.Context, arg AddResumeLanguageParams) error {
-	_, err := q.db.Exec(ctx, addResumeLanguage, arg.ResumeID, arg.Language, arg.Level)
-	return err
-}
-
-const addResumeSkills = `-- name: AddResumeSkills :exec
-INSERT INTO resume_skills (resume_id, skill_id)
-SELECT $1, unnest($2::int[])
-ON CONFLICT DO NOTHING
-`
-
-type AddResumeSkillsParams struct {
-	ResumeID uuid.UUID
-	SkillIds []int32
-}
-
-func (q *Queries) AddResumeSkills(ctx context.Context, arg AddResumeSkillsParams) error {
-	_, err := q.db.Exec(ctx, addResumeSkills, arg.ResumeID, arg.SkillIds)
-	return err
-}
 
 const countUserResumes = `-- name: CountUserResumes :one
 SELECT count(*) FROM resumes WHERE user_id = $1
@@ -183,42 +95,6 @@ func (q *Queries) DeleteResume(ctx context.Context, arg DeleteResumeParams) (int
 		return 0, err
 	}
 	return result.RowsAffected(), nil
-}
-
-const deleteResumeEducations = `-- name: DeleteResumeEducations :exec
-DELETE FROM resume_educations WHERE resume_id = $1
-`
-
-func (q *Queries) DeleteResumeEducations(ctx context.Context, resumeID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteResumeEducations, resumeID)
-	return err
-}
-
-const deleteResumeExperiences = `-- name: DeleteResumeExperiences :exec
-DELETE FROM resume_experiences WHERE resume_id = $1
-`
-
-func (q *Queries) DeleteResumeExperiences(ctx context.Context, resumeID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteResumeExperiences, resumeID)
-	return err
-}
-
-const deleteResumeLanguages = `-- name: DeleteResumeLanguages :exec
-DELETE FROM resume_languages WHERE resume_id = $1
-`
-
-func (q *Queries) DeleteResumeLanguages(ctx context.Context, resumeID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteResumeLanguages, resumeID)
-	return err
-}
-
-const deleteResumeSkills = `-- name: DeleteResumeSkills :exec
-DELETE FROM resume_skills WHERE resume_id = $1
-`
-
-func (q *Queries) DeleteResumeSkills(ctx context.Context, resumeID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteResumeSkills, resumeID)
-	return err
 }
 
 const getResume = `-- name: GetResume :one

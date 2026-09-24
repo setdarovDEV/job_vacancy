@@ -29,6 +29,7 @@ type Config struct {
 	Log      Log
 	Worker   Worker
 	Search   Search
+	Product  Product
 }
 
 type HTTP struct {
@@ -152,6 +153,16 @@ type Search struct {
 	// client IPs ran it within a week (TZ SEC-07). Local development sends everything from
 	// 127.0.0.1, so .env may lower it to 1 there.
 	PopularMinIPs int `env:"SEARCH_POPULAR_MIN_IPS" envDefault:"3"`
+}
+
+// Product rules of the MVP features.
+type Product struct {
+	// Version of the privacy policy / terms users agree to at sign-up (TZ FN-08). Bump it
+	// when the text changes: accounts with an older consent get consent_outdated=true.
+	ConsentVersion string `env:"LEGAL_CONSENT_VERSION" envDefault:"2026-09-24"`
+	// Open reports from different users that send a published vacancy back to moderation
+	// (TZ FN-02).
+	ReportThreshold int `env:"REPORTS_AUTO_MODERATION" envDefault:"3"`
 }
 
 // Load reads .env (if present, never in production) and then the process environment.

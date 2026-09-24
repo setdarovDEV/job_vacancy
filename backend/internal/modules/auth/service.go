@@ -53,7 +53,36 @@ type Service struct {
 	Google     *GoogleVerifier // nil when Google sign-in is disabled
 	Limiter    *ratelimit.Limiter
 	RefreshTTL time.Duration
-	Log        *slog.Logger
+	// ConsentVersion is the current privacy policy version users agree to (TZ FN-08).
+	ConsentVersion string
+	Log            *slog.Logger
+}
+
+// Consent is the sign-up agreement to the processing of personal data (TZ FN-08).
+type Consent struct {
+	Given   bool
+	Version string // empty: the current version
+}
+
+// consentVersion checks c and returns the version to store.
+func (s *Service) consentVersion(c Consent) (string, error) {
+	if !c.Given {
+		return "", ErrConsentRequired
+	}
+	if c.Version != "" && c.Version != s.ConsentVersion {
+		return "", ErrConsentOutdated
+	}
+	return s.ConsentVersion, nil
+}
+
+// AcceptConsent records that the user agreed to the current (or the given, which must be
+// current) version, e.g. after the policy changed.
+func (s *Service) AcceptConsent(ctx context.Context, userID uuid.UUID, version string) (gen.User, error) {
+	v, err := s.consentVersion(Consent{Given: true, Version: version})
+	if err != nil {
+		return gen.User{}, err
+	}
+	return s.Q.SetUserConsent(ctx, gen.SetUserConsentParams{ID: userID, ConsentVersion: v})
 }
 
 // ClientMeta describes the device a session is created from.
@@ -84,16 +113,22 @@ type RegisterInput struct {
 	FullName string
 	Role     gen.UserRole
 	Locale   gen.AppLocale
+	Consent  Consent
 }
 
 func (s *Service) Register(ctx context.Context, in RegisterInput, meta ClientMeta) (*Result, error) {
+	consent, err := s.consentVersion(in.Consent)
+	if err != nil {
+		return nil, err
+	}
 	email := normalizeEmail(in.Email)
-	pw, err := hash.Password(in.Password)
+	pw, err := hash.PasswordCtx(ctx, in.Password)
 	if err != nil {
 		return nil, err
 	}
 	u, err := s.Q.CreateUser(ctx, gen.CreateUserParams{
 		Email: &email, PasswordHash: &pw, FullName: in.FullName, Role: in.Role, Locale: in.Locale,
+		ConsentVersion: consent,
 	})
 	if isUniqueViolation(err) {
 		return nil, ErrEmailTaken
@@ -128,10 +163,10 @@ func (s *Service) Login(ctx context.Context, email, password string, meta Client
 		return nil, err
 	}
 	if err != nil || u.PasswordHash == nil {
-		_, _ = hash.VerifyPassword(password, dummyHash)
+		_, _ = hash.VerifyPasswordCtx(ctx, password, dummyHash)
 		return nil, ErrInvalidCredentials
 	}
-	ok, err := hash.VerifyPassword(password, *u.PasswordHash)
+	ok, err := hash.VerifyPasswordCtx(ctx, password, *u.PasswordHash)
 	if err != nil {
 		return nil, err
 	}
@@ -144,9 +179,10 @@ func (s *Service) Login(ctx context.Context, email, password string, meta Client
 	return s.startSession(ctx, u, meta)
 }
 
-// GoogleLogin signs in with a Google ID token. New users are created with the given role;
-// an existing e-mail account is linked, since Google has already proven the address.
-func (s *Service) GoogleLogin(ctx context.Context, idToken string, role gen.UserRole, locale gen.AppLocale, meta ClientMeta) (*Result, error) {
+// GoogleLogin signs in with a Google ID token. New users are created with the given role
+// (and need consent, TZ FN-08); an existing e-mail account is linked, since Google has
+// already proven the address.
+func (s *Service) GoogleLogin(ctx context.Context, idToken string, role gen.UserRole, locale gen.AppLocale, consent Consent, meta ClientMeta) (*Result, error) {
 	if s.Google == nil {
 		return nil, ErrGoogleDisabled
 	}
@@ -155,15 +191,15 @@ func (s *Service) GoogleLogin(ctx context.Context, idToken string, role gen.User
 		s.Log.InfoContext(ctx, "google token rejected", "err", err)
 		return nil, ErrGoogleToken
 	}
-	res, err := s.googleSignIn(ctx, id, role, locale, meta)
+	res, err := s.googleSignIn(ctx, id, role, locale, consent, meta)
 	if isUniqueViolation(err) {
 		// Lost a race with a parallel first sign-in; the account exists now.
-		res, err = s.googleSignIn(ctx, id, role, locale, meta)
+		res, err = s.googleSignIn(ctx, id, role, locale, consent, meta)
 	}
 	return res, err
 }
 
-func (s *Service) googleSignIn(ctx context.Context, id *GoogleIdentity, role gen.UserRole, locale gen.AppLocale, meta ClientMeta) (*Result, error) {
+func (s *Service) googleSignIn(ctx context.Context, id *GoogleIdentity, role gen.UserRole, locale gen.AppLocale, consent Consent, meta ClientMeta) (*Result, error) {
 	u, err := s.Q.GetUserByGoogleSub(ctx, &id.Subject)
 	switch {
 	case err == nil:
@@ -208,12 +244,17 @@ func (s *Service) googleSignIn(ctx context.Context, id *GoogleIdentity, role gen
 		return nil, err
 	}
 
+	version, err := s.consentVersion(consent)
+	if err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(id.Name)
 	if name == "" {
 		name, _, _ = strings.Cut(email, "@")
 	}
 	u, err = s.Q.CreateGoogleUser(ctx, gen.CreateGoogleUserParams{
 		Email: &email, GoogleSub: &id.Subject, FullName: name, AvatarUrl: picture, Role: role, Locale: locale,
+		ConsentVersion: version,
 	})
 	if err != nil {
 		return nil, err
@@ -430,7 +471,7 @@ func (s *Service) ChangePassword(ctx context.Context, userID, currentSession uui
 		return err
 	}
 	if u.PasswordHash != nil { // Google-only accounts may set a first password directly
-		ok, err := hash.VerifyPassword(current, *u.PasswordHash)
+		ok, err := hash.VerifyPasswordCtx(ctx, current, *u.PasswordHash)
 		if err != nil {
 			return err
 		}
@@ -438,25 +479,23 @@ func (s *Service) ChangePassword(ctx context.Context, userID, currentSession uui
 			return ErrWrongPassword
 		}
 	}
-	if err := s.setPassword(ctx, userID, next); err != nil {
-		return err
-	}
-	sessions, err := s.Q.ListActiveSessions(ctx, userID)
+	h, err := hash.PasswordCtx(ctx, next)
 	if err != nil {
 		return err
 	}
-	for _, sess := range sessions {
-		if sess.ID != currentSession {
-			if err := s.revoke(ctx, sess.ID); err != nil {
-				return err
-			}
-		}
+	// One statement sets the password and revokes the other sessions (TZ BE-12), then one
+	// pipelined Redis call cuts their access tokens off.
+	ids, err := s.Q.ChangePasswordRevokeOthers(ctx, gen.ChangePasswordRevokeOthersParams{
+		PasswordHash: &h, UserID: userID, KeepSession: currentSession,
+	})
+	if err != nil {
+		return err
 	}
-	return nil
+	return s.Revoked.Revoke(ctx, ids...)
 }
 
 func (s *Service) setPassword(ctx context.Context, userID uuid.UUID, plain string) error {
-	h, err := hash.Password(plain)
+	h, err := hash.PasswordCtx(ctx, plain)
 	if err != nil {
 		return err
 	}

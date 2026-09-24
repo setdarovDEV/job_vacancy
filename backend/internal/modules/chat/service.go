@@ -14,9 +14,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/hashicorp/golang-lru/v2/expirable"
 	"github.com/redis/go-redis/v9"
 
 	"jobvacancy.uz/backend/db/gen"

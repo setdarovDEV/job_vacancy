@@ -136,6 +136,7 @@ if [ -w /etc/cron.d ] && ! cmp -s <(sed "s#@ROOT@#$ROOT#g; s#@ENV@#$JV_ENV#g" "$
   sed "s#@ROOT@#$ROOT#g; s#@ENV@#$JV_ENV#g" "$NGX/cron/jobvacancy.cron" >"/etc/cron.d/jobvacancy-$JV_ENV"
   log "installed /etc/cron.d/jobvacancy-$JV_ENV"
 fi
+"$NGX/scripts/monitoring.sh" "$JV_ENV" sync || warn "monitoring sync failed (the app deploy itself is done)"
 docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
 if [ "$probe_failed" = 1 ] && [ "${DEPLOY_PROBE_STRICT:-0}" = 1 ]; then
   die "$JV_ENV runs $TAG, but requests failed during the roll (see above): investigate before the next deploy"

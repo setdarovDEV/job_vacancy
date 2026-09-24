@@ -1,0 +1,238 @@
+# Districts (tumanlar) and cities of regional subordination of Uzbekistan: level III of the
+# SOATO / MHOBT classifier. Loaded by `ctl import-districts` (TZ FN-06), idempotent (upsert by slug).
+#
+# Source: State Statistics Committee of the Republic of Uzbekistan, departmental classifier
+#   "Ma'muriy-hududiy tuzilmalarni (obyektlarni) belgilash tizimi (MHOBT/SOATO)",
+#   approved by order No. 59 of 2020-07-22, file revision soato-20_04_2022.xlsx:
+#   https://stat.uz/images/soato-20_04_2022.xlsx  (listed at https://stat.uz/ru/2020-05-11-05-05-43/statisticheskie-klassifikatory)
+#   downloaded 2026-09-24, sha256 9d1b0c84fdef45f5b49f1c312037d64c7ec85a0f4bbfdc979115b1f4c6cafcc1
+#
+# Columns: soato = official 7-digit code; region = slug of the parent region seeded by migration
+# 00003 (1703 andijan, 1706 bukhara, 1708 jizzakh, 1710 kashkadarya, 1712 navoi, 1714 namangan,
+# 1718 samarkand, 1722 surkhandarya, 1724 syrdarya, 1726 tashkent-city, 1727 tashkent,
+# 1730 fergana, 1733 khorezm, 1735 karakalpakstan); kind = district (17RR2xx) or city (17RR4xx).
+#
+# name_uz, name_uz_cyrl, name_ru are the official names, with these edits only:
+#   - the o‘/g‘ apostrophe is written as ASCII ' like the rest of the catalog;
+#   - Latin look-alike letters inside Cyrillic words (typos in the source: "Улугноpский",
+#     "Мингбулакский pайон", "Заpафшан", "Шиpин", "Янгиеp", "Чиpчик", "Маpгилан",
+#     "Жондоpский") are replaced by the Cyrillic letters;
+#   - cities get "shahri" / "шаҳри" / "г." added so they are told apart from the district of the
+#     same name (e.g. "Andijon shahri" and "Andijon tumani").
+# name_en is NOT official (the classifier has no English column): it is the Uzbek Latin name
+# with o'/g' marks dropped and x written kh, plus "District"/"City"; established English
+# spellings are used for well-known cities (Bukhara, Samarkand, Kokand, …) and the 12 Tashkent
+# city districts keep the names seeded in 00003 (Chilanzar, Sergeli, …).
+#
+# HUMAN VERIFICATION NEEDED before launch: (1) the English names; (2) changes made after the
+# 2022-04-20 revision are not in this file (e.g. public datasets list Baxt as a city of
+# Sirdaryo region, code 1724414); compare with the current revision on stat.uz / nrm.uz.
+# Tashkent city: 12 districts; all regions: 206 units
+# (175 districts, 31 cities).
+soato,region,kind,slug,name_uz,name_uz_cyrl,name_ru,name_en,sort_order
+1703401,andijan,city,andijan-andijon-city,Andijon shahri,Андижон шаҳри,г. Андижан,Andijan City,10
+1703408,andijan,city,andijan-khonobod-city,Xonobod shahri,Хонобод шаҳри,г. Ханабад,Khanabad City,20
+1703203,andijan,district,andijan-andijon,Andijon tumani,Андижон тумани,Андижанский район,Andijan District,30
+1703224,andijan,district,andijan-asaka,Asaka tumani,Асака тумани,Асакинский район,Asaka District,40
+1703206,andijan,district,andijan-baliqchi,Baliqchi tumani,Балиқчи тумани,Балыкчинский район,Baliqchi District,50
+1703209,andijan,district,andijan-boston,Bo'ston tumani,Бўстон тумани,Бустонский район,Boston District,60
+1703210,andijan,district,andijan-buloqboshi,Buloqboshi tumani,Булоқбоши тумани,Булакбашинский район,Buloqboshi District,70
+1703214,andijan,district,andijan-izboskan,Izboskan tumani,Избоскан тумани,Избасканский район,Izboskan District,80
+1703211,andijan,district,andijan-jalaquduq,Jalaquduq tumani,Жалақудуқ тумани,Жалакудукский район,Jalaquduq District,90
+1703227,andijan,district,andijan-markhamat,Marxamat tumani,Мархамат тумани,Мархаматский район,Markhamat District,100
+1703202,andijan,district,andijan-oltinkol,Oltinko'l tumani,Олтинкўл тумани,Алтынкульский район,Oltinkol District,110
+1703232,andijan,district,andijan-pakhtaobod,Paxtaobod tumani,Пахтаобод тумани,Пахтаабадский район,Pakhtaobod District,120
+1703220,andijan,district,andijan-qorgontepa,Qo'rg'ontepa tumani,Қўрғонтепа тумани,Кургантепинский район,Qorgontepa District,130
+1703230,andijan,district,andijan-shakhrikhon,Shaxrixon tumani,Шахрихон тумани,Шахриханский район,Shakhrikhon District,140
+1703217,andijan,district,andijan-ulugnor,Ulug'nor tumani,Улуғнор тумани,Улугнорский район,Ulugnor District,150
+1703236,andijan,district,andijan-khojaobod,Xo'jaobod tumani,Хўжаобод тумани,Ходжаабадский район,Khojaobod District,160
+1706401,bukhara,city,bukhara-bukhoro-city,Buxoro shahri,Бухоро шаҳри,г. Бухара,Bukhara City,10
+1706403,bukhara,city,bukhara-kogon-city,Kogon shahri,Когон шаҳри,г. Каган,Kagan City,20
+1706207,bukhara,district,bukhara-bukhoro,Buxoro tumani,Бухоро тумани,Бухарский район,Bukhara District,30
+1706215,bukhara,district,bukhara-gijduvon,G'ijduvon tumani,Ғиждувон тумани,Гиждуванский район,Gijduvon District,40
+1706246,bukhara,district,bukhara-jondor,Jondor tumani,Жондор тумани,Жондорский район,Jondor District,50
+1706219,bukhara,district,bukhara-kogon,Kogon tumani,Когон тумани,Каганский район,Kagan District,60
+1706204,bukhara,district,bukhara-olot,Olot tumani,Олот тумани,Алатский район,Olot District,70
+1706240,bukhara,district,bukhara-peshku,Peshku tumani,Пешку тумани,Пешкунский район,Peshku District,80
+1706230,bukhara,district,bukhara-qorakol,Qorako'l tumani,Қоракўл тумани,Каракульский район,Qorakol District,90
+1706232,bukhara,district,bukhara-qorovulbozor,Qorovulbozor tumani,Қоровулбозор тумани,Караулбазарский район,Qorovulbozor District,100
+1706242,bukhara,district,bukhara-romitan,Romitan tumani,Ромитан тумани,Ромитанский район,Romitan District,110
+1706258,bukhara,district,bukhara-shofirkon,Shofirkon tumani,Шофиркон тумани,Шафирканский район,Shofirkon District,120
+1706212,bukhara,district,bukhara-vobkent,Vobkent tumani,Вобкент тумани,Вабкентский район,Vobkent District,130
+1730401,fergana,city,fergana-fargona-city,Farg'ona shahri,Фарғона шаҳри,г. Фергана,Fergana City,10
+1730405,fergana,city,fergana-qoqon-city,Qo'qon shahri,Қўқон шаҳри,г. Коканд,Kokand City,20
+1730408,fergana,city,fergana-quvasoy-city,Quvasoy shahri,Қувасой шаҳри,г. Кувасай,Kuvasay City,30
+1730412,fergana,city,fergana-margilon-city,Marg'ilon shahri,Марғилон шаҳри,г. Маргилан,Margilan City,40
+1730215,fergana,district,fergana-beshariq,Beshariq tumani,Бешариқ тумани,Бешарыкский район,Beshariq District,50
+1730209,fergana,district,fergana-bogdod,Bog'dod tumani,Боғдод тумани,Багдадский район,Bogdod District,60
+1730212,fergana,district,fergana-buvayda,Buvayda tumani,Бувайда тумани,Бувайдинский район,Buvayda District,70
+1730236,fergana,district,fergana-dangara,Dang'ara tumani,Данғара тумани,Дангаринский район,Dangara District,80
+1730233,fergana,district,fergana-fargona,Farg'ona tumani,Фарғона тумани,Ферганский район,Fergana District,90
+1730238,fergana,district,fergana-furqat,Furqat tumani,Фурқат тумани,Фуркатский район,Furqat District,100
+1730203,fergana,district,fergana-oltiariq,Oltiariq tumani,Олтиариқ тумани,Алтыарыкский район,Oltiariq District,110
+1730230,fergana,district,fergana-ozbekiston,O'zbekiston tumani,Ўзбекистон тумани,Узбекистанский район,Ozbekiston District,120
+1730206,fergana,district,fergana-qoshtepa,Qo'shtepa tumani,Қўштепа тумани,Куштепинский район,Qoshtepa District,130
+1730218,fergana,district,fergana-quva,Quva tumani,Қува тумани,Кувинский район,Quva District,140
+1730224,fergana,district,fergana-rishton,Rishton tumani,Риштон тумани,Риштанский район,Rishton District,150
+1730226,fergana,district,fergana-sokh,So'x tumani,Сўх тумани,Сохский район,Sokh District,160
+1730227,fergana,district,fergana-toshloq,Toshloq tumani,Тошлоқ тумани,Ташлакский район,Toshloq District,170
+1730221,fergana,district,fergana-uchkoprik,Uchko'prik tumani,Учкўприк тумани,Учкуприкский район,Uchkoprik District,180
+1730242,fergana,district,fergana-yozyovon,Yozyovon tumani,Ёзёвон тумани,Язъяванский район,Yozyovon District,190
+1708401,jizzakh,city,jizzakh-jizzakh-city,Jizzax shahri,Жиззах шаҳри,г. Джизак,Jizzakh City,10
+1708201,jizzakh,district,jizzakh-arnasoy,Arnasoy tumani,Арнасой тумани,Арнасайский район,Arnasoy District,20
+1708204,jizzakh,district,jizzakh-bakhmal,Baxmal tumani,Бахмал тумани,Бахмальский район,Bakhmal District,30
+1708215,jizzakh,district,jizzakh-dostlik,Do'stlik tumani,Дўстлик тумани,Дустликский район,Dostlik District,40
+1708235,jizzakh,district,jizzakh-forish,Forish tumani,Фориш тумани,Фаришский район,Forish District,50
+1708209,jizzakh,district,jizzakh-gallaorol,G'allaorol tumani,Ғаллаорол тумани,Галляаральский район,Gallaorol District,60
+1708223,jizzakh,district,jizzakh-mirzachol,Mirzacho'l tumani,Мирзачўл тумани,Мирзачульский район,Mirzachol District,70
+1708228,jizzakh,district,jizzakh-pakhtakor,Paxtakor tumani,Пахтакор тумани,Пахтакорский район,Pakhtakor District,80
+1708212,jizzakh,district,jizzakh-sharof-rashidov,Sharof Rashidov tumani,Шароф Рашидов тумани,Шароф Рашидовский район,Sharof Rashidov District,90
+1708237,jizzakh,district,jizzakh-yangiobod,Yangiobod tumani,Янгиобод тумани,Янгиободский район,Yangiobod District,100
+1708225,jizzakh,district,jizzakh-zafarobod,Zafarobod tumani,Зафаробод тумани,Зафарабадский район,Zafarobod District,110
+1708220,jizzakh,district,jizzakh-zarbdor,Zarbdor tumani,Зарбдор тумани,Зарбдарский район,Zarbdor District,120
+1708218,jizzakh,district,jizzakh-zomin,Zomin tumani,Зомин тумани,Зааминский район,Zomin District,130
+1735401,karakalpakstan,city,karakalpakstan-nukus-city,Nukus shahri,Нукус шаҳри,г. Нукус,Nukus City,10
+1735204,karakalpakstan,district,karakalpakstan-amudaryo,Amudaryo tumani,Амударё тумани,Амударьинский район,Amudaryo District,20
+1735207,karakalpakstan,district,karakalpakstan-beruniy,Beruniy tumani,Беруний тумани,Берунийский район,Beruniy District,30
+1735209,karakalpakstan,district,karakalpakstan-bozatov,Bo'zatov tumani,Бўзатов тумани,Бозатауский район,Bozatov District,40
+1735240,karakalpakstan,district,karakalpakstan-chimboy,Chimboy tumani,Чимбой тумани,Чимбайский район,Chimboy District,50
+1735250,karakalpakstan,district,karakalpakstan-ellikkala,Ellikkala tumani,Элликкала тумани,Элликкалинский район,Ellikkala District,60
+1735212,karakalpakstan,district,karakalpakstan-kegeyli,Kegeyli tumani,Кегейли тумани,Кегейлийский район,Kegeyli District,70
+1735222,karakalpakstan,district,karakalpakstan-moynoq,Mo'ynoq tumani,Мўйноқ тумани,Муйнакский район,Moynoq District,80
+1735225,karakalpakstan,district,karakalpakstan-nukus,Nukus tumani,Нукус тумани,Нукусский район,Nukus District,90
+1735218,karakalpakstan,district,karakalpakstan-qanlikol,Qanliko'l tumani,Қанликўл тумани,Канлыкульский район,Qanlikol District,100
+1735215,karakalpakstan,district,karakalpakstan-qongirot,Qo'ng'irot tumani,Қўнғирот тумани,Кунградский район,Qongirot District,110
+1735211,karakalpakstan,district,karakalpakstan-qoraozak,Qorao'zak tumani,Қораўзак тумани,Караузякский район,Qoraozak District,120
+1735243,karakalpakstan,district,karakalpakstan-shumanay,Shumanay tumani,Шуманай тумани,Шуманайский район,Shumanay District,130
+1735228,karakalpakstan,district,karakalpakstan-takhiatosh,Taxiatosh tumani,Тахиатош тумани,Тахиаташский район,Takhiatosh District,140
+1735230,karakalpakstan,district,karakalpakstan-takhtakopir,Taxtako'pir tumani,Тахтакўпир тумани,Тахтакупырский район,Takhtakopir District,150
+1735233,karakalpakstan,district,karakalpakstan-tortkol,To'rtko'l tumani,Тўрткўл тумани,Турткульский район,Tortkol District,160
+1735236,karakalpakstan,district,karakalpakstan-khojayli,Xo'jayli tumani,Хўжайли тумани,Ходжейлийский район,Khojayli District,170
+1710401,kashkadarya,city,kashkadarya-qarshi-city,Qarshi shahri,Қарши шаҳри,г. Карши,Karshi City,10
+1710405,kashkadarya,city,kashkadarya-shahrisabz-city,Shahrisabz shahri,Шаҳрисабз шаҳри,г. Шахрисабз,Shahrisabz City,20
+1710242,kashkadarya,district,kashkadarya-chiroqchi,Chiroqchi tumani,Чироқчи тумани,Чиракчинский район,Chiroqchi District,30
+1710212,kashkadarya,district,kashkadarya-dehqonobod,Dehqonobod tumani,Деҳқонобод тумани,Дехканабадский район,Dehqonobod District,40
+1710207,kashkadarya,district,kashkadarya-guzor,G'uzor tumani,Ғузор тумани,Гузарский район,Guzor District,50
+1710237,kashkadarya,district,kashkadarya-kasbi,Kasbi tumani,Касби тумани,Касбинский район,Kasbi District,60
+1710232,kashkadarya,district,kashkadarya-kitob,Kitob tumani,Китоб тумани,Китабский район,Kitob District,70
+1710240,kashkadarya,district,kashkadarya-kokdala,Ko'kdala tumani,Кўкдала тумани,Кукдалинский район,Kokdala District,80
+1710229,kashkadarya,district,kashkadarya-koson,Koson tumani,Косон тумани,Касанский район,Koson District,90
+1710233,kashkadarya,district,kashkadarya-mirishkor,Mirishkor tumani,Миришкор тумани,Миришкорский район,Mirishkor District,100
+1710234,kashkadarya,district,kashkadarya-muborak,Muborak tumani,Муборак тумани,Мубарекский район,Muborak District,110
+1710235,kashkadarya,district,kashkadarya-nishon,Nishon tumani,Нишон тумани,Нишанский район,Nishon District,120
+1710220,kashkadarya,district,kashkadarya-qamashi,Qamashi tumani,Қамаши тумани,Камашинский район,Qamashi District,130
+1710224,kashkadarya,district,kashkadarya-qarshi,Qarshi tumani,Қарши тумани,Каршинский район,Karshi District,140
+1710245,kashkadarya,district,kashkadarya-shahrisabz,Shahrisabz tumani,Шаҳрисабз тумани,Шахрисабзский район,Shahrisabz District,150
+1710250,kashkadarya,district,kashkadarya-yakkabog,Yakkabog' tumani,Яккабоғ тумани,Яккабагский район,Yakkabog District,160
+1733401,khorezm,city,khorezm-urganch-city,Urganch shahri,Урганч шаҳри,г. Ургенч,Urgench City,10
+1733406,khorezm,city,khorezm-khiva-city,Xiva shahri,Хива шаҳри,г. Хива,Khiva City,20
+1733204,khorezm,district,khorezm-bogot,Bog'ot tumani,Боғот тумани,Багатский район,Bogot District,30
+1733208,khorezm,district,khorezm-gurlan,Gurlan tumani,Гурлан тумани,Гурленский район,Gurlan District,40
+1733212,khorezm,district,khorezm-qoshkopir,Qo'shko'pir tumani,Қўшкўпир тумани,Кошкупырский район,Qoshkopir District,50
+1733230,khorezm,district,khorezm-shovot,Shovot tumani,Шовот тумани,Шаватский район,Shovot District,60
+1733221,khorezm,district,khorezm-tuproqqala,Tuproqqal'a tumani,Тупроққалъа тумани,Тупроккалинский район,Tuproqqala District,70
+1733217,khorezm,district,khorezm-urganch,Urganch tumani,Урганч тумани,Ургенчский район,Urgench District,80
+1733220,khorezm,district,khorezm-khazorasp,Xazorasp tumani,Хазорасп тумани,Хазараспский район,Khazorasp District,90
+1733226,khorezm,district,khorezm-khiva,Xiva tumani,Хива тумани,Хивинский район,Khiva District,100
+1733223,khorezm,district,khorezm-khonqa,Xonqa tumani,Хонқа тумани,Ханкинский район,Khonqa District,110
+1733233,khorezm,district,khorezm-yangiariq,Yangiariq tumani,Янгиариқ тумани,Янгиарыкский район,Yangiariq District,120
+1733236,khorezm,district,khorezm-yangibozor,Yangibozor tumani,Янгибозор тумани,Янгибазарский район,Yangibozor District,130
+1714401,namangan,city,namangan-namangan-city,Namangan shahri,Наманган шаҳри,г. Наманган,Namangan City,10
+1714236,namangan,district,namangan-chortoq,Chortoq tumani,Чортоқ тумани,Чартакский район,Chortoq District,20
+1714237,namangan,district,namangan-chust,Chust tumani,Чуст тумани,Чустский район,Chust District,30
+1714207,namangan,district,namangan-kosonsoy,Kosonsoy tumani,Косонсой тумани,Касансайский район,Kosonsoy District,40
+1714204,namangan,district,namangan-mingbuloq,Mingbuloq tumani,Мингбулоқ тумани,Мингбулакский район,Mingbuloq District,50
+1714212,namangan,district,namangan-namangan,Namangan tumani,Наманган тумани,Наманганский район,Namangan District,60
+1714216,namangan,district,namangan-norin,Norin tumani,Норин тумани,Нарынский район,Norin District,70
+1714219,namangan,district,namangan-pop,Pop tumani,Поп тумани,Папский район,Pop District,80
+1714224,namangan,district,namangan-toraqorgon,To'raqo'rg'on tumani,Тўрақўрғон тумани,Туракурганский район,Toraqorgon District,90
+1714234,namangan,district,namangan-uchqorgon,Uchqo'rg'on tumani,Учқўрғон тумани,Учкурганский район,Uchqorgon District,100
+1714229,namangan,district,namangan-uychi,Uychi tumani,Уйчи тумани,Уйчинский район,Uychi District,110
+1714242,namangan,district,namangan-yangiqorgon,Yangiqo'rg'on tumani,Янгиқўрғон тумани,Янгикурганский район,Yangiqorgon District,120
+1712401,navoi,city,navoi-navoiy-city,Navoiy shahri,Навоий шаҳри,г. Навои,Navoi City,10
+1712408,navoi,city,navoi-zarafshon-city,Zarafshon shahri,Зарафшон шаҳри,г. Зарафшан,Zarafshan City,20
+1712412,navoi,city,navoi-gozgon-city,G'ozg'on shahri,Ғозғон шаҳри,г. Газган,Gazgan City,30
+1712234,navoi,district,navoi-karmana,Karmana tumani,Кармана тумани,Карманинский район,Karmana District,40
+1712211,navoi,district,navoi-konimekh,Konimex tumani,Конимех тумани,Канимехский район,Konimekh District,50
+1712230,navoi,district,navoi-navbahor,Navbahor tumani,Навбаҳор тумани,Навбахорский район,Navbahor District,60
+1712238,navoi,district,navoi-nurota,Nurota tumani,Нурота тумани,Нуратинский район,Nurota District,70
+1712216,navoi,district,navoi-qiziltepa,Qiziltepa tumani,Қизилтепа тумани,Кызылтепинский район,Qiziltepa District,80
+1712244,navoi,district,navoi-tomdi,Tomdi tumani,Томди тумани,Тамдынский район,Tomdi District,90
+1712248,navoi,district,navoi-uchquduq,Uchquduq tumani,Учқудуқ тумани,Учкудукский район,Uchquduq District,100
+1712251,navoi,district,navoi-khatirchi,Xatirchi tumani,Хатирчи тумани,Хатырчинский район,Khatirchi District,110
+1718401,samarkand,city,samarkand-samarqand-city,Samarqand shahri,Самарқанд шаҳри,г. Самарканд,Samarkand City,10
+1718406,samarkand,city,samarkand-kattaqorgon-city,Kattaqo'rg'on shahri,Каттақўрғон шаҳри,г. Каттакурган,Kattakurgan City,20
+1718206,samarkand,district,samarkand-bulungur,Bulung'ur tumani,Булунғур тумани,Булунгурский район,Bulungur District,30
+1718212,samarkand,district,samarkand-ishtikhon,Ishtixon tumani,Иштихон тумани,Иштыханский район,Ishtikhon District,40
+1718209,samarkand,district,samarkand-jomboy,Jomboy tumani,Жомбой тумани,Джамбайский район,Jomboy District,50
+1718215,samarkand,district,samarkand-kattaqorgon,Kattaqo'rg'on tumani,Каттақўрғон тумани,Каттакурганский район,Kattakurgan District,60
+1718218,samarkand,district,samarkand-narpay,Narpay tumani,Нарпай тумани,Нарпайский район,Narpay District,70
+1718235,samarkand,district,samarkand-nurobod,Nurobod tumani,Нуробод тумани,Нурабадский район,Nurobod District,80
+1718203,samarkand,district,samarkand-oqdaryo,Oqdaryo tumani,Оқдарё тумани,Акдарьинский район,Oqdaryo District,90
+1718227,samarkand,district,samarkand-pastdargom,Pastdarg'om tumani,Пастдарғом тумани,Пастдаргомский район,Pastdargom District,100
+1718230,samarkand,district,samarkand-pakhtachi,Paxtachi tumani,Пахтачи тумани,Пахтачийский район,Pakhtachi District,110
+1718224,samarkand,district,samarkand-payariq,Payariq tumani,Паяриқ тумани,Пайарыкский район,Payariq District,120
+1718216,samarkand,district,samarkand-qoshrabot,Qo'shrabot tumani,Қўшработ тумани,Кошрабадский район,Qoshrabot District,130
+1718233,samarkand,district,samarkand-samarqand,Samarqand tumani,Самарқанд тумани,Самаркандский район,Samarkand District,140
+1718238,samarkand,district,samarkand-tayloq,Tayloq tumani,Тайлоқ тумани,Тайлякский район,Tayloq District,150
+1718236,samarkand,district,samarkand-urgut,Urgut tumani,Ургут тумани,Ургутский район,Urgut District,160
+1722401,surkhandarya,city,surkhandarya-termiz-city,Termiz shahri,Термиз шаҳри,г. Термез,Termez City,10
+1722202,surkhandarya,district,surkhandarya-angor,Angor tumani,Ангор тумани,Ангорский район,Angor District,20
+1722203,surkhandarya,district,surkhandarya-bandikhon,Bandixon tumani,Бандихон тумани,Бандихонский район,Bandikhon District,30
+1722204,surkhandarya,district,surkhandarya-boysun,Boysun tumani,Бойсун тумани,Байсунский район,Boysun District,40
+1722210,surkhandarya,district,surkhandarya-denov,Denov tumani,Денов тумани,Денауский район,Denov District,50
+1722212,surkhandarya,district,surkhandarya-jarqorgon,Jarqo'rg'on tumani,Жарқўрғон тумани,Джаркурганский район,Jarqorgon District,60
+1722207,surkhandarya,district,surkhandarya-muzrabot,Muzrabot tumani,Музработ тумани,Музрабадский район,Muzrabot District,70
+1722201,surkhandarya,district,surkhandarya-oltinsoy,Oltinsoy tumani,Олтинсой тумани,Алтынсайский район,Oltinsoy District,80
+1722215,surkhandarya,district,surkhandarya-qiziriq,Qiziriq tumani,Қизириқ тумани,Кизирикский район,Qiziriq District,90
+1722214,surkhandarya,district,surkhandarya-qumqorgon,Qumqo'rg'on tumani,Қумқўрғон тумани,Кумкурганский район,Qumqorgon District,100
+1722217,surkhandarya,district,surkhandarya-sariosiyo,Sariosiyo tumani,Сариосиё тумани,Сариасийский район,Sariosiyo District,110
+1722223,surkhandarya,district,surkhandarya-sherobod,Sherobod tumani,Шеробод тумани,Шерабадский район,Sherobod District,120
+1722226,surkhandarya,district,surkhandarya-shorchi,Sho'rchi tumani,Шўрчи тумани,Шурчинский район,Shorchi District,130
+1722220,surkhandarya,district,surkhandarya-termiz,Termiz tumani,Термиз тумани,Термезский район,Termez District,140
+1722221,surkhandarya,district,surkhandarya-uzun,Uzun tumani,Узун тумани,Узунский район,Uzun District,150
+1724401,syrdarya,city,syrdarya-guliston-city,Guliston shahri,Гулистон шаҳри,г. Гулистан,Gulistan City,10
+1724410,syrdarya,city,syrdarya-shirin-city,Shirin shahri,Ширин шаҳри,г. Ширин,Shirin City,20
+1724413,syrdarya,city,syrdarya-yangiyer-city,Yangiyer shahri,Янгиер шаҳри,г. Янгиер,Yangiyer City,30
+1724212,syrdarya,district,syrdarya-boyovut,Boyovut tumani,Боёвут тумани,Баяутский район,Boyovut District,40
+1724220,syrdarya,district,syrdarya-guliston,Guliston tumani,Гулистон тумани,Гулистанский район,Gulistan District,50
+1724228,syrdarya,district,syrdarya-mirzaobod,Mirzaobod tumani,Мирзаобод тумани,Мирзаабадский район,Mirzaobod District,60
+1724206,syrdarya,district,syrdarya-oqoltin,Oqoltin tumani,Оқолтин тумани,Акалтынский район,Oqoltin District,70
+1724226,syrdarya,district,syrdarya-sardoba,Sardoba tumani,Сардоба тумани,Сардобский район,Sardoba District,80
+1724216,syrdarya,district,syrdarya-saykhunobod,Sayxunobod tumani,Сайхунобод тумани,Сайхунабадский район,Saykhunobod District,90
+1724231,syrdarya,district,syrdarya-sirdaryo,Sirdaryo tumani,Сирдарё тумани,Сырдарьинский район,Sirdaryo District,100
+1724235,syrdarya,district,syrdarya-khovos,Xovos tumani,Ховос тумани,Хавасский район,Khovos District,110
+1727401,tashkent,city,tashkent-nurafshon-city,Nurafshon shahri,Нурафшон шаҳри,г. Нурафшон,Nurafshon City,10
+1727404,tashkent,city,tashkent-olmaliq-city,Olmaliq shahri,Олмалиқ шаҳри,г. Алмалык,Almalyk City,20
+1727407,tashkent,city,tashkent-angren-city,Angren shahri,Ангрен шаҳри,г. Ангрен,Angren City,30
+1727413,tashkent,city,tashkent-bekobod-city,Bekobod shahri,Бекобод шаҳри,г. Бекабад,Bekabad City,40
+1727415,tashkent,city,tashkent-ohangaron-city,Ohangaron shahri,Оҳангарон шаҳри,г. Ахангаран,Akhangaran City,50
+1727419,tashkent,city,tashkent-chirchiq-city,Chirchiq shahri,Чирчиқ шаҳри,г. Чирчик,Chirchik City,60
+1727424,tashkent,city,tashkent-yangiyol-city,Yangiyo'l shahri,Янгийўл шаҳри,г. Янгиюль,Yangiyul City,70
+1727220,tashkent,district,tashkent-bekobod,Bekobod tumani,Бекобод тумани,Бекабадский район,Bekabad District,80
+1727228,tashkent,district,tashkent-boka,Bo'ka tumani,Бўка тумани,Букинский район,Boka District,90
+1727224,tashkent,district,tashkent-bostonliq,Bo'stonliq tumani,Бўстонлиқ тумани,Бостанлыкский район,Bostonliq District,100
+1727256,tashkent,district,tashkent-chinoz,Chinoz tumani,Чиноз тумани,Чиназский район,Chinoz District,110
+1727212,tashkent,district,tashkent-ohangaron,Ohangaron tumani,Оҳангарон тумани,Ахангаранский район,Akhangaran District,120
+1727206,tashkent,district,tashkent-oqqorgon,Oqqo'rg'on tumani,Оққўрғон тумани,Аккурганский район,Oqqorgon District,130
+1727253,tashkent,district,tashkent-ortachirchiq,O'rtachirchiq tumani,Ўртачирчиқ тумани,Уртачирчикский район,Ortachirchiq District,140
+1727249,tashkent,district,tashkent-parkent,Parkent tumani,Паркент тумани,Паркентский район,Parkent District,150
+1727250,tashkent,district,tashkent-pskent,Pskent tumani,Пскент тумани,Пскентский район,Pskent District,160
+1727248,tashkent,district,tashkent-qibray,Qibray tumani,Қибрай тумани,Кибрайский район,Qibray District,170
+1727233,tashkent,district,tashkent-quyichirchiq,Quyichirchiq tumani,Қуйичирчиқ тумани,Куйичирчикский район,Quyichirchiq District,180
+1727265,tashkent,district,tashkent-toshkent,Toshkent tumani,Тошкент тумани,Ташкентский район,Toshkent District,190
+1727259,tashkent,district,tashkent-yangiyol,Yangiyo'l tumani,Янгийўл тумани,Янгиюльский район,Yangiyul District,200
+1727239,tashkent,district,tashkent-yuqorichirchiq,Yuqorichirchiq tumani,Юқоричирчиқ тумани,Юкоричирчикский район,Yuqorichirchiq District,210
+1727237,tashkent,district,tashkent-zangiota,Zangiota tumani,Зангиота тумани,Зангиатинский район,Zangiota District,220
+1726264,tashkent-city,district,tashkent-city-bektemir,Bektemir tumani,Бектемир тумани,Бектемирский район,Bektemir District,10
+1726294,tashkent-city,district,tashkent-city-chilanzar,Chilonzor tumani,Чилонзор тумани,Чиланзарский район,Chilanzar District,20
+1726273,tashkent-city,district,tashkent-city-mirabad,Mirobod tumani,Миробод тумани,Мирабадский район,Mirabad District,30
+1726269,tashkent-city,district,tashkent-city-mirzo-ulugbek,Mirzo Ulug'bek tumani,Мирзо Улуғбек тумани,Мирзо-Улугбекский район,Mirzo Ulugbek District,40
+1726280,tashkent-city,district,tashkent-city-almazar,Olmazor tumani,Олмазор тумани,Алмазарский район,Almazar District,50
+1726277,tashkent-city,district,tashkent-city-shaykhantakhur,Shayxontoxur tumani,Шайхонтохур тумани,Шайхантахурский район,Shaykhantakhur District,60
+1726283,tashkent-city,district,tashkent-city-sergeli,Sirg'ali tumani,Сирғали тумани,Сергелийский район,Sergeli District,70
+1726262,tashkent-city,district,tashkent-city-uchtepa,Uchtepa tumani,Учтепа тумани,Учтепинский район,Uchtepa District,80
+1726287,tashkent-city,district,tashkent-city-yakkasaray,Yakkasaroy tumani,Яккасарой тумани,Яккасарайский район,Yakkasaray District,90
+1726292,tashkent-city,district,tashkent-city-yangihayot,Yangihayot tumani,Янгиҳаёт тумани,Янгихаётский район,Yangihayot District,100
+1726290,tashkent-city,district,tashkent-city-yashnabad,Yashnobod tumani,Яшнобод тумани,Яшнободский район,Yashnabad District,110
+1726266,tashkent-city,district,tashkent-city-yunusabad,Yunusobod tumani,Юнусобод тумани,Юнусабадский район,Yunusabad District,120

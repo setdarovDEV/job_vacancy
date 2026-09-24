@@ -26,4 +26,7 @@ var (
 	ErrDeliveryFailed     = apperr.New(http.StatusBadGateway, "delivery_failed", "could not deliver the code, try again later")
 	ErrWrongPassword      = apperr.BadRequest("wrong_password", "current password is incorrect")
 	ErrSessionNotFound    = apperr.NotFound("session_not_found", "session not found")
+	// TZ FN-08: sign-up needs consent to the processing of personal data.
+	ErrConsentRequired = apperr.BadRequest("consent_required", "accept the privacy policy to create an account")
+	ErrConsentOutdated = apperr.Conflict("consent_outdated", "the privacy policy was updated; reload the page and accept the current version")
 )

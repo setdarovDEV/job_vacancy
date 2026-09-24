@@ -1,7 +1,7 @@
 # Alertmanager for jobvacancy.uz (TZ OPS-04): everything goes to one Telegram chat.
 # This file is a template: entrypoint.sh fills the @...@ placeholders from the environment
 # (ALERT_TELEGRAM_*, ALERT_WATCHDOG_URL) and writes the secrets to files, so neither the
-# bot token nor the heartbeat URL ever sits in the repository or in `docker inspect`.
+# bot token, the chat id nor the heartbeat URL sits in the repository or in this file.
 #   amtool check-config <rendered file>      # CI: nginx/scripts/monitoring-lint.sh
 global:
   resolve_timeout: 5m
@@ -54,7 +54,7 @@ receivers:
     telegram_configs:
       - api_url: @TELEGRAM_API_URL@
         bot_token_file: /tmp/alertmanager/telegram_token
-        chat_id: @TELEGRAM_CHAT_ID@
+        chat_id_file: /tmp/alertmanager/telegram_chat_id
         message_thread_id: @TELEGRAM_THREAD_ID@
         parse_mode: HTML
         disable_notifications: false

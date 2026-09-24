@@ -95,44 +95,6 @@ func (q *Queries) GetNotificationTarget(ctx context.Context, id uuid.UUID) (GetN
 	return i, err
 }
 
-const insertNotifications = `-- name: InsertNotifications :many
-INSERT INTO notifications (user_id, type, payload)
-SELECT unnest($1::uuid[]), $2, $3
-RETURNING id, user_id, created_at
-`
-
-type InsertNotificationsParams struct {
-	UserIds []uuid.UUID
-	Type    string
-	Payload []byte
-}
-
-type InsertNotificationsRow struct {
-	ID        int64
-	UserID    uuid.UUID
-	CreatedAt time.Time
-}
-
-func (q *Queries) InsertNotifications(ctx context.Context, arg InsertNotificationsParams) ([]InsertNotificationsRow, error) {
-	rows, err := q.db.Query(ctx, insertNotifications, arg.UserIds, arg.Type, arg.Payload)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []InsertNotificationsRow{}
-	for rows.Next() {
-		var i InsertNotificationsRow
-		if err := rows.Scan(&i.ID, &i.UserID, &i.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listCompanyMemberIDs = `-- name: ListCompanyMemberIDs :many
 SELECT user_id FROM company_members WHERE company_id = $1
 `

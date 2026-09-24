@@ -56,26 +56,41 @@ func (s *Service) Reindex(ctx context.Context) (int, error) {
 		if err != nil || len(ids) == 0 {
 			return total, err
 		}
-		skills, err := s.skillsByID(ctx, ids)
-		if err != nil {
+		if _, err := s.ReindexIDs(ctx, ids); err != nil {
 			return total, err
 		}
-		rows, err := s.Q.GetVacanciesByIDs(ctx, ids)
-		if err != nil {
-			return total, err
-		}
-		err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
-			for _, r := range rows {
-				if err := q.UpsertVacancySearch(ctx, s.searchDoc(r.Vacancy, r.CompanyName, skills[r.Vacancy.ID])); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return total, err
-		}
-		total += len(rows)
+		total += len(ids)
 		after = ids[len(ids)-1]
 	}
+}
+
+// ReindexIDs rebuilds the search documents of the given vacancies (at most a few thousand;
+// e.g. after a skill merge) in one transaction and returns the published ones, whose
+// cached pages the caller drops.
+func (s *Service) ReindexIDs(ctx context.Context, ids []uuid.UUID) ([]VacancyRef, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	skills, err := s.skillsByID(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Q.GetVacanciesByIDs(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	var live []VacancyRef
+	err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+		for _, r := range rows {
+			if err := q.UpsertVacancySearch(ctx, s.searchDoc(r.Vacancy, r.CompanyName, skills[r.Vacancy.ID])); err != nil {
+				return err
+			}
+			if r.Vacancy.Status == gen.VacancyStatusPublished {
+				live = append(live, VacancyRef{ID: r.Vacancy.ID, Slug: r.Vacancy.Slug,
+					CompanyID: r.Vacancy.CompanyID, CompanySlug: r.CompanySlug})
+			}
+		}
+		return nil
+	})
+	return live, err
 }

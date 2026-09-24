@@ -9,7 +9,7 @@ RETURNING *;
 UPDATE vacancies
 SET title = $2, description = $3, category_id = $4, region_id = $5, district_id = $6,
     address = $7, salary_min = $8, salary_max = $9, currency = $10, employment_type = $11,
-    work_format = $12, experience = $13, schedule = $14
+    work_format = $12, experience = $13, schedule = $14, content_updated_at = now()
 WHERE id = $1
 RETURNING *;
 
@@ -68,11 +68,59 @@ RETURNING *;
 -- name: DeleteDraftVacancy :execrows
 DELETE FROM vacancies WHERE id = $1 AND status = 'draft';
 
--- Returns what the response caches need to drop (TZ BE-05). Only vacancy rows are locked.
+-- Returns what the response caches need to drop (TZ BE-05) and whom to notify (TZ FN-04).
+-- Only vacancy rows are locked.
 -- name: ExpireVacancies :many
 UPDATE vacancies v SET status = 'expired'
 FROM companies c
 WHERE c.id = v.company_id AND v.status = 'published' AND v.expires_at < now()
+RETURNING v.id, v.slug, v.company_id, c.slug AS company_slug, v.created_by, v.title;
+
+-- Published vacancies expiring within `days` whose author hasn't been warned about this
+-- expiry date yet (TZ FN-04). Served by vacancies_expiry_idx; SKIP LOCKED keeps two
+-- runs from warning twice.
+-- name: DueExpiryWarnings :many
+SELECT v.id, v.title, v.created_by, v.expires_at
+FROM vacancies v
+WHERE v.status = 'published' AND v.expires_at > now()
+  AND v.expires_at <= now() + make_interval(days => sqlc.arg(days)::int)
+  AND NOT EXISTS (SELECT 1 FROM vacancy_expiry_warnings w
+                  WHERE w.vacancy_id = v.id AND w.expires_at = v.expires_at)
+ORDER BY v.expires_at
+LIMIT sqlc.arg(max_results)
+FOR UPDATE OF v SKIP LOCKED;
+
+-- name: MarkExpiryWarned :exec
+INSERT INTO vacancy_expiry_warnings (vacancy_id, expires_at)
+SELECT unnest(sqlc.arg(ids)::uuid[]), unnest(sqlc.arg(expires)::timestamptz[])
+ON CONFLICT (vacancy_id) DO UPDATE SET expires_at = EXCLUDED.expires_at, warned_at = now();
+
+-- Republish an expired or archived vacancy as it was (TZ FN-04). Without moderation only
+-- when nothing happened since it was last published: no content edit, no trip back to
+-- moderation (an edit or enough reports), no unpublishing by an admin. Otherwise no row
+-- comes back and the caller submits it the normal way.
+-- name: RepublishVacancy :one
+UPDATE vacancies
+SET status = 'published', published_at = now(),
+    expires_at = now() + make_interval(days => sqlc.arg(ttl_days)::int), reject_reason = NULL
+WHERE id = sqlc.arg(id) AND status IN ('expired', 'archived')
+  AND published_at IS NOT NULL
+  AND (content_updated_at IS NULL OR content_updated_at <= published_at)
+  AND (submitted_at IS NULL OR submitted_at <= published_at)
+  AND (moderated_at IS NULL OR moderated_at <= published_at)
+RETURNING *;
+
+-- "TOP" placement until a date (TZ FN-01); until NULL with featured=true means no end.
+-- name: SetVacancyFeatured :one
+UPDATE vacancies SET is_featured = sqlc.arg(featured)::boolean, featured_until = sqlc.narg(until)
+WHERE id = sqlc.arg(id)
+RETURNING *;
+
+-- Ends "TOP" placements whose date passed. Served by vacancies_featured_idx.
+-- name: ExpireFeatured :many
+UPDATE vacancies v SET is_featured = false, featured_until = NULL
+FROM companies c
+WHERE c.id = v.company_id AND v.is_featured AND v.featured_until < now()
 RETURNING v.id, v.slug, v.company_id, c.slug AS company_slug;
 
 -- A company's live vacancies, whose cached pages show the company (name, logo, badge).

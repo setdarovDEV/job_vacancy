@@ -5,6 +5,7 @@
 #   nginx/scripts/monitoring.sh production up        # make monitoring-up
 #   nginx/scripts/monitoring.sh production ps|logs|down|pull|config
 #   nginx/scripts/monitoring.sh production reload    # Prometheus + Alertmanager re-read config
+#   nginx/scripts/monitoring.sh production sync      # after a deploy: new images + reload, if running
 #   nginx/scripts/monitoring.sh production drill     # synthetic alert → Telegram, timed
 #   nginx/scripts/monitoring.sh production drill-api # stop api-2 for real, time the alert
 #   nginx/scripts/monitoring.sh production glitchtip-admin   # first GlitchTip user
@@ -15,7 +16,9 @@ cmd=${1:-ps}
 [ $# -gt 0 ] && shift
 
 MON_FILE=$ROOT/monitoring/docker-compose.monitoring.yml
-MON_PROJECT="$(envget COMPOSE_PROJECT_NAME jobvacancy)-monitoring"
+APP_PROJECT=$(envget COMPOSE_PROJECT_NAME jobvacancy)
+MON_PROJECT="$APP_PROJECT-monitoring"
+export APP_PROJECT
 mon() { docker compose -p "$MON_PROJECT" --env-file "$ENV_FILE" -f "$MON_FILE" "$@"; }
 
 # amquery PATH: GET from Alertmanager's API inside its container (no published port needed).
@@ -44,8 +47,8 @@ telegram_sent() {
 case $cmd in
   up)
     for net in front back; do
-      docker network inspect "$(envget COMPOSE_PROJECT_NAME jobvacancy)_$net" >/dev/null 2>&1 \
-        || die "app network $(envget COMPOSE_PROJECT_NAME jobvacancy)_$net is missing: run make deploy first"
+      docker network inspect "${APP_PROJECT}_$net" >/dev/null 2>&1 \
+        || die "app network ${APP_PROJECT}_$net is missing: run make deploy first"
     done
     [ -n "$(envget MONITORING_DB_PASSWORD)" ] || die "set MONITORING_DB_PASSWORD in $ENV_FILE (then make deploy applies it)"
     log "starting $MON_PROJECT"
@@ -54,6 +57,16 @@ case $cmd in
     log "Grafana http://localhost:3000, GlitchTip http://localhost:8000 (ssh -L 3000:127.0.0.1:3000 -L 8000:127.0.0.1:8000)"
     ;;
   config) mon config -q && echo "monitoring compose OK" ;;
+  sync)
+    # deploy.sh calls this: the configs are bind-mounted from the checkout, so a new commit
+    # needs a reload; changed images or compose settings recreate just those services.
+    if [ -z "$(mon ps -q prometheus 2>/dev/null)" ]; then
+      log "monitoring is not running here (make monitoring-up to start it)"
+      exit 0
+    fi
+    mon up -d --wait --wait-timeout 180 --remove-orphans
+    "$0" "$JV_ENV" reload
+    ;;
   reload)
     mon exec -T prometheus wget -qO- --post-data= http://127.0.0.1:9090/-/reload
     mon restart alertmanager   # re-renders alertmanager.yml from the env file

@@ -155,6 +155,31 @@ check "last page" "$(req "$Q&limit=2&cursor=$NEXT")$(J '.data | length')$(J .met
 check "bad cursor 400" $(req "$Q&cursor=garbage") 400
 check "company open_vacancies" "$(req $API/companies/$CSLUG)$(J .data.open_vacancies)" "2005"
 
+echo "== company directory (TZ BE-03: trigger-kept counter, keyset pages)"
+check "directory search 200" $(req "$API/companies?q=najot%20ta%27lim%20$R") 200
+check "verified company listed before the unverified one" \
+  "$(J "[.data[] | select(.slug==\"$CSLUG\" or .slug==\"$CSLUG-2\") | .slug] | join(\",\")")" "$CSLUG,$CSLUG-2"
+check "directory shows the trigger-kept count" "$(J ".data[] | select(.slug==\"$CSLUG\") | .open_vacancies")" "5"
+check "directory meta: page, total, page_count" "$(J .meta.page)/$(J '.meta.total >= 2')/$(J '.meta.page_count >= 1')" "1/true/true"
+req -X POST $API/companies/$CID/vacancies -H "Authorization: Bearer $T1" -H "$H" -d "$(echo $V | jq '.title="Vaqtinchalik" | .skills=[]')" >/dev/null
+VTMP=$(J .data.id); req -X POST $API/vacancies/$VTMP/submit -H "Authorization: Bearer $T1" >/dev/null
+check "publishing bumps open_vacancies" "$(req $API/companies/$CSLUG)$(J .data.open_vacancies)" "2006"
+req -X POST $API/vacancies/$VTMP/archive -H "Authorization: Bearer $T1" >/dev/null
+check "archiving lowers it" "$(req $API/companies/$CSLUG)$(J .data.open_vacancies)" "2005"
+# Numbered pages seek from anchors cached ~3 min; drop them so this run's new companies
+# are placed (without redis-cli the comparison can legitimately differ for a few minutes).
+redis-cli -p "${REDIS_PORT:-6390}" DEL company:dir:v1:all >/dev/null 2>&1 || true
+req "$API/companies?page=1" >/dev/null; DC=$(J .meta.next_cursor); DPC=$(J .meta.page_count)
+check "page 1 has ≤ 24 rows" "$([ "$(J '.data | length')" -le 24 ] && echo ok)" ok
+if [ "$DC" != "null" ]; then
+  check "page 2 by number == page 2 by cursor" "$(curl -s "$API/companies?page=2" | jq -r '[.data[].id]|join(",")')" \
+    "$(curl -s "$API/companies?cursor=$DC" | jq -r '[.data[].id]|join(",")')"
+else
+  check "single page: no next page" "$DPC" "1"
+fi
+check "page past the end is empty" "$(req "$API/companies?page=9999")$(J '.data | length')$(J .meta.next_page)" "2000null"
+check "bad directory cursor 400" "$(req "$API/companies?cursor=garbage")$(J .error.code)" "400invalid_cursor"
+
 echo "== views: beacon + GET, bots skipped (Redis → Postgres flush every minute)"
 UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36'
 check "beacon 204" $(req -X POST -A "$UA" $API/vacancies/$VSLUG/view) 204

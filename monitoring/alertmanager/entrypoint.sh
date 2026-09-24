@@ -16,11 +16,12 @@ if [ -z "${ALERT_TELEGRAM_BOT_TOKEN:-}" ] || [ -z "${ALERT_TELEGRAM_CHAT_ID:-}" 
   echo "alertmanager: ALERT_TELEGRAM_BOT_TOKEN / ALERT_TELEGRAM_CHAT_ID not set: alerts are NOT delivered" >&2
   receiver='"null"'
 fi
-case "${ALERT_TELEGRAM_CHAT_ID:-0}" in
+case "${ALERT_TELEGRAM_CHAT_ID:--1}" in
   -[0-9]* | [0-9]*) ;;
   *) echo "alertmanager: ALERT_TELEGRAM_CHAT_ID must be a number" >&2; exit 1 ;;
 esac
 printf '%s' "${ALERT_TELEGRAM_BOT_TOKEN:-unset}" >"$out/telegram_token"
+printf '%s' "${ALERT_TELEGRAM_CHAT_ID:--1}" >"$out/telegram_chat_id"
 
 watchdog=watchdog
 if [ -z "${ALERT_WATCHDOG_URL:-}" ]; then watchdog='"null"'; fi
@@ -31,7 +32,6 @@ thread=${ALERT_TELEGRAM_THREAD_ID:-}
 sed -e "s#@DEFAULT_RECEIVER@#$receiver#g" \
     -e "s#@WATCHDOG_RECEIVER@#$watchdog#g" \
     -e "s#@TELEGRAM_API_URL@#$api#g" \
-    -e "s#@TELEGRAM_CHAT_ID@#${ALERT_TELEGRAM_CHAT_ID:-0}#g" \
     /etc/alertmanager/alertmanager.yml >"$out/alertmanager.yml.tmp"
 if [ -n "$thread" ]; then
   sed -i "s#@TELEGRAM_THREAD_ID@#$thread#g" "$out/alertmanager.yml.tmp"

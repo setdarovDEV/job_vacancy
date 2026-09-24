@@ -1,13 +1,14 @@
-import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
 import { nameOf, useCatalog } from "~/shared/catalog/catalog";
 import { useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
-import { groupDigits } from "~/shared/lib/format";
 import { Chip } from "~/shared/ui/Chip";
+import { Field } from "~/shared/ui/Field";
+import { MoneyInput } from "~/shared/ui/MoneyInput";
 import { Select } from "~/shared/ui/Select";
 import { Checkbox } from "~/shared/ui/Toggle";
-import { multiValues, toggleMulti, withValue } from "./params";
+import { multiValues, toggleMulti, withValue, type Query } from "./params";
 
 const ENUMS = {
   work_format: ["office", "remote", "hybrid"],
@@ -24,10 +25,13 @@ const LABEL: Record<keyof typeof ENUMS, string> = {
 };
 
 /**
- * The filter controls, used both in the desktop sidebar (changes apply at once) and in the
- * mobile sheet (changes collect in a draft until "Show results").
+ * The filter controls, used both in the desktop sidebar (every change applies at once) and in
+ * the mobile sheet (`draft`: changes collect until "Show results", so the salary field reports
+ * every keystroke instead of waiting for blur/Enter).
  */
-export function Filters({ q, onChange }: { q: Record<string, string>; onChange: (next: Record<string, string>) => void }) {
+export function Filters({
+  q, onChange, draft,
+}: { q: Query; onChange: (next: Query) => void; draft?: boolean }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const { categories, regions } = useCatalog();
@@ -41,54 +45,66 @@ export function Filters({ q, onChange }: { q: Record<string, string>; onChange: 
   }));
   const region = regions.find((r) => String(r.id) === q.region_id);
   const districts = region?.children ?? [];
+  const salaryFrom = q.salary_from ? Number(q.salary_from) : null;
+  const setSalary = (v: number | null) => onChange(withValue(q, "salary_from", v == null ? null : String(v)));
 
   return (
-    <div className="flex flex-col gap-6">
-      <FilterGroup label={t("jobs.filters.category")}>
-        <Select
-          aria-label={t("jobs.filters.category")}
-          value={q.category_id ?? ""}
-          onValueChange={(v) => onChange(withValue(q, "category_id", v))}
-          placeholder={t("jobs.filters.anyCategory")}
-          groups={categoryGroups}
-        />
-      </FilterGroup>
+    <div className="flex flex-col">
+      <Group>
+        <Field label={t("jobs.filters.category")}>
+          <Select
+            value={q.category_id ?? ""}
+            onValueChange={(v) => onChange(withValue(q, "category_id", v))}
+            placeholder={t("jobs.filters.anyCategory")}
+            groups={categoryGroups}
+          />
+        </Field>
+      </Group>
 
-      <FilterGroup label={t("jobs.filters.region")}>
-        <Select
-          aria-label={t("jobs.filters.region")}
-          value={q.region_id ?? ""}
-          onValueChange={(v) => onChange(withValue(q, "region_id", v))}
-          placeholder={t("search.anywhere")}
-          options={regions.map((r) => ({ value: String(r.id), label: nameOf(r.name, locale) }))}
-        />
+      <Group>
+        <Field label={t("jobs.filters.region")}>
+          <Select
+            value={q.region_id ?? ""}
+            onValueChange={(v) => onChange(withValue(q, "region_id", v))}
+            placeholder={t("search.anywhere")}
+            options={regions.map((r) => ({ value: String(r.id), label: nameOf(r.name, locale) }))}
+          />
+        </Field>
         {districts.length > 0 && (
           <Select
             className="mt-2"
-            aria-label={nameOf(region?.name, locale)}
+            aria-label={t("vacanciesPage.district", { region: nameOf(region?.name, locale) })}
             value={q.district_id ?? ""}
             onValueChange={(v) => onChange(withValue(q, "district_id", v))}
             placeholder={t("jobs.filters.allIn", { name: nameOf(region?.name, locale) })}
             options={districts.map((d) => ({ value: String(d.id), label: nameOf(d.name, locale) }))}
           />
         )}
-      </FilterGroup>
+      </Group>
 
-      <FilterGroup label={t("jobs.filters.salaryFrom")}>
-        <SalaryInput value={q.salary_from ?? ""} onCommit={(v) => onChange(withValue(q, "salary_from", v))} />
-        <div className="mt-3">
+      <Group>
+        <Field label={t("jobs.filters.salaryFrom")}>
+          {draft ? (
+            <MoneyInput value={salaryFrom} onChange={setSalary} placeholder="3 000 000" />
+          ) : (
+            // Uncontrolled: typing doesn't refetch; the filter applies on Enter or blur. Keyed so a
+            // chip removal or the back button resets the text.
+            <MoneyInput key={q.salary_from ?? ""} defaultValue={salaryFrom} onCommit={setSalary} placeholder="3 000 000" />
+          )}
+        </Field>
+        <div className="mt-2">
           <Checkbox
             checked={q.with_salary === "true"}
             onCheckedChange={(v) => onChange(withValue(q, "with_salary", v ? "true" : null))}
             label={t("jobs.filters.withSalary")}
           />
         </div>
-      </FilterGroup>
+      </Group>
 
       {(Object.keys(ENUMS) as (keyof typeof ENUMS)[]).map((key) => {
         const selected = multiValues(q, key);
         return (
-          <FilterGroup key={key} label={t(LABEL[key])}>
+          <Group key={key} legend={t(LABEL[key])}>
             <div className="flex flex-wrap gap-2">
               {ENUMS[key].map((v) => (
                 <Chip key={v} selected={selected.includes(v)} onClick={() => onChange(toggleMulti(q, key, v))}>
@@ -96,52 +112,22 @@ export function Filters({ q, onChange }: { q: Record<string, string>; onChange: 
                 </Chip>
               ))}
             </div>
-          </FilterGroup>
+          </Group>
         );
       })}
     </div>
   );
 }
 
-function FilterGroup({ label, children }: { label: string; children: React.ReactNode }) {
+/** One filter section; hairlines between sections keep a long panel scannable. */
+function Group({ legend, children }: { legend?: string; children: ReactNode }) {
+  const cls = "min-w-0 border-t border-line py-5 first:border-t-0 first:pt-0 last:pb-0";
+  // A floated legend is laid out like a normal heading, so the hairline above stays unbroken.
+  if (!legend) return <div className={cls}>{children}</div>;
   return (
-    <fieldset>
-      <legend className="mb-2.5 text-sm font-semibold text-ink">{label}</legend>
-      {children}
+    <fieldset className={cls}>
+      <legend className="float-left mb-2.5 w-full text-sm font-medium text-ink">{legend}</legend>
+      <div className="clear-left">{children}</div>
     </fieldset>
-  );
-}
-
-/** Digits are grouped as you type ("5 000 000"); the filter applies on Enter or blur. */
-function SalaryInput({ value, onCommit }: { value: string; onCommit: (v: string | null) => void }) {
-  const { t } = useTranslation();
-  const [text, setText] = useState(value ? groupDigits(Number(value)) : "");
-  useEffect(() => setText(value ? groupDigits(Number(value)) : ""), [value]);
-  const commit = () => {
-    const digits = text.replace(/\D/g, "");
-    if (digits !== value) onCommit(digits || null);
-  };
-  return (
-    <div className="relative flex items-center">
-      <input
-        inputMode="numeric"
-        aria-label={t("jobs.filters.salaryFrom")}
-        value={text}
-        placeholder="3 000 000"
-        onChange={(e) => {
-          const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
-          setText(digits ? groupDigits(Number(digits)) : "");
-        }}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            commit();
-          }
-        }}
-        className="num h-11 w-full rounded-control border border-line-strong bg-surface pl-3.5 pr-14 text-[0.9375rem] text-ink outline-none transition-[border-color,box-shadow] placeholder:text-ink-3 focus:border-lapis focus:shadow-[0_0_0_4px_var(--lapis-soft)]"
-      />
-      <span className="pointer-events-none absolute right-3.5 text-sm text-ink-3">{t("salary.currency.UZS")}</span>
-    </div>
   );
 }

@@ -84,7 +84,6 @@ RCODE=$(mailcode)
 check "reset 204" $(req -X POST $API/auth/password/reset -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"code\":\"$RCODE\",\"password\":\"NewSecret456\"}") 204
 check "old sessions revoked" $(req $API/me -H "Authorization: Bearer $AT") 401
 check "login with new password" $(req -c $JAR -X POST $API/auth/login -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"NewSecret456\"}") 200
-
 echo "== logout"
 check "logout 204" $(req -b $JAR -c $JAR -X POST $API/auth/logout) 204
 check "refresh after logout 401" $(req -b $JAR -X POST $API/auth/refresh) 401
@@ -92,6 +91,26 @@ check "refresh after logout 401" $(req -b $JAR -X POST $API/auth/refresh) 401
 echo "== misc"
 check "google disabled 503" $(req -X POST $API/auth/google -H 'Content-Type: application/json' -d '{"id_token":"x"}') 503
 check "unknown route 404 json" "$(req $API/nope)$(jq -r .error.code $SP/body.json)" 404route_not_found
+
+echo "== change password (TZ BE-12: one statement revokes the other sessions)"
+# The auth endpoints allow 30 calls per minute per IP, shared with anything else hitting
+# this API from the same address: wait for the window to roll over when it's nearly spent
+# (reads the limiter's key; without redis-cli it just continues).
+used=$(redis-cli -p "${REDIS_PORT:-6390}" GET rl:auth_ip:127.0.0.1 2>/dev/null); used=${used:-0}
+if [ "$used" -ge 26 ]; then
+  ms=$(redis-cli -p "${REDIS_PORT:-6390}" PTTL rl:auth_ip:127.0.0.1 2>/dev/null); ms=${ms:-0}
+  [ "$ms" -gt 0 ] && echo "  … waiting $(( (ms+999)/1000 ))s for the auth rate-limit window" && sleep $(( (ms+999)/1000 ))
+fi
+mlogin() { curl -s -X POST $API/auth/login -H 'X-Client-Type: android' -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"NewSecret456\"}" | jq -r .data.access_token; }
+PA=$(mlogin); PB=$(mlogin)
+check "wrong current password 400" "$(req -X PUT $API/me/password -H "Authorization: Bearer $PA" -H 'Content-Type: application/json' \
+  -d '{"current_password":"Nope12345","new_password":"Changed789"}')$(jq -r .error.code $SP/body.json)" "400wrong_password"
+check "change password 204" $(req -X PUT $API/me/password -H "Authorization: Bearer $PA" -H 'Content-Type: application/json' \
+  -d '{"current_password":"NewSecret456","new_password":"Changed789"}') 204
+check "the changing session keeps working" $(req $API/me -H "Authorization: Bearer $PA") 200
+check "the other session is cut off at once" $(req $API/me -H "Authorization: Bearer $PB") 401
+check "one active session left" "$(req $API/me/sessions -H "Authorization: Bearer $PA")$(jq '.data | length' $SP/body.json)" 2001
 echo
 echo "passed: $pass  failed: $fail"
 [ "$fail" -eq 0 ]

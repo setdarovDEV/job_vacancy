@@ -12,8 +12,10 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"jobvacancy.uz/backend/db/gen"
+	"jobvacancy.uz/backend/internal/modules/audit"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/translit"
+	"jobvacancy.uz/backend/internal/platform/postgres"
 )
 
 // Popular searches (TZ BE-11, SEC-07). A query that returned results is counted once per
@@ -214,7 +216,13 @@ func (s *Service) HideTerm(ctx context.Context, admin uuid.UUID, raw string) (Hi
 	if err != nil {
 		return HiddenTerm{}, err
 	}
-	if err := s.Q.HideSearchTerm(ctx, gen.HideSearchTermParams{Term: t, HiddenBy: &admin}); err != nil {
+	err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+		if err := q.HideSearchTerm(ctx, gen.HideSearchTermParams{Term: t, HiddenBy: &admin}); err != nil {
+			return err
+		}
+		return audit.Write(ctx, q, audit.Entry{Action: "search_term.hide", ObjectType: audit.ObjectSearchTerm, ObjectID: t})
+	})
+	if err != nil {
 		return HiddenTerm{}, err
 	}
 	s.popularChanged(ctx)
@@ -226,12 +234,19 @@ func (s *Service) UnhideTerm(ctx context.Context, raw string) error {
 	if err != nil {
 		return err
 	}
-	n, err := s.Q.UnhideSearchTerm(ctx, t)
+	errNotHidden := apperr.NotFound("hidden_term_not_found", "this term is not hidden")
+	err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+		n, err := q.UnhideSearchTerm(ctx, t)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return errNotHidden
+		}
+		return audit.Write(ctx, q, audit.Entry{Action: "search_term.unhide", ObjectType: audit.ObjectSearchTerm, ObjectID: t})
+	})
 	if err != nil {
 		return err
-	}
-	if n == 0 {
-		return apperr.NotFound("hidden_term_not_found", "this term is not hidden")
 	}
 	s.popularChanged(ctx)
 	return nil

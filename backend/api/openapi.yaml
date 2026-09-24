@@ -23,7 +23,10 @@ info:
     **Deadlines.** Every request runs under a server deadline (8 s; PDF export 25 s;
     the WebSocket is exempt) and each database statement under 5 s. When one is exceeded
     the API answers `503` with code `timeout` and `Retry-After: 1`; the call is safe to
-    retry. Rate limits answer `429` with code `rate_limited` and `retry_after`.
+    retry. Rate limits answer `429` with code `rate_limited` and `retry_after`: 1200
+    requests/min per client IP on every route and, with an access token, 600/min per user
+    across all routes (public pages included); sign-in and code endpoints have stricter
+    limits of their own.
 
     **Compression.** Send `Accept-Encoding: gzip` (browsers do); JSON responses shrink
     by ~80 %. In production nginx also offers brotli.
@@ -1410,13 +1413,19 @@ paths:
       tags: [chat]
       security: [{ bearer: [] }]
       summary: My conversations, most recent first, with last message and unread count
+      description: |
+        Keyset pages (`meta.next_cursor`). `unread` is the number of undeleted messages
+        from others after the caller's read position (capped at 100), kept up to date on
+        every send, read and delete (TZ BE-04). A participant who never opened a
+        conversation counts its whole history.
       parameters: [{ $ref: "#/components/parameters/Cursor" }, { $ref: "#/components/parameters/Limit" }]
-      responses: { "200": { description: Page } }
+      responses: { "200": { description: Page }, "400": { $ref: "#/components/responses/Error" } }
   /conversations/unread-count:
     get:
       tags: [chat]
       security: [{ bearer: [] }]
       summary: Number of conversations with unread messages
+      description: Read from denormalized counters (an index-only count), cheap enough to poll.
       responses: { "200": { description: "{conversations}" } }
   /conversations/{conversation}:
     get:

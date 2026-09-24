@@ -43,3 +43,16 @@ ORDER BY last_used_at DESC;
 DELETE FROM user_sessions
 WHERE expires_at < now() - interval '7 days'
    OR revoked_at < now() - interval '7 days';
+
+-- Set a new password and sign out every other session in one statement (TZ BE-12);
+-- returns the revoked session ids for the Redis revocation list.
+-- name: ChangePasswordRevokeOthers :many
+WITH pw AS (
+    UPDATE users SET password_hash = sqlc.arg(password_hash) WHERE id = sqlc.arg(user_id)
+)
+UPDATE user_sessions s SET revoked_at = now()
+WHERE s.user_id = sqlc.arg(user_id) AND s.id <> sqlc.arg(keep_session) AND s.revoked_at IS NULL
+RETURNING s.id;
+
+-- name: GetSession :one
+SELECT * FROM user_sessions WHERE id = $1;

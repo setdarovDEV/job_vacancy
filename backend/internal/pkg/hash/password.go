@@ -2,6 +2,7 @@
 package hash
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -23,7 +24,17 @@ const (
 
 var ErrMalformed = errors.New("hash: malformed password hash")
 
-func Password(plain string) (string, error) {
+// Password hashes plain, waiting for a free hashing slot (see limit.go) without a
+// deadline. Request paths use PasswordCtx.
+func Password(plain string) (string, error) { return PasswordCtx(context.Background(), plain) }
+
+// PasswordCtx hashes plain once a hashing slot is free; it gives up when ctx ends.
+func PasswordCtx(ctx context.Context, plain string) (string, error) {
+	release, err := acquire(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 	salt := make([]byte, saltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", err
@@ -37,6 +48,11 @@ func Password(plain string) (string, error) {
 // VerifyPassword reports whether plain matches the encoded hash. Parameters are read from
 // the hash itself, so old hashes keep working if we raise the cost later.
 func VerifyPassword(plain, encoded string) (bool, error) {
+	return VerifyPasswordCtx(context.Background(), plain, encoded)
+}
+
+// VerifyPasswordCtx is VerifyPassword bounded by the hashing slots and ctx.
+func VerifyPasswordCtx(ctx context.Context, plain, encoded string) (bool, error) {
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false, ErrMalformed
@@ -59,6 +75,11 @@ func VerifyPassword(plain, encoded string) (bool, error) {
 	if err != nil {
 		return false, ErrMalformed
 	}
+	release, err := acquire(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer release()
 	got := argon2.IDKey([]byte(plain), salt, t, m, p, uint32(len(want)))
 	return subtle.ConstantTimeCompare(got, want) == 1, nil
 }

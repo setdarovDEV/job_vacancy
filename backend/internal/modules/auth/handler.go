@@ -58,6 +58,7 @@ func (h *Handler) MeRoutes(r chi.Router) {
 	r.Get("/sessions", h.listSessions)
 	r.Delete("/sessions/{id}", h.revokeSession)
 	r.Put("/password", h.changePassword)
+	r.Put("/consent", h.acceptConsent)
 }
 
 // ---- DTOs ------------------------------------------------------------------------------
@@ -77,6 +78,9 @@ type registerRequest struct {
 	FullName string `json:"full_name" validate:"required,min=2,max=100"`
 	Role     string `json:"role" validate:"required,oneof=seeker employer"`
 	Locale   string `json:"locale" validate:"omitempty,oneof=uz uz-Cyrl ru en"`
+	// Consent to the processing of personal data (TZ FN-08); must be true.
+	Consent        bool   `json:"consent"`
+	ConsentVersion string `json:"consent_version" validate:"omitempty,max=32"`
 }
 
 type loginRequest struct {
@@ -89,6 +93,13 @@ type googleRequest struct {
 	// Used only when this sign-in creates a new account.
 	Role   string `json:"role" validate:"omitempty,oneof=seeker employer"`
 	Locale string `json:"locale" validate:"omitempty,oneof=uz uz-Cyrl ru en"`
+	// Needed only when this sign-in creates the account (TZ FN-08).
+	Consent        bool   `json:"consent"`
+	ConsentVersion string `json:"consent_version" validate:"omitempty,max=32"`
+}
+
+type consentRequest struct {
+	Version string `json:"version" validate:"omitempty,max=32"`
 }
 
 type refreshRequest struct {
@@ -141,6 +152,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 		FullName: strings.Join(strings.Fields(req.FullName), " "),
 		Role:     gen.UserRole(req.Role),
 		Locale:   pickLocale(req.Locale, r),
+		Consent:  Consent{Given: req.Consent, Version: req.ConsentVersion},
 	}, clientMeta(r))
 	h.writeAuth(w, r, res, err, http.StatusCreated)
 }
@@ -163,7 +175,8 @@ func (h *Handler) google(w http.ResponseWriter, r *http.Request) {
 	if req.Role != "" {
 		role = gen.UserRole(req.Role)
 	}
-	res, err := h.Svc.GoogleLogin(r.Context(), req.IDToken, role, pickLocale(req.Locale, r), clientMeta(r))
+	res, err := h.Svc.GoogleLogin(r.Context(), req.IDToken, role, pickLocale(req.Locale, r),
+		Consent{Given: req.Consent, Version: req.ConsentVersion}, clientMeta(r))
 	h.writeAuth(w, r, res, err, http.StatusOK)
 }
 
@@ -313,6 +326,19 @@ func (h *Handler) revokeSession(w http.ResponseWriter, r *http.Request) {
 	response.NoContent(w)
 }
 
+func (h *Handler) acceptConsent(w http.ResponseWriter, r *http.Request) {
+	var req consentRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	u, err := h.Svc.AcceptConsent(r.Context(), reqctx.MustPrincipal(r.Context()).UserID, req.Version)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, user.ToDTO(u))
+}
+
 func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 	p := reqctx.MustPrincipal(r.Context())
 	var req changePasswordRequest
@@ -367,10 +393,13 @@ func (h *Handler) readRefresh(r *http.Request) string {
 	return ""
 }
 
-func (h *Handler) clearCookie(w http.ResponseWriter) {
+func (h *Handler) clearCookie(w http.ResponseWriter) { ClearRefreshCookie(w, h.Cookie) }
+
+// ClearRefreshCookie removes the web client's refresh cookie (sign-out, account deletion).
+func ClearRefreshCookie(w http.ResponseWriter, c CookieConfig) {
 	http.SetCookie(w, &http.Cookie{
-		Name: refreshCookie, Value: "", Path: cookiePath, Domain: h.Cookie.Domain,
-		MaxAge: -1, HttpOnly: true, Secure: h.Cookie.Secure, SameSite: http.SameSiteStrictMode,
+		Name: refreshCookie, Value: "", Path: cookiePath, Domain: c.Domain,
+		MaxAge: -1, HttpOnly: true, Secure: c.Secure, SameSite: http.SameSiteStrictMode,
 	})
 }
 

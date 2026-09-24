@@ -29,34 +29,6 @@ DELETE FROM resumes WHERE id = $1 AND user_id = $2;
 -- name: ResumeHasApplications :one
 SELECT EXISTS (SELECT 1 FROM applications WHERE resume_id = $1);
 
--- name: DeleteResumeExperiences :exec
-DELETE FROM resume_experiences WHERE resume_id = $1;
-
--- name: DeleteResumeEducations :exec
-DELETE FROM resume_educations WHERE resume_id = $1;
-
--- name: DeleteResumeSkills :exec
-DELETE FROM resume_skills WHERE resume_id = $1;
-
--- name: DeleteResumeLanguages :exec
-DELETE FROM resume_languages WHERE resume_id = $1;
-
--- name: AddResumeExperience :exec
-INSERT INTO resume_experiences (resume_id, company, position, start_date, end_date, description, sort_order)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
-
--- name: AddResumeEducation :exec
-INSERT INTO resume_educations (resume_id, institution, level, field, start_year, end_year, sort_order)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
-
--- name: AddResumeSkills :exec
-INSERT INTO resume_skills (resume_id, skill_id)
-SELECT $1, unnest(sqlc.arg(skill_ids)::int[])
-ON CONFLICT DO NOTHING;
-
--- name: AddResumeLanguage :exec
-INSERT INTO resume_languages (resume_id, language, level) VALUES ($1, $2, $3);
-
 -- name: ListResumeExperiences :many
 SELECT * FROM resume_experiences WHERE resume_id = ANY(sqlc.arg(resume_ids)::uuid[])
 ORDER BY resume_id, sort_order;

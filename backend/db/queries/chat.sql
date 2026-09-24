@@ -70,20 +70,11 @@ WHERE r.user_id = sqlc.arg(user_id)::uuid AND r.unread_count > 0
        OR EXISTS (SELECT 1 FROM company_members m
                   WHERE m.company_id = c.company_id AND m.user_id = sqlc.arg(user_id)::uuid));
 
--- name: InsertMessage :one
-INSERT INTO messages (conversation_id, sender_id, kind, body, file_id, meta, client_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (sender_id, client_id) DO NOTHING
-RETURNING *;
-
 -- name: GetMessageByClientID :one
 SELECT * FROM messages WHERE sender_id = $1 AND client_id = $2;
 
 -- name: GetMessage :one
 SELECT * FROM messages WHERE id = $1;
-
--- name: TouchConversation :exec
-UPDATE conversations SET last_message_id = $2, last_message_at = $3 WHERE id = $1;
 
 -- Pages go backwards from before_id (history) or forwards from after_id (catch-up
 -- after a reconnect); results are always newest first. Sender and attachment come in the
@@ -191,3 +182,27 @@ WITH m AS (
     SET last_read_id = GREATEST(conversation_reads.last_read_id, EXCLUDED.last_read_id)
 )
 SELECT * FROM m;
+
+-- Presence audience (TZ SEC-05): which of ids the viewer may see online — people they
+-- share a conversation with (seeker ↔ members of the company, or colleagues in a company
+-- that has conversations) and themselves. hide_online makes a user read as offline.
+-- Each branch is an index lookup: conversations_seeker_idx, company_members_pkey,
+-- company_members_user_idx, conversations_company_idx.
+-- name: PresenceAudience :many
+SELECT u.id, u.hide_online
+FROM users u
+WHERE u.id = ANY(sqlc.arg(ids)::uuid[])
+  AND (u.id = sqlc.arg(viewer)::uuid
+       OR EXISTS (SELECT 1 FROM conversations c
+                  JOIN company_members m ON m.company_id = c.company_id AND m.user_id = u.id
+                  WHERE c.seeker_id = sqlc.arg(viewer)::uuid)
+       OR EXISTS (SELECT 1 FROM conversations c
+                  JOIN company_members m ON m.company_id = c.company_id AND m.user_id = sqlc.arg(viewer)::uuid
+                  WHERE c.seeker_id = u.id)
+       OR EXISTS (SELECT 1 FROM company_members a
+                  JOIN company_members b ON b.company_id = a.company_id AND b.user_id = u.id
+                  WHERE a.user_id = sqlc.arg(viewer)::uuid
+                    AND EXISTS (SELECT 1 FROM conversations c WHERE c.company_id = a.company_id)));
+
+-- name: GetHideOnline :one
+SELECT hide_online FROM users WHERE id = $1;

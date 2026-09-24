@@ -1,40 +1,75 @@
-import { CircleCheck, FileText, LogIn } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CircleCheck, FileText, LogIn, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useState, type CSSProperties, type ReactNode } from "react";
 
-import { api, dataOf, type Schemas } from "~/shared/api/client";
-import { useSession, withAuth } from "~/shared/auth/session";
+import { api, apiError, dataOf, type Schemas } from "~/shared/api/client";
+import { refresh, useSession, withAuth } from "~/shared/auth/session";
 import { FormError } from "~/shared/forms/FormError";
 import { useSubmit } from "~/shared/forms/useSubmit";
 import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { relativeTime } from "~/shared/lib/format";
-import { cn } from "~/shared/lib/cn";
 import { Button } from "~/shared/ui/Button";
+import { Callout } from "~/shared/ui/Callout";
 import { DialogContent, DialogRoot } from "~/shared/ui/Dialog";
+import { EmptyState } from "~/shared/ui/EmptyState";
+import { ErrorState } from "~/shared/ui/ErrorState";
 import { Field, Textarea } from "~/shared/ui/Field";
-import { Spinner } from "~/shared/ui/Spinner";
+import { SelectableCard, SelectableCardGroup } from "~/shared/ui/SelectableCard";
+import { Skeleton, SkeletonDelay, useSkeletonHold } from "~/shared/ui/Skeleton";
 
 type Resume = Schemas["ResumeCard"];
+type Application = Schemas["Application"];
+type Load =
+  | { status: "loading" }
+  | { status: "error"; error: unknown }
+  | { status: "ready"; resumes: Resume[]; appliedId: string | null };
 
+const MAX_LETTER = 3000;
+
+// A new application must show up in "My applications" (and its counts) even if they were cached.
+const refreshApplications = () =>
+  void import("~/shared/query/query").then((m) => m.getQueryClient().invalidateQueries({ queryKey: ["my-applications"] }));
+
+/**
+ * Apply flow in one dialog: sign-in / employer / no-resume / already-applied steps, then a resume
+ * picker with an optional cover letter, then a success state with a drawn check.
+ */
 export default function ApplyDialog({
   open, onOpenChange, vacancy,
 }: { open: boolean; onOpenChange: (o: boolean) => void; vacancy: Schemas["VacancyDetail"] }) {
   const { t } = useTranslation();
-  const { status, user } = useSession();
-  const [resumes, setResumes] = useState<Resume[] | null>(null);
+  const { status, user, offline } = useSession();
+  const seeker = status === "authed" && user?.role === "seeker";
+  const [load, setLoad] = useState<Load>({ status: "loading" });
   const [resumeId, setResumeId] = useState("");
   const [letter, setLetter] = useState("");
-  const [done, setDone] = useState<"sent" | "already" | null>(null);
+  const [done, setDone] = useState<{ kind: "sent" | "already"; id?: string } | null>(null);
   const { pending, error, fields, run } = useSubmit();
 
+  const fetchData = useCallback(async () => {
+    setLoad({ status: "loading" });
+    try {
+      const [rs, apps] = await Promise.all([
+        withAuth(() => api.GET("/me/resumes")),
+        // Best effort: spot an earlier application up front (the submit answer is the real check).
+        withAuth(() => api.GET("/me/applications", { params: { query: { limit: 50 } } })).catch(() => null),
+      ]);
+      if (!rs.response.ok) throw apiError(rs);
+      const resumes = dataOf<Resume[]>(rs) ?? [];
+      const mine = apps?.response.ok ? (dataOf<Application[]>(apps) ?? []) : [];
+      const prior = mine.find((a) => (a.vacancy_id ?? a.vacancy?.id) === vacancy.id);
+      setResumeId((id) => (resumes.some((r) => r.id === id) ? id : (resumes[0]?.id ?? "")));
+      setLoad({ status: "ready", resumes, appliedId: prior?.id ?? null });
+    } catch (e) {
+      setLoad({ status: "error", error: e });
+    }
+  }, [vacancy.id]);
+
   useEffect(() => {
-    if (status !== "authed" || user?.role !== "seeker") return;
-    void withAuth(() => api.GET("/me/resumes")).then((res) => {
-      const list = dataOf<Resume[]>(res) ?? [];
-      setResumes(list);
-      setResumeId(list[0]?.id ?? "");
-    });
-  }, [status, user?.role]);
+    if (seeker) void fetchData();
+  }, [seeker, fetchData]);
+
+  const skeleton = useSkeletonHold(status === "loading" || (seeker && load.status === "loading"));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,97 +78,177 @@ export default function ApplyDialog({
         params: { path: { vacancy: vacancy.id } },
         body: { resume_id: resumeId, cover_letter: letter.trim() || undefined },
       })),
-      () => setDone("sent"),
+      (res) => {
+        setDone({ kind: "sent", id: dataOf<Application>(res)?.id });
+        refreshApplications();
+      },
       (err) => {
         if (err.code !== "already_applied") return false;
-        setDone("already");
+        setDone({ kind: "already" });
         return true;
       },
     );
   };
 
+  const close = () => onOpenChange(false);
   const next = typeof location === "undefined" ? "" : encodeURIComponent(location.pathname);
-  let body: React.ReactNode;
-  if (status === "loading") body = <Loading />;
-  else if (status === "anon")
-    body = (
-      <Notice
-        text={t("apply.signInFirst")}
-        action={<Button asChild icon={<LogIn className="size-4.5" />}><LocalizedLink to={`/login?next=${next}`}>{t("nav.signIn")}</LocalizedLink></Button>}
-      />
+  const cancel = <Button type="button" variant="ghost" onClick={close}>{t("common.cancel")}</Button>;
+  const closeBtn = <Button type="button" variant="secondary" onClick={close}>{t("common.close")}</Button>;
+
+  let body: ReactNode;
+  let footer: ReactNode = null;
+  if (status === "anon" && offline) {
+    body = <ErrorState error={new TypeError("offline")} onRetry={() => refresh()} headingAs="p" />;
+  } else if (status === "anon") {
+    body = <EmptyState size="sm" headingAs="p" icon={<LogIn />} title={t("apply.signInFirst")} body={t("vacancyPage.signInBody")} />;
+    footer = (
+      <>
+        <Button asChild variant="secondary"><LocalizedLink to={`/register?next=${next}`}>{t("nav.signUp")}</LocalizedLink></Button>
+        <Button asChild icon={<LogIn className="size-4.5" />}><LocalizedLink to={`/login?next=${next}`}>{t("nav.signIn")}</LocalizedLink></Button>
+      </>
     );
-  else if (user?.role !== "seeker") body = <Notice text={t("apply.employerNote")} />;
-  else if (done)
+  } else if (status === "authed" && !seeker) {
+    body = <Callout tone="info">{t("apply.employerNote")}</Callout>;
+    footer = closeBtn;
+  } else if (done?.kind === "sent") {
+    body = <Success title={t("apply.sent")} text={t("apply.sentBody")} />;
+    footer = (
+      <>
+        {closeBtn}
+        <Button asChild>
+          <LocalizedLink to={done.id ? `/me/applications/${done.id}` : "/me/applications"}>{t("apply.openApplications")}</LocalizedLink>
+        </Button>
+      </>
+    );
+  } else if (skeleton || status === "loading" || load.status === "loading") {
+    body = <FormSkeleton />;
+  } else if (load.status === "error") {
+    body = <ErrorState error={load.error} onRetry={fetchData} headingAs="p" />;
+    footer = cancel;
+  } else if (done?.kind === "already" || load.appliedId) {
+    const id = load.appliedId ?? undefined;
     body = (
-      <div className="flex flex-col items-center py-4 text-center">
-        <span className="grid size-14 place-items-center rounded-full bg-firuza-soft text-firuza-ink anim-pop" data-state="open">
-          <CircleCheck className="size-7" />
-        </span>
-        <p className="mt-4 font-display text-lg font-semibold text-ink">{done === "sent" ? t("apply.sent") : t("apply.alreadySent")}</p>
-        <p className="mt-1.5 text-sm text-ink-2">{t("apply.sentBody")}</p>
-        <Button asChild variant="secondary" className="mt-6"><LocalizedLink to="/me/applications">{t("apply.openApplications")}</LocalizedLink></Button>
+      <div role="status">
+        <EmptyState size="sm" headingAs="p" icon={<CircleCheck />} title={t("apply.alreadySent")} body={t("vacancyPage.alreadyBody")} />
       </div>
     );
-  else if (!resumes) body = <Loading />;
-  else if (resumes.length === 0)
-    body = (
-      <Notice
-        text={t("apply.noResume")}
-        action={<Button asChild icon={<FileText className="size-4.5" />}><LocalizedLink to="/me/resumes/new">{t("apply.createResume")}</LocalizedLink></Button>}
-      />
+    footer = (
+      <>
+        {closeBtn}
+        <Button asChild>
+          <LocalizedLink to={id ? `/me/applications/${id}` : "/me/applications"}>
+            {id ? t("vacancyPage.viewApplication") : t("apply.openApplications")}
+          </LocalizedLink>
+        </Button>
+      </>
     );
-  else
+  } else if (load.resumes.length === 0) {
     body = (
-      <form onSubmit={submit} className="flex flex-col gap-5">
+      <EmptyState size="sm" headingAs="p" icon={<FileText />} title={t("vacancyPage.noResumeTitle")} body={t("apply.noResume")} />
+    );
+    footer = (
+      <>
+        {cancel}
+        <Button asChild icon={<FileText className="size-4.5" />}>
+          <LocalizedLink to="/me/resumes/new">{t("apply.createResume")}</LocalizedLink>
+        </Button>
+      </>
+    );
+  } else {
+    body = (
+      <form id="apply-form" onSubmit={submit} noValidate className="flex flex-col gap-5">
         <FormError>{error}</FormError>
-        <fieldset>
-          <legend className="mb-2 text-sm font-medium text-ink">{t("apply.chooseResume")}</legend>
-          <div className="flex flex-col gap-2">
-            {resumes.map((r) => (
-              <label
+        <div>
+          <p className="mb-2 text-sm font-medium text-ink">{t("apply.chooseResume")}</p>
+          <SelectableCardGroup
+            value={resumeId}
+            onValueChange={setResumeId}
+            label={t("apply.chooseResume")}
+            aria-describedby={fields.resume_id ? "apply-resume-error" : undefined}
+          >
+            {load.resumes.map((r) => (
+              <SelectableCard
                 key={r.id}
-                className={cn(
-                  "flex cursor-pointer items-center gap-3 rounded-control border px-4 py-3 transition-colors",
-                  resumeId === r.id ? "border-lapis bg-lapis-soft/50" : "border-line-strong hover:border-ink-3",
-                )}
-              >
-                <input type="radio" name="resume" value={r.id} checked={resumeId === r.id} onChange={() => setResumeId(r.id)} className="size-4 accent-[var(--lapis)]" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-ink">{r.title}</span>
-                  <span className="block text-xs text-ink-3">{relativeTime(r.updated_at, t)}</span>
-                </span>
-              </label>
+                value={r.id}
+                icon={<FileText />}
+                title={r.title || t("resumePage.untitled")}
+                description={t("vacancyPage.resumeUpdated", { when: relativeTime(r.updated_at, t) })}
+              />
             ))}
-          </div>
-        </fieldset>
-        <Field label={t("apply.coverLetter")} optional={t("common.optional")} hint={t("apply.coverHint")} error={fields.cover_letter}>
-          <Textarea rows={4} maxLength={3000} value={letter} onChange={(e) => setLetter(e.target.value)} />
-        </Field>
-        <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button type="submit" loading={pending} disabled={!resumeId}>{t("apply.submit")}</Button>
+          </SelectableCardGroup>
+          {fields.resume_id && (
+            <p id="apply-resume-error" role="alert" className="mt-2 text-sm text-anor-ink">{fields.resume_id}</p>
+          )}
         </div>
+        <Field label={t("apply.coverLetter")} optional={t("common.optional")} hint={t("apply.coverHint")} error={fields.cover_letter}>
+          <Textarea rows={4} maxLength={MAX_LETTER} value={letter} onChange={(e) => setLetter(e.target.value)} />
+        </Field>
+        <p className="flex items-start gap-2 text-sm text-ink-2">
+          <ShieldCheck aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-firuza" />
+          {t("apply.subtitle", { company: vacancy.company.name })}
+        </p>
       </form>
     );
+    footer = (
+      <>
+        {cancel}
+        <Button type="submit" form="apply-form" loading={pending} disabled={!resumeId}>{t("apply.submit")}</Button>
+      </>
+    );
+  }
 
   return (
     <DialogRoot open={open} onOpenChange={onOpenChange}>
-      <DialogContent title={vacancy.title} description={t("apply.subtitle", { company: vacancy.company.name })} closeLabel={t("common.close")}>
+      <DialogContent
+        title={t("apply.title")}
+        description={`${vacancy.title} · ${vacancy.company.name}`}
+        closeLabel={t("common.close")}
+        dismissible={!pending}
+        footer={footer}
+      >
         {body}
       </DialogContent>
     </DialogRoot>
   );
 }
 
-function Loading() {
-  return <div className="grid h-32 place-items-center text-ink-3"><Spinner /></div>;
+/** Firuza check that draws itself: the circle first, then the tick. */
+function Success({ title, text }: { title: string; text: string }) {
+  return (
+    // role=status: the result is read out when it replaces the form.
+    <div role="status" className="flex flex-col items-center pb-2 pt-3 text-center">
+      <span aria-hidden="true" className="anim-pop grid size-16 place-items-center rounded-full bg-firuza-soft text-firuza-ink" data-state="open">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="size-9">
+          <circle cx="12" cy="12" r="9.5" className="anim-draw origin-center -rotate-90" style={{ "--len": 60 } as CSSProperties} />
+          <path d="m7.75 12.25 3 3 5.5-6" className="anim-draw" style={{ "--len": 13, animationDelay: "300ms" } as CSSProperties} />
+        </svg>
+      </span>
+      <p className="mt-5 font-display text-xl font-semibold tracking-heading text-ink">{title}</p>
+      <p className="mt-1.5 max-w-sm text-md text-ink-2">{text}</p>
+    </div>
+  );
 }
 
-function Notice({ text, action }: { text: string; action?: React.ReactNode }) {
+/** Same shape as the form: two resume cards, the letter field, the note. */
+function FormSkeleton() {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col items-start gap-4 py-2">
-      <p className="text-ink-2">{text}</p>
-      {action}
-    </div>
+    <SkeletonDelay>
+      <div role="status" className="flex flex-col gap-5">
+        <span className="sr-only">{t("common.loading")}</span>
+        <div>
+          <Skeleton className="mb-2 h-4 w-20" />
+          <div className="grid gap-2">
+            <Skeleton className="h-18 rounded-control" />
+            <Skeleton className="h-18 rounded-control" />
+          </div>
+        </div>
+        <div>
+          <Skeleton className="mb-2 h-4 w-32" />
+          <Skeleton className="h-28 rounded-control" />
+        </div>
+        <Skeleton className="h-4 w-3/4" />
+      </div>
+    </SkeletonDelay>
   );
 }

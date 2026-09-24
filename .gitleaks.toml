@@ -1,0 +1,20 @@
+# gitleaks (TZ SEC-08): default rules plus narrowly scoped exceptions for values that are
+# fixtures, not secrets. Never allowlist a whole directory or a rule everywhere.
+#   gitleaks git --redact .      # history      (CI: .github/workflows/security.yml)
+#   gitleaks dir --redact .      # working tree
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "CI-only JWT secret for the throwaway Postgres service in workflows"
+regexes = ['''ci-secret-0123456789abcdef0123456789abcdef''']
+
+[[allowlists]]
+description = "Fake production values in the config validation unit test"
+targetRules = ["generic-api-key"]
+paths = ['''^backend/internal/config/config_test\.go$''']
+
+[[allowlists]]
+description = "Example env files: placeholders (change-me) and development defaults only"
+targetRules = ["generic-api-key"]
+paths = ['''^\.env\.(production|staging)\.example$''', '''^backend/\.env\.example$''']

@@ -344,6 +344,7 @@ type CompanyStatus string
 const (
 	CompanyStatusActive  CompanyStatus = "active"
 	CompanyStatusBlocked CompanyStatus = "blocked"
+	CompanyStatusDeleted CompanyStatus = "deleted"
 )
 
 func (e *CompanyStatus) Scan(src interface{}) error {
@@ -384,7 +385,8 @@ func (ns NullCompanyStatus) Value() (driver.Value, error) {
 func (e CompanyStatus) Valid() bool {
 	switch e {
 	case CompanyStatusActive,
-		CompanyStatusBlocked:
+		CompanyStatusBlocked,
+		CompanyStatusDeleted:
 		return true
 	}
 	return false
@@ -394,6 +396,7 @@ func AllCompanyStatusValues() []CompanyStatus {
 	return []CompanyStatus{
 		CompanyStatusActive,
 		CompanyStatusBlocked,
+		CompanyStatusDeleted,
 	}
 }
 
@@ -781,6 +784,70 @@ func AllFileStatusValues() []FileStatus {
 	}
 }
 
+type InviteStatus string
+
+const (
+	InviteStatusPending  InviteStatus = "pending"
+	InviteStatusAccepted InviteStatus = "accepted"
+	InviteStatusDeclined InviteStatus = "declined"
+	InviteStatusRevoked  InviteStatus = "revoked"
+)
+
+func (e *InviteStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = InviteStatus(s)
+	case string:
+		*e = InviteStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for InviteStatus: %T", src)
+	}
+	return nil
+}
+
+type NullInviteStatus struct {
+	InviteStatus InviteStatus
+	Valid        bool // Valid is true if InviteStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullInviteStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.InviteStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.InviteStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullInviteStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.InviteStatus), nil
+}
+
+func (e InviteStatus) Valid() bool {
+	switch e {
+	case InviteStatusPending,
+		InviteStatusAccepted,
+		InviteStatusDeclined,
+		InviteStatusRevoked:
+		return true
+	}
+	return false
+}
+
+func AllInviteStatusValues() []InviteStatus {
+	return []InviteStatus{
+		InviteStatusPending,
+		InviteStatusAccepted,
+		InviteStatusDeclined,
+		InviteStatusRevoked,
+	}
+}
+
 type LanguageLevel string
 
 const (
@@ -979,6 +1046,195 @@ func AllRegionKindValues() []RegionKind {
 		RegionKindRegion,
 		RegionKindCity,
 		RegionKindDistrict,
+	}
+}
+
+type ReportObject string
+
+const (
+	ReportObjectVacancy ReportObject = "vacancy"
+)
+
+func (e *ReportObject) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReportObject(s)
+	case string:
+		*e = ReportObject(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReportObject: %T", src)
+	}
+	return nil
+}
+
+type NullReportObject struct {
+	ReportObject ReportObject
+	Valid        bool // Valid is true if ReportObject is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReportObject) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReportObject, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReportObject.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReportObject) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReportObject), nil
+}
+
+func (e ReportObject) Valid() bool {
+	switch e {
+	case ReportObjectVacancy:
+		return true
+	}
+	return false
+}
+
+func AllReportObjectValues() []ReportObject {
+	return []ReportObject{
+		ReportObjectVacancy,
+	}
+}
+
+type ReportReason string
+
+const (
+	ReportReasonSpam           ReportReason = "spam"
+	ReportReasonFraud          ReportReason = "fraud"
+	ReportReasonOffensive      ReportReason = "offensive"
+	ReportReasonDiscrimination ReportReason = "discrimination"
+	ReportReasonMisleading     ReportReason = "misleading"
+	ReportReasonDuplicate      ReportReason = "duplicate"
+	ReportReasonOther          ReportReason = "other"
+)
+
+func (e *ReportReason) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReportReason(s)
+	case string:
+		*e = ReportReason(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReportReason: %T", src)
+	}
+	return nil
+}
+
+type NullReportReason struct {
+	ReportReason ReportReason
+	Valid        bool // Valid is true if ReportReason is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReportReason) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReportReason, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReportReason.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReportReason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReportReason), nil
+}
+
+func (e ReportReason) Valid() bool {
+	switch e {
+	case ReportReasonSpam,
+		ReportReasonFraud,
+		ReportReasonOffensive,
+		ReportReasonDiscrimination,
+		ReportReasonMisleading,
+		ReportReasonDuplicate,
+		ReportReasonOther:
+		return true
+	}
+	return false
+}
+
+func AllReportReasonValues() []ReportReason {
+	return []ReportReason{
+		ReportReasonSpam,
+		ReportReasonFraud,
+		ReportReasonOffensive,
+		ReportReasonDiscrimination,
+		ReportReasonMisleading,
+		ReportReasonDuplicate,
+		ReportReasonOther,
+	}
+}
+
+type ReportStatus string
+
+const (
+	ReportStatusOpen      ReportStatus = "open"
+	ReportStatusResolved  ReportStatus = "resolved"
+	ReportStatusDismissed ReportStatus = "dismissed"
+)
+
+func (e *ReportStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReportStatus(s)
+	case string:
+		*e = ReportStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReportStatus: %T", src)
+	}
+	return nil
+}
+
+type NullReportStatus struct {
+	ReportStatus ReportStatus
+	Valid        bool // Valid is true if ReportStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReportStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReportStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReportStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReportStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReportStatus), nil
+}
+
+func (e ReportStatus) Valid() bool {
+	switch e {
+	case ReportStatusOpen,
+		ReportStatusResolved,
+		ReportStatusDismissed:
+		return true
+	}
+	return false
+}
+
+func AllReportStatusValues() []ReportStatus {
+	return []ReportStatus{
+		ReportStatusOpen,
+		ReportStatusResolved,
+		ReportStatusDismissed,
 	}
 }
 
@@ -1360,6 +1616,17 @@ func AllWorkScheduleValues() []WorkSchedule {
 	}
 }
 
+type AdminAuditLog struct {
+	ID         uuid.UUID
+	AdminID    *uuid.UUID
+	Action     string
+	ObjectType string
+	ObjectID   string
+	Details    []byte
+	Ip         *netip.Addr
+	CreatedAt  time.Time
+}
+
 type Application struct {
 	ID              uuid.UUID
 	VacancyID       uuid.UUID
@@ -1420,6 +1687,19 @@ type Company struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 	OpenVacancies int32
+}
+
+type CompanyInvite struct {
+	ID          uuid.UUID
+	CompanyID   uuid.UUID
+	Email       string
+	Role        CompanyMemberRole
+	InvitedBy   *uuid.UUID
+	Status      InviteStatus
+	ExpiresAt   time.Time
+	RespondedBy *uuid.UUID
+	RespondedAt *time.Time
+	CreatedAt   time.Time
 }
 
 type CompanyMember struct {
@@ -1501,6 +1781,21 @@ type Region struct {
 	NameRu     string
 	NameEn     string
 	SortOrder  int32
+	Soato      *int32
+}
+
+type Report struct {
+	ID             uuid.UUID
+	ObjectType     ReportObject
+	ObjectID       uuid.UUID
+	ReporterID     *uuid.UUID
+	Reason         ReportReason
+	Comment        string
+	Status         ReportStatus
+	ResolvedBy     *uuid.UUID
+	ResolvedAt     *time.Time
+	ResolutionNote string
+	CreatedAt      time.Time
 }
 
 type Resume struct {
@@ -1624,6 +1919,10 @@ type User struct {
 	TelegramChatID  *int64
 	NotifyEmail     bool
 	NotifyTelegram  bool
+	DeletedAt       *time.Time
+	ConsentVersion  *string
+	ConsentAt       *time.Time
+	HideOnline      bool
 }
 
 type UserSession struct {
@@ -1670,6 +1969,14 @@ type Vacancy struct {
 	ExpiresAt         *time.Time
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
+	FeaturedUntil     *time.Time
+	ContentUpdatedAt  *time.Time
+}
+
+type VacancyExpiryWarning struct {
+	VacancyID uuid.UUID
+	ExpiresAt time.Time
+	WarnedAt  time.Time
 }
 
 type VacancySearch struct {

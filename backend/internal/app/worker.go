@@ -60,9 +60,13 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 	if err != nil {
 		return err
 	}
+	lifecycle, err := VacancyLifecycle(pool, rdb, log)
+	if err != nil {
+		return err
+	}
 	client, err := jobs.NewWorkerClient(jobs.Deps{
 		Pool: pool, Redis: rdb, Mailer: m, Storage: st, Bot: bot,
-		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: saved, Log: log,
+		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: saved, Lifecycle: lifecycle, Log: log,
 		CriticalWorkers: cfg.Worker.CriticalWorkers, DefaultWorkers: cfg.Worker.DefaultWorkers,
 	})
 	if err != nil {
@@ -101,6 +105,17 @@ func stopWorker(c riverStopper, timeout time.Duration, log *slog.Logger) error {
 	return c.StopAndCancel(cancelCtx)
 }
 
+// VacancyLifecycle builds the periodic vacancy jobs' service; their notifications are
+// queued through an insert-only River client in the same transaction as the change.
+func VacancyLifecycle(pool *pgxpool.Pool, rdb *goredis.Client, log *slog.Logger) (*vacancy.Lifecycle, error) {
+	enq, err := jobs.NewEnqueuer(pool, log)
+	if err != nil {
+		return nil, err
+	}
+	notify := &notification.Service{Pool: pool, Q: gen.New(pool), Publisher: &realtime.Publisher{RDB: rdb}, Jobs: enq, Log: log}
+	return &vacancy.Lifecycle{Pool: pool, Cache: vacancy.NewPublicCache(rdb, log), Notify: notify, Log: log}, nil
+}
+
 // SavedSearches builds the alert service outside the API: it needs vacancy listing (with
 // the catalog snapshot) and notifications, whose jobs go through an insert-only client.
 func SavedSearches(ctx context.Context, pool *pgxpool.Pool, rdb *goredis.Client, log *slog.Logger) (*savedsearch.Service, error) {
@@ -113,7 +128,7 @@ func SavedSearches(ctx context.Context, pool *pgxpool.Pool, rdb *goredis.Client,
 	if err != nil {
 		return nil, err
 	}
-	notify := &notification.Service{Q: q, Publisher: &realtime.Publisher{RDB: rdb}, Jobs: enq, Log: log}
+	notify := &notification.Service{Pool: pool, Q: q, Publisher: &realtime.Publisher{RDB: rdb}, Jobs: enq, Log: log}
 	return &savedsearch.Service{Q: q, Vacancies: &vacancy.Service{Pool: pool, Q: q, Catalog: cat, Log: log},
 		Notify: notify, Log: log}, nil
 }

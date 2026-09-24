@@ -22,6 +22,10 @@ func NewRevocationStore(rdb *redis.Client, accessTTL time.Duration) *RevocationS
 
 func key(id uuid.UUID) string { return "sess:revoked:" + id.String() }
 
+// RevokedKey is the Redis key marking a revoked session; the request gate checks it in
+// its single script call (TZ BE-09).
+func RevokedKey(id uuid.UUID) string { return key(id) }
+
 func (s *RevocationStore) Revoke(ctx context.Context, ids ...uuid.UUID) error {
 	if len(ids) == 0 {
 		return nil

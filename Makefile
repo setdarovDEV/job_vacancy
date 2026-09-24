@@ -97,6 +97,8 @@ logs-staging: ## Staging: follow logs (s=api-1 for one service)
 
 prod-config: ## Validate every compose file with the example env files (no Docker daemon needed)
 	docker compose --env-file .env.production.example -f nginx/docker-compose.prod.yml config -q
+	APP_PROJECT=jobvacancy docker compose -p jobvacancy-monitoring --env-file .env.production.example -f monitoring/docker-compose.monitoring.yml config -q
+	docker compose -f e2e/docker-compose.e2e.yml config -q
 	COMPOSE_PROFILES=db,backup,tools,restore docker compose --env-file .env.production.example -f nginx/docker-compose.prod.yml config -q
 	docker compose --env-file .env.staging.example -f nginx/docker-compose.prod.yml -f nginx/docker-compose.staging.yml config -q
 	docker compose -f nginx/docker-compose.dev.yml config -q
@@ -107,6 +109,61 @@ nginx-test: ## Build the nginx image and run nginx -t in it (needs Docker)
 	docker run --rm --add-host api-1:127.0.0.1 --add-host api-2:127.0.0.1 --add-host web-1:127.0.0.1 \
 	  --add-host web-2:127.0.0.1 --add-host minio:127.0.0.1 --entrypoint sh jobvacancy-nginx:test -c 'jv-tls >/dev/null && nginx -t'
 
+# ---- monitoring, error tracking (TZ OPS-04/05; docs/RUNBOOK.md §10) ------------------------
+MONITOR := nginx/scripts/monitoring.sh
+
+monitoring-up: ## Production: Prometheus, Alertmanager→Telegram, Grafana, exporters, GlitchTip
+	$(MONITOR) production up
+
+monitoring-up-staging: ## Staging: the same monitoring stack
+	$(MONITOR) staging up
+
+monitoring-ps: ## Production: monitoring containers and health
+	$(MONITOR) production ps
+
+monitoring-logs: ## Production: monitoring logs (s=prometheus for one service)
+	$(MONITOR) production logs -f --tail=200 $(s)
+
+monitoring-reload: ## Production: re-read Prometheus rules and the Alertmanager config
+	$(MONITOR) production reload
+
+alert-drill: ## Production: synthetic critical alert → Telegram, timed (routing check)
+	$(MONITOR) production drill
+
+alert-drill-api: ## Production: drain + stop api-2, time ApiInstanceDown (≤ 2 min), restore
+	$(MONITOR) production drill-api
+
+glitchtip-admin: ## Production: create the first GlitchTip user (interactive)
+	$(MONITOR) production glitchtip-admin
+
+monitoring-lint: ## promtool/amtool checks, alert unit tests, dashboards drift (Docker or the binaries)
+	nginx/scripts/monitoring-lint.sh
+
+# ---- CI checks you can run locally (TZ SEC-08, QA-02) ---------------------------------------
+check-pins: ## Images pinned by digest, GitHub Actions by commit SHA
+	nginx/scripts/check-pins.sh
+
+security: ## govulncheck + pnpm audit --prod + gitleaks (tools must be installed)
+	cd backend && govulncheck ./...
+	cd web && pnpm audit --prod
+	gitleaks git --redact --no-banner . && gitleaks dir --redact --no-banner .
+
+E2E := docker compose -f e2e/docker-compose.e2e.yml
+
+e2e-up: ## Whole stack from the production images for browser tests (:8080 site, :8090 API)
+	$(E2E) up -d --build --wait --wait-timeout 300
+
+e2e-seed: ## Demo accounts + published vacancies in the e2e stack
+	e2e/seed.sh
+
+e2e-a11y: ## axe light/dark × 4 locales + locale smoke (WEB=http://localhost:8080)
+	cd e2e && pnpm install --frozen-lockfile && node a11y.mjs
+
+e2e-down: ## Stop the e2e stack and delete its data
+	$(E2E) down -v --remove-orphans
+
 .PHONY: help up down reset logs setup api worker web web-install api-types test psql \
 	deploy deploy-staging rollback rollback-staging backup backup-status restore staging-refresh \
-	cert cert-staging ctl ps-prod logs-production logs-staging prod-config nginx-test
+	cert cert-staging ctl ps-prod logs-production logs-staging prod-config nginx-test \
+	monitoring-up monitoring-up-staging monitoring-ps monitoring-logs monitoring-reload alert-drill \
+	alert-drill-api glitchtip-admin monitoring-lint check-pins security e2e-up e2e-seed e2e-a11y e2e-down

@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"jobvacancy.uz/backend/db/gen"
+	"jobvacancy.uz/backend/internal/modules/audit"
 	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/modules/company"
 	"jobvacancy.uz/backend/internal/modules/notification"
@@ -232,7 +233,11 @@ func (s *Service) Approve(ctx context.Context, admin reqctx.Principal, id uuid.U
 		var err error
 		sent, err = s.notifyAuthor(ctx, tx, v, notification.TypeVacancyApproved,
 			notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title})
-		return err
+		if err != nil {
+			return err
+		}
+		return audit.Write(ctx, gen.New(tx), audit.Entry{Action: "vacancy.approve", ObjectType: audit.ObjectVacancy,
+			ObjectID: v.ID.String(), Details: map[string]any{"title": v.Title, "company_id": v.CompanyID}})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Detail{}, s.missingOr(ctx, id, ErrTransition)
@@ -259,7 +264,11 @@ func (s *Service) Reject(ctx context.Context, admin reqctx.Principal, id uuid.UU
 		}
 		sent, err = s.notifyAuthor(ctx, tx, v, notification.TypeVacancyRejected,
 			notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title, Reason: reason})
-		return err
+		if err != nil {
+			return err
+		}
+		return audit.Write(ctx, gen.New(tx), audit.Entry{Action: "vacancy.reject", ObjectType: audit.ObjectVacancy,
+			ObjectID: v.ID.String(), Details: map[string]any{"title": v.Title, "company_id": v.CompanyID, "reason": reason}})
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Detail{}, s.missingOr(ctx, id, ErrTransition)

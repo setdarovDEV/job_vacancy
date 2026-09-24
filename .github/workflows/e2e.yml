@@ -1,0 +1,150 @@
+name: e2e
+
+# Browser tests against a whole stack (TZ QA-02): the production images of api/worker/web in
+# docker compose (e2e/docker-compose.e2e.yml) with Postgres 18, Redis, MinIO and Mailpit,
+# seeded with the demo accounts (e2e/seed.sh), then
+#   * axe in light and dark + 4-locale smoke on the public and signed-in pages (e2e/a11y.mjs):
+#     0 serious/critical violations required;
+#   * the existing Playwright scripts web/test/*.mjs: browser-smoke, select, pickers, shots-c..f
+#     (the dev-only /ui page needs the Vite dev server, proxied to the same API) and
+#     prod-check (production SSR build through the gateway, Web Vitals on slow 4G).
+# Screenshots and the axe report are uploaded as the "e2e-reports" artifact.
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "backend/**", "e2e/**", ".github/workflows/e2e.yml"]
+  pull_request:
+    paths: ["web/**", "backend/**", "e2e/**", ".github/workflows/e2e.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHROME: /usr/bin/google-chrome
+  COMPOSE: docker compose -f e2e/docker-compose.e2e.yml
+  REPORTS: ${{ github.workspace }}/e2e/reports
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Same Dockerfiles and BuildKit cache scopes as the release images (deploy.yml).
+      - name: Build backend image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: backend
+          load: true
+          tags: jobvacancy-backend:e2e
+          cache-from: type=gha,scope=backend
+          build-args: |
+            VERSION=e2e
+            COMMIT=${{ github.sha }}
+      - name: Build web image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: web
+          load: true
+          tags: jobvacancy-web:e2e
+          cache-from: type=gha,scope=web
+          build-args: |
+            VERSION=e2e
+            VITE_SITE_URL=http://localhost:8080
+
+      - name: Start the stack (migrations run before the API)
+        run: $COMPOSE up -d --wait --wait-timeout 300
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with: { version: 10.33.0 }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: |
+            web/pnpm-lock.yaml
+            e2e/pnpm-lock.yaml
+      - name: Install web and e2e dependencies
+        run: |
+          (cd web && pnpm install --frozen-lockfile)
+          (cd e2e && pnpm install --frozen-lockfile)
+
+      - name: Seed demo data
+        run: e2e/seed.sh
+
+      - name: axe (light + dark) and 4-locale smoke, production build
+        env:
+          WEB: http://localhost:8080
+          OUT: ${{ env.REPORTS }}/a11y/
+        run: node e2e/a11y.mjs
+
+      - name: Start the Vite dev server for the dev-only pages (/ui)
+        if: ${{ !cancelled() }}
+        working-directory: web
+        env:
+          API_ORIGIN: http://127.0.0.1:8090
+        run: |
+          nohup pnpm dev >"$RUNNER_TEMP/vite.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -fsS -o /dev/null http://localhost:5180/ && exit 0; sleep 2; done
+          cat "$RUNNER_TEMP/vite.log"; exit 1
+
+      # The existing scripts, unchanged (TZ QA-02 "mavjud web/test/*.mjs CI'ga ko'chiriladi").
+      - name: web/test/browser-smoke.mjs
+        if: ${{ !cancelled() }}
+        working-directory: web
+        env: { WEB: "http://localhost:5180", SHOTS: "${{ env.REPORTS }}/shots" }
+        run: mkdir -p "$SHOTS" && node test/browser-smoke.mjs
+      - name: web/test/select.mjs
+        if: ${{ !cancelled() }}
+        working-directory: web
+        env: { WEB: "http://localhost:5180", SHOTS: "${{ env.REPORTS }}/shots" }
+        run: node test/select.mjs
+      - name: web/test/pickers.mjs (Chromium)
+        if: ${{ !cancelled() }}
+        working-directory: web
+        env: { WEB: "http://localhost:5180", SHOTS: "${{ env.REPORTS }}/shots" }
+        run: node test/pickers.mjs
+      - name: web/test/shots-c..f.mjs (public pages, cabinets, kanban, chat)
+        if: ${{ !cancelled() }}
+        working-directory: web
+        env: { WEB: "http://localhost:5180", SHOTS: "${{ env.REPORTS }}/shots" }
+        run: |
+          status=0
+          for s in c d e f; do
+            echo "::group::shots-$s"
+            node "test/shots-$s.mjs" || status=1
+            echo "::endgroup::"
+            sleep 20   # the auth endpoints allow 30 requests per minute per IP
+          done
+          exit $status
+      - name: web/test/prod-check.mjs (production SSR through the gateway, slow 4G)
+        if: ${{ !cancelled() }}
+        working-directory: web
+        env: { WEB: "http://localhost:8080" }
+        run: node test/prod-check.mjs
+      - name: i18n keys in all 4 languages
+        if: ${{ !cancelled() }}
+        working-directory: web
+        run: node --experimental-strip-types --no-warnings test/i18n-keys.mjs | tee /dev/stderr | grep -q "all keys present"
+
+      - name: Stack logs
+        if: failure()
+        run: $COMPOSE logs --no-color --tail=300 api worker web gateway >"$REPORTS/stack.log" 2>&1 || true
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: e2e-reports
+          path: e2e/reports
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Stop the stack
+        if: always()
+        run: $COMPOSE down -v --remove-orphans

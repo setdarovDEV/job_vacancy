@@ -786,12 +786,24 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Company directory (verified first, then by open vacancies), 24 per page */
+        /**
+         * Company directory (verified first, then by open vacancies), 24 per page
+         * @description Keyset pages (TZ BE-03), never OFFSET. Page either by number (`page`, for numbered
+         *     pagination: it seeks from a cached page anchor) or by `cursor` (from
+         *     `meta.next_cursor`, takes precedence over `page`). `meta.total` and
+         *     `meta.page_count` come from page anchors cached for ~3 minutes, so they (and page
+         *     boundaries) may lag new companies or ranking changes by that long. A `page` past
+         *     the last one returns an empty `data`. `open_vacancies` is kept by a database
+         *     trigger on every vacancy status change.
+         */
         get: {
             parameters: {
                 query?: {
+                    /** @description Name contains (case-insensitive, max 100 chars) */
                     q?: string;
                     page?: number;
+                    /** @description meta.next_cursor of the previous page */
+                    cursor?: string;
                 };
                 header?: never;
                 path?: never;
@@ -806,13 +818,20 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
-                            data?: components["schemas"]["Company"][];
-                            meta?: {
-                                next_page?: number | null;
+                            data: components["schemas"]["Company"][];
+                            meta: {
+                                /** @description Requested page number; null when paging by cursor */
+                                page: number | null;
+                                next_page: number | null;
+                                next_cursor: string | null;
+                                /** @description Matching active companies */
+                                total: number;
+                                page_count: number;
                             };
                         };
                     };
                 };
+                400: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -3021,7 +3040,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** My conversations, most recent first, with last message and unread count */
+        /**
+         * My conversations, most recent first, with last message and unread count
+         * @description Keyset pages (`meta.next_cursor`). `unread` is the number of undeleted messages
+         *     from others after the caller's read position (capped at 100), kept up to date on
+         *     every send, read and delete (TZ BE-04). A participant who never opened a
+         *     conversation counts its whole history.
+         */
         get: {
             parameters: {
                 query?: {
@@ -3041,6 +3066,7 @@ export interface paths {
                     };
                     content?: never;
                 };
+                400: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -3058,7 +3084,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Number of conversations with unread messages */
+        /**
+         * Number of conversations with unread messages
+         * @description Read from denormalized counters (an index-only count), cheap enough to poll.
+         */
         get: {
             parameters: {
                 query?: never;

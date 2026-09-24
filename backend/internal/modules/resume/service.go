@@ -39,10 +39,19 @@ type Service struct {
 
 // ---- writes ------------------------------------------------------------------------------
 
+// experience is one validated work experience row.
+type experience struct {
+	Company, Position string
+	StartDate         time.Time
+	EndDate           *time.Time
+	Description       string
+	SortOrder         int32
+}
+
 // parsed holds validated section data ready for insertion.
 type parsed struct {
 	in          Input
-	experiences []gen.AddResumeExperienceParams
+	experiences []experience
 	months      int32
 	skills      []catalog.Skill
 }
@@ -84,7 +93,7 @@ func (s *Service) parse(ctx context.Context, in Input) (parsed, error) {
 			return parsed{}, apperr.Validation(map[string]string{"experiences": "date_range"})
 		}
 		spans = append(spans, [2]int{monthIndex(start), endIdx})
-		p.experiences = append(p.experiences, gen.AddResumeExperienceParams{
+		p.experiences = append(p.experiences, experience{
 			Company: strings.TrimSpace(e.Company), Position: strings.TrimSpace(e.Position),
 			StartDate: start, EndDate: end, Description: strings.TrimSpace(e.Description), SortOrder: int32(i),
 		})
@@ -127,7 +136,8 @@ func (s *Service) Create(ctx context.Context, pr reqctx.Principal, in Input) (De
 		return Detail{}, err
 	}
 	var r gen.Resume
-	err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+	err = postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		q := gen.New(tx)
 		r, err = q.CreateResume(ctx, gen.CreateResumeParams{
 			UserID: pr.UserID, Title: p.in.Title, About: p.in.About, CategoryID: p.in.CategoryID,
 			RegionID: p.in.RegionID, Relocate: p.in.Relocate, DesiredSalary: p.in.DesiredSalary,
@@ -138,7 +148,10 @@ func (s *Service) Create(ctx context.Context, pr reqctx.Principal, in Input) (De
 		if err != nil {
 			return err
 		}
-		return s.writeSections(ctx, q, r, p)
+		if err := s.writeSections(ctx, tx, r.ID, p, false); err != nil {
+			return err
+		}
+		return q.UpsertResumeSearch(ctx, s.searchDoc(r, p))
 	})
 	if err != nil {
 		return Detail{}, err
@@ -155,7 +168,8 @@ func (s *Service) Update(ctx context.Context, pr reqctx.Principal, id uuid.UUID,
 	if err != nil {
 		return Detail{}, err
 	}
-	err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+	err = postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		q := gen.New(tx)
 		r, err = q.UpdateResume(ctx, gen.UpdateResumeParams{
 			ID: r.ID, Title: p.in.Title, About: p.in.About, CategoryID: p.in.CategoryID,
 			RegionID: p.in.RegionID, Relocate: p.in.Relocate, DesiredSalary: p.in.DesiredSalary,
@@ -166,52 +180,15 @@ func (s *Service) Update(ctx context.Context, pr reqctx.Principal, id uuid.UUID,
 		if err != nil {
 			return err
 		}
-		for _, del := range []func(context.Context, uuid.UUID) error{
-			q.DeleteResumeExperiences, q.DeleteResumeEducations, q.DeleteResumeSkills, q.DeleteResumeLanguages,
-		} {
-			if err := del(ctx, r.ID); err != nil {
-				return err
-			}
+		if err := s.writeSections(ctx, tx, r.ID, p, true); err != nil {
+			return err
 		}
-		return s.writeSections(ctx, q, r, p)
+		return q.UpsertResumeSearch(ctx, s.searchDoc(r, p))
 	})
 	if err != nil {
 		return Detail{}, err
 	}
 	return s.detail(ctx, r, pr)
-}
-
-func (s *Service) writeSections(ctx context.Context, q *gen.Queries, r gen.Resume, p parsed) error {
-	for _, e := range p.experiences {
-		e.ResumeID = r.ID
-		if err := q.AddResumeExperience(ctx, e); err != nil {
-			return err
-		}
-	}
-	for i, e := range p.in.Educations {
-		err := q.AddResumeEducation(ctx, gen.AddResumeEducationParams{
-			ResumeID: r.ID, Institution: strings.TrimSpace(e.Institution), Level: gen.EducationLevel(e.Level),
-			Field: strings.TrimSpace(e.Field), StartYear: e.StartYear, EndYear: e.EndYear, SortOrder: int32(i),
-		})
-		if err != nil {
-			return err
-		}
-	}
-	ids := make([]int32, len(p.skills))
-	for i, sk := range p.skills {
-		ids[i] = sk.ID
-	}
-	if err := q.AddResumeSkills(ctx, gen.AddResumeSkillsParams{ResumeID: r.ID, SkillIds: ids}); err != nil {
-		return err
-	}
-	for _, l := range p.in.Languages {
-		if err := q.AddResumeLanguage(ctx, gen.AddResumeLanguageParams{
-			ResumeID: r.ID, Language: l.Language, Level: gen.LanguageLevel(l.Level),
-		}); err != nil {
-			return err
-		}
-	}
-	return q.UpsertResumeSearch(ctx, s.searchDoc(r, p))
 }
 
 func (s *Service) SetVisibility(ctx context.Context, pr reqctx.Principal, id uuid.UUID, v string) (Detail, error) {

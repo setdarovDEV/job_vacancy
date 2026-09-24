@@ -66,7 +66,7 @@ UNION ALL
  LIMIT sqlc.arg(max_results));
 
 -- name: GetVacanciesByIDs :many
-SELECT sqlc.embed(v), c.name AS company_name
+SELECT sqlc.embed(v), c.name AS company_name, c.slug AS company_slug
 FROM vacancies v JOIN companies c ON c.id = v.company_id
 WHERE v.id = ANY(sqlc.arg(ids)::uuid[]);
 

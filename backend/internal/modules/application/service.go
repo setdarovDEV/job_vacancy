@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -65,46 +64,6 @@ type InviteInput struct {
 	Message   string    `json:"message" validate:"max=2000"`
 }
 
-// Apply sends the seeker's resume to a published vacancy.
-func (s *Service) Apply(ctx context.Context, p reqctx.Principal, vacancyID uuid.UUID, in ApplyInput) (Detail, error) {
-	if p.Role != string(gen.UserRoleSeeker) {
-		return Detail{}, ErrSeekerOnly
-	}
-	if err := s.Companies.RequireVerifiedUser(ctx, p.UserID); err != nil {
-		return Detail{}, err
-	}
-	v, err := s.Q.GetVacancyByID(ctx, vacancyID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Detail{}, vacancy.ErrNotFound
-	}
-	if err != nil {
-		return Detail{}, err
-	}
-	if v.Status != gen.VacancyStatusPublished {
-		return Detail{}, ErrVacancyClosed
-	}
-	if s.Companies.IsMember(ctx, reqctx.Principal{UserID: p.UserID}, v.CompanyID) {
-		return Detail{}, ErrOwnVacancy
-	}
-	if _, err := s.Resumes.OwnedBy(ctx, in.ResumeID, p.UserID); err != nil {
-		return Detail{}, err
-	}
-	a, err := s.create(ctx, gen.CreateApplicationParams{
-		VacancyID: v.ID, CompanyID: v.CompanyID, SeekerID: p.UserID, ResumeID: in.ResumeID,
-		Source: gen.ApplicationSourceApply, Status: gen.ApplicationStatusSent,
-		CoverLetter: strings.TrimSpace(in.CoverLetter),
-	}, p.UserID, "")
-	if err != nil {
-		return Detail{}, err
-	}
-	if u, err := s.Q.GetUserByID(ctx, p.UserID); err == nil {
-		s.Notify.NotifyCompany(ctx, v.CompanyID, notification.TypeApplicationNew, notification.Payload{
-			ApplicationID: a.ID.String(), VacancyID: v.ID.String(), VacancyTitle: v.Title, CandidateName: u.FullName,
-		})
-	}
-	return s.detail(ctx, a, p, false)
-}
-
 // Invite lets an employer who found a resume in candidate search invite its owner to
 // one of the company's published vacancies.
 func (s *Service) Invite(ctx context.Context, p reqctx.Principal, resumeID uuid.UUID, in InviteInput) (Detail, error) {
@@ -138,29 +97,33 @@ func (s *Service) Invite(ctx context.Context, p reqctx.Principal, resumeID uuid.
 	a, err := s.create(ctx, gen.CreateApplicationParams{
 		VacancyID: v.ID, CompanyID: v.CompanyID, SeekerID: r.UserID, ResumeID: r.ID,
 		Source: gen.ApplicationSourceInvite, Status: gen.ApplicationStatusInvited,
-	}, p.UserID, strings.TrimSpace(in.Message))
+	}, p.UserID, strings.TrimSpace(in.Message), notification.TypeApplicationInvited)
 	if err != nil {
 		return Detail{}, err
 	}
-	s.notifySeeker(ctx, a, notification.TypeApplicationInvited, v)
 	return s.detail(ctx, a, p, true)
 }
 
-func (s *Service) notifySeeker(ctx context.Context, a gen.Application, typ string, v gen.Vacancy) {
-	c, err := s.Q.GetCompanyByID(ctx, a.CompanyID)
+// notifySeekerTx tells the candidate about their application inside the transaction that
+// changed it (TZ BE-08).
+func (s *Service) notifySeekerTx(ctx context.Context, tx pgx.Tx, a gen.Application, typ string) (notification.Sent, error) {
+	info, err := gen.New(tx).GetVacancyNoticeInfo(ctx, a.VacancyID)
 	if err != nil {
-		s.Log.WarnContext(ctx, "notify seeker", "err", err)
-		return
+		return notification.Sent{}, err
 	}
-	s.Notify.Notify(ctx, []uuid.UUID{a.SeekerID}, typ, notification.Payload{
-		ApplicationID: a.ID.String(), VacancyID: v.ID.String(), VacancyTitle: v.Title,
-		CompanyName: c.Name, Status: string(a.Status),
-	}, true)
+	return s.Notify.NotifyTx(ctx, tx, typ, []notification.Recipient{{UserID: a.SeekerID, Payload: notification.Payload{
+		ApplicationID: a.ID.String(), VacancyID: a.VacancyID.String(), VacancyTitle: info.Title,
+		CompanyName: info.CompanyName, Status: string(a.Status),
+	}}}, true)
 }
 
-func (s *Service) create(ctx context.Context, params gen.CreateApplicationParams, actor uuid.UUID, note string) (gen.Application, error) {
+// create inserts an application with its first event and the seeker's notification of
+// type notify, in one transaction.
+func (s *Service) create(ctx context.Context, params gen.CreateApplicationParams, actor uuid.UUID, note, notify string) (gen.Application, error) {
 	var a gen.Application
-	err := postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+	var sent notification.Sent
+	err := postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		q := gen.New(tx)
 		var err error
 		a, err = q.CreateApplication(ctx, params)
 		if err != nil {
@@ -169,13 +132,19 @@ func (s *Service) create(ctx context.Context, params gen.CreateApplicationParams
 		if err := q.IncrementVacancyApplications(ctx, a.VacancyID); err != nil {
 			return err
 		}
-		return q.AddApplicationEvent(ctx, gen.AddApplicationEventParams{
+		if err := q.AddApplicationEvent(ctx, gen.AddApplicationEventParams{
 			ApplicationID: a.ID, ActorID: &actor, ToStatus: a.Status, Note: note,
-		})
+		}); err != nil {
+			return err
+		}
+		sent, err = s.notifySeekerTx(ctx, tx, a, notify)
+		return err
 	})
-	var pe *pgconn.PgError
-	if errors.As(err, &pe) && pe.Code == "23505" {
+	if isUniqueViolation(err) {
 		return a, ErrAlreadyApplied
+	}
+	if err == nil {
+		sent.Publish(ctx)
 	}
 	return a, err
 }
@@ -190,11 +159,9 @@ func (s *Service) Get(ctx context.Context, p reqctx.Principal, id uuid.UUID) (De
 		return Detail{}, err
 	}
 	if employer && a.Status == gen.ApplicationStatusSent {
-		if next, err := s.transition(ctx, a, gen.ApplicationStatusViewed, []string{"sent"}, p.UserID, ""); err == nil {
+		if next, err := s.transition(ctx, a, gen.ApplicationStatusViewed, []string{"sent"}, p.UserID, "",
+			notification.TypeApplicationStatus); err == nil {
 			a = next
-			if v, err := s.Q.GetVacancyByID(ctx, a.VacancyID); err == nil {
-				s.notifySeeker(ctx, a, notification.TypeApplicationStatus, v)
-			}
 		} else if !errors.Is(err, ErrTransition) { // lost a race to another viewer: fine
 			return Detail{}, err
 		}
@@ -216,12 +183,9 @@ func (s *Service) SetStatus(ctx context.Context, p reqctx.Principal, id uuid.UUI
 	if a.Status == to {
 		return s.detail(ctx, a, p, true)
 	}
-	a, err = s.transition(ctx, a, to, employerFrom, p.UserID, strings.TrimSpace(note))
+	a, err = s.transition(ctx, a, to, employerFrom, p.UserID, strings.TrimSpace(note), notification.TypeApplicationStatus)
 	if err != nil {
 		return Detail{}, err
-	}
-	if v, err := s.Q.GetVacancyByID(ctx, a.VacancyID); err == nil {
-		s.notifySeeker(ctx, a, notification.TypeApplicationStatus, v)
 	}
 	return s.detail(ctx, a, p, true)
 }
@@ -234,7 +198,7 @@ func (s *Service) Withdraw(ctx context.Context, p reqctx.Principal, id uuid.UUID
 	if employer || a.SeekerID != p.UserID {
 		return Detail{}, ErrNotFound
 	}
-	a, err = s.transition(ctx, a, gen.ApplicationStatusWithdrawn, withdrawFrom, p.UserID, "")
+	a, err = s.transition(ctx, a, gen.ApplicationStatusWithdrawn, withdrawFrom, p.UserID, "", "")
 	if err != nil {
 		return Detail{}, err
 	}
@@ -256,9 +220,14 @@ func (s *Service) SetNote(ctx context.Context, p reqctx.Principal, id uuid.UUID,
 	return s.detail(ctx, a, p, true)
 }
 
-func (s *Service) transition(ctx context.Context, a gen.Application, to gen.ApplicationStatus, from []string, actor uuid.UUID, note string) (gen.Application, error) {
+// transition moves an application to another status with its history event and, when
+// notify is set, the seeker's notification, all in one transaction.
+func (s *Service) transition(ctx context.Context, a gen.Application, to gen.ApplicationStatus, from []string,
+	actor uuid.UUID, note, notify string) (gen.Application, error) {
 	var next gen.Application
-	err := postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+	var sent notification.Sent
+	err := postgres.WithPgxTx(ctx, s.Pool, func(tx pgx.Tx) error {
+		q := gen.New(tx)
 		var err error
 		next, err = q.SetApplicationStatus(ctx, gen.SetApplicationStatusParams{ID: a.ID, Status: to, FromStatuses: from})
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -268,10 +237,19 @@ func (s *Service) transition(ctx context.Context, a gen.Application, to gen.Appl
 			return err
 		}
 		prev := a.Status
-		return q.AddApplicationEvent(ctx, gen.AddApplicationEventParams{
+		if err := q.AddApplicationEvent(ctx, gen.AddApplicationEventParams{
 			ApplicationID: a.ID, ActorID: &actor, FromStatus: &prev, ToStatus: to, Note: note,
-		})
+		}); err != nil {
+			return err
+		}
+		if notify != "" {
+			sent, err = s.notifySeekerTx(ctx, tx, next, notify)
+		}
+		return err
 	})
+	if err == nil {
+		sent.Publish(ctx)
+	}
 	return next, err
 }
 

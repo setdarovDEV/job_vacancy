@@ -33,6 +33,11 @@ func (a *Authenticator) principal(r *http.Request) (reqctx.Principal, bool) {
 	if !ok || raw == "" {
 		return reqctx.Principal{}, false
 	}
+	// The request gate already parsed this token and checked its revocation in its one
+	// Redis call (TZ BE-09); don't ask Redis again.
+	if res, ok := gated(r.Context(), raw); ok {
+		return res.principal, res.valid
+	}
 	c, err := a.Tokens.Parse(raw)
 	if err != nil {
 		return reqctx.Principal{}, false

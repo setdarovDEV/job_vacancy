@@ -13,6 +13,43 @@ import (
 	"github.com/google/uuid"
 )
 
+const changePasswordRevokeOthers = `-- name: ChangePasswordRevokeOthers :many
+WITH pw AS (
+    UPDATE users SET password_hash = $3 WHERE id = $1
+)
+UPDATE user_sessions s SET revoked_at = now()
+WHERE s.user_id = $1 AND s.id <> $2 AND s.revoked_at IS NULL
+RETURNING s.id
+`
+
+type ChangePasswordRevokeOthersParams struct {
+	UserID       uuid.UUID
+	KeepSession  uuid.UUID
+	PasswordHash *string
+}
+
+// Set a new password and sign out every other session in one statement (TZ BE-12);
+// returns the revoked session ids for the Redis revocation list.
+func (q *Queries) ChangePasswordRevokeOthers(ctx context.Context, arg ChangePasswordRevokeOthersParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, changePasswordRevokeOthers, arg.UserID, arg.KeepSession, arg.PasswordHash)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createSession = `-- name: CreateSession :one
 INSERT INTO user_sessions (user_id, refresh_hash, platform, user_agent, ip, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -66,6 +103,29 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const getSession = `-- name: GetSession :one
+SELECT id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at FROM user_sessions WHERE id = $1
+`
+
+func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (UserSession, error) {
+	row := q.db.QueryRow(ctx, getSession, id)
+	var i UserSession
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.RefreshHash,
+		&i.PrevRefreshHash,
+		&i.Platform,
+		&i.UserAgent,
+		&i.Ip,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.ExpiresAt,
+		&i.RevokedAt,
+	)
+	return i, err
 }
 
 const getSessionByPrevRefreshHash = `-- name: GetSessionByPrevRefreshHash :one

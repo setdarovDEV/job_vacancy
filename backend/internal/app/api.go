@@ -104,7 +104,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		log.Warn("TELEGRAM_BOT_TOKEN not set: bot messages are logged, not sent")
 	}
 	publisher := &realtime.Publisher{RDB: rdb}
-	notifySvc := &notification.Service{Q: q, Publisher: publisher, Jobs: enq, Log: log}
+	notifySvc := &notification.Service{Pool: pool, Q: q, Publisher: publisher, Jobs: enq, Log: log}
 
 	catalogSvc := &catalog.Service{Q: q, Log: log}
 	if err := catalogSvc.Start(ctx); err != nil {
@@ -157,8 +157,8 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		CatalogHandler: &catalog.Handler{Svc: catalogSvc},
 		CompanyHandler: &company.Handler{Svc: companySvc, Files: fileSvc, Cache: publicCache.Company,
 			Directory: &company.Directory{Q: q, RDB: rdb, Log: log}},
-		FileHandler:    &file.Handler{Svc: fileSvc},
-		ChatHandler:    &chat.Handler{Svc: chatSvc},
+		FileHandler: &file.Handler{Svc: fileSvc},
+		ChatHandler: &chat.Handler{Svc: chatSvc},
 		SavedHandler: &savedsearch.Handler{Svc: &savedsearch.Service{Q: q, Vacancies: vacancySvc,
 			Notify: notifySvc, Log: log}},
 		WSHandler: &realtime.Handler{Hub: hub, RDB: rdb, Frames: chatSvc, Origins: cfg.HTTP.CORSOrigins, Log: log},

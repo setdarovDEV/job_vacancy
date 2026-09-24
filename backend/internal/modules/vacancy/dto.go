@@ -68,6 +68,11 @@ type Detail struct {
 	RejectReason *string    `json:"reject_reason,omitempty"`
 	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`
 	CanEdit      bool       `json:"can_edit"`
+	// FeaturedUntil ends the "TOP" placement (members and admins only).
+	FeaturedUntil *time.Time `json:"featured_until,omitempty"`
+	// Republish tells members what POST /vacancies/{id}/republish would do for an expired
+	// or archived vacancy (TZ FN-04): "direct" (goes live at once) or "moderation".
+	Republish string `json:"republish,omitempty"`
 }
 
 func salaryOf(min, max *int64, cur gen.Currency) *Salary {
@@ -105,6 +110,24 @@ func detailOf(v gen.Vacancy, c gen.Company, skills []catalog.Skill, member bool)
 	if member {
 		d.RejectReason = v.RejectReason
 		d.SubmittedAt = v.SubmittedAt
+		d.FeaturedUntil = v.FeaturedUntil
+		d.Republish = republishMode(v, c)
 	}
 	return d
+}
+
+// republishMode mirrors RepublishVacancy's condition (and Submit's rule that verified
+// companies publish without moderation).
+func republishMode(v gen.Vacancy, c gen.Company) string {
+	if v.Status != gen.VacancyStatusExpired && v.Status != gen.VacancyStatusArchived {
+		return ""
+	}
+	if c.VerifiedAt != nil {
+		return "direct"
+	}
+	notAfter := func(t *time.Time) bool { return t == nil || !t.After(*v.PublishedAt) }
+	if v.PublishedAt != nil && notAfter(v.ContentUpdatedAt) && notAfter(v.SubmittedAt) && notAfter(v.ModeratedAt) {
+		return "direct"
+	}
+	return "moderation"
 }

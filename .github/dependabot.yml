@@ -1,0 +1,61 @@
+# Dependency and pin updates (TZ SEC-08). Weekly, grouped, so the security job and the pinned
+# digests/SHAs (nginx/scripts/check-pins.sh) stay current without a PR flood. Security
+# advisories open PRs immediately regardless of the schedule.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /backend
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Asia/Tashkent }
+    open-pull-requests-limit: 5
+    groups:
+      go-minor-patch:
+        update-types: [minor, patch]
+    commit-message: { prefix: "deps(go)" }
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Asia/Tashkent }
+    open-pull-requests-limit: 5
+    versioning-strategy: increase-if-necessary
+    groups:
+      web-prod-minor-patch:
+        dependency-type: production
+        update-types: [minor, patch]
+      web-dev-minor-patch:
+        dependency-type: development
+        update-types: [minor, patch]
+    commit-message: { prefix: "deps(web)" }
+
+  - package-ecosystem: npm
+    directory: /e2e
+    schedule: { interval: monthly }
+    groups:
+      e2e:
+        patterns: ["*"]
+    commit-message: { prefix: "deps(e2e)" }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Asia/Tashkent }
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message: { prefix: "deps(ci)" }
+
+  # Base images in Dockerfiles (tag + digest are bumped together).
+  - package-ecosystem: docker
+    directories: [/backend, /web, /nginx, /nginx/postgres]
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Asia/Tashkent }
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message: { prefix: "deps(docker)" }
+
+  # Images referenced by the compose files (Redis, MinIO, certbot, exporters, GlitchTip...).
+  - package-ecosystem: docker-compose
+    directories: [/nginx, /monitoring, /e2e]
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: Asia/Tashkent }
+    groups:
+      compose-images:
+        patterns: ["*"]
+    commit-message: { prefix: "deps(compose)" }

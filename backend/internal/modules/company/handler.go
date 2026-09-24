@@ -101,11 +101,19 @@ func (h *Handler) Routes(r chi.Router, auth *mw.Authenticator) {
 	r.With(auth.Require).Get("/{company}/members", h.members)
 	r.With(auth.Require).Post("/{company}/members", h.addMember)
 	r.With(auth.Require).Delete("/{company}/members/{user}", h.removeMember)
+	r.With(auth.Require).Patch("/{company}/members/{user}", h.setMemberRole)
+	r.With(auth.Require).Get("/{company}/invites", h.invites)
+	r.With(auth.Require).Post("/{company}/invites", h.invite)
+	r.With(auth.Require).Delete("/{company}/invites/{invite}", h.revokeInvite)
+	r.With(auth.Require).Post("/{company}/owner", h.transferOwnership)
 }
 
 // MeRoutes are mounted under /me.
 func (h *Handler) MeRoutes(r chi.Router) {
 	r.Get("/companies", h.mine)
+	r.Get("/invites", h.myInvites)
+	r.Post("/invites/{invite}/accept", h.acceptInvite)
+	r.Post("/invites/{invite}/decline", h.declineInvite)
 }
 
 // AdminRoutes are mounted under /admin/companies.
@@ -155,7 +163,7 @@ func (h *Handler) profile(ctx context.Context, ref string) (DTO, error) {
 	if err != nil {
 		return DTO{}, err
 	}
-	if c.Status == gen.CompanyStatusBlocked {
+	if c.Status != gen.CompanyStatusActive { // blocked or closed
 		return DTO{}, ErrNotFound
 	}
 	d := ToDTO(c)
@@ -367,4 +375,126 @@ func (h *Handler) setVerified(v bool) http.HandlerFunc {
 		}
 		response.JSON(w, http.StatusOK, ToDTO(c))
 	}
+}
+
+// ---- invites, roles, ownership (TZ FN-05, FN-03) ------------------------------------------
+
+func (h *Handler) invite(w http.ResponseWriter, r *http.Request) {
+	var req addMemberRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	inv, err := h.Svc.Invite(r.Context(), reqctx.MustPrincipal(r.Context()), chi.URLParam(r, "company"),
+		req.Email, gen.CompanyMemberRole(req.Role))
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusCreated, inv)
+}
+
+func (h *Handler) invites(w http.ResponseWriter, r *http.Request) {
+	out, err := h.Svc.Invites(r.Context(), reqctx.MustPrincipal(r.Context()), chi.URLParam(r, "company"))
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	response.JSON(w, http.StatusOK, out)
+}
+
+func inviteID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	id, err := uuid.Parse(chi.URLParam(r, "invite"))
+	if err != nil {
+		response.Error(w, r, ErrInviteNotFound)
+		return id, false
+	}
+	return id, true
+}
+
+func (h *Handler) revokeInvite(w http.ResponseWriter, r *http.Request) {
+	id, ok := inviteID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Svc.RevokeInvite(r.Context(), reqctx.MustPrincipal(r.Context()), chi.URLParam(r, "company"), id); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.NoContent(w)
+}
+
+func (h *Handler) myInvites(w http.ResponseWriter, r *http.Request) {
+	out, err := h.Svc.MyInvites(r.Context(), reqctx.MustPrincipal(r.Context()).UserID)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	response.JSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) acceptInvite(w http.ResponseWriter, r *http.Request) {
+	id, ok := inviteID(w, r)
+	if !ok {
+		return
+	}
+	d, err := h.Svc.AcceptInvite(r.Context(), reqctx.MustPrincipal(r.Context()), id)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, d)
+}
+
+func (h *Handler) declineInvite(w http.ResponseWriter, r *http.Request) {
+	id, ok := inviteID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Svc.DeclineInvite(r.Context(), reqctx.MustPrincipal(r.Context()), id); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.NoContent(w)
+}
+
+type roleRequest struct {
+	Role string `json:"role" validate:"required,oneof=admin recruiter"`
+}
+
+func (h *Handler) setMemberRole(w http.ResponseWriter, r *http.Request) {
+	uid, err := uuid.Parse(chi.URLParam(r, "user"))
+	if err != nil {
+		response.Error(w, r, ErrMemberNotFound)
+		return
+	}
+	var req roleRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	err = h.Svc.SetMemberRole(r.Context(), reqctx.MustPrincipal(r.Context()), chi.URLParam(r, "company"), uid,
+		gen.CompanyMemberRole(req.Role))
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.NoContent(w)
+}
+
+type ownerRequest struct {
+	UserID uuid.UUID `json:"user_id" validate:"required"`
+}
+
+func (h *Handler) transferOwnership(w http.ResponseWriter, r *http.Request) {
+	var req ownerRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	d, err := h.Svc.TransferOwnership(r.Context(), reqctx.MustPrincipal(r.Context()), chi.URLParam(r, "company"), req.UserID)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, d)
 }

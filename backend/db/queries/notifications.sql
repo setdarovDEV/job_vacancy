@@ -1,8 +1,3 @@
--- name: InsertNotifications :many
-INSERT INTO notifications (user_id, type, payload)
-SELECT unnest(sqlc.arg(user_ids)::uuid[]), sqlc.arg(type), sqlc.arg(payload)
-RETURNING id, user_id, created_at;
-
 -- name: ListNotifications :many
 SELECT * FROM notifications
 WHERE user_id = sqlc.arg(user_id)

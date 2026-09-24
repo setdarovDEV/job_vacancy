@@ -47,7 +47,7 @@ func (q *Queries) AddVacancyViews(ctx context.Context, arg AddVacancyViewsParams
 const archiveVacancy = `-- name: ArchiveVacancy :one
 UPDATE vacancies SET status = 'archived'
 WHERE id = $1 AND status IN ('published', 'moderation', 'expired', 'rejected')
-RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
 `
 
 func (q *Queries) ArchiveVacancy(ctx context.Context, id uuid.UUID) (Vacancy, error) {
@@ -83,6 +83,8 @@ func (q *Queries) ArchiveVacancy(ctx context.Context, id uuid.UUID) (Vacancy, er
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
@@ -92,7 +94,7 @@ INSERT INTO vacancies (company_id, created_by, title, slug, description, categor
                        district_id, address, salary_min, salary_max, currency, employment_type,
                        work_format, experience, schedule)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
 `
 
 type CreateVacancyParams struct {
@@ -164,6 +166,8 @@ func (q *Queries) CreateVacancy(ctx context.Context, arg CreateVacancyParams) (V
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
@@ -189,30 +193,82 @@ func (q *Queries) DeleteVacancySkills(ctx context.Context, vacancyID uuid.UUID) 
 	return err
 }
 
-const expireVacancies = `-- name: ExpireVacancies :many
-UPDATE vacancies v SET status = 'expired'
+const dueExpiryWarnings = `-- name: DueExpiryWarnings :many
+SELECT v.id, v.title, v.created_by, v.expires_at
+FROM vacancies v
+WHERE v.status = 'published' AND v.expires_at > now()
+  AND v.expires_at <= now() + make_interval(days => $1::int)
+  AND NOT EXISTS (SELECT 1 FROM vacancy_expiry_warnings w
+                  WHERE w.vacancy_id = v.id AND w.expires_at = v.expires_at)
+ORDER BY v.expires_at
+LIMIT $2
+FOR UPDATE OF v SKIP LOCKED
+`
+
+type DueExpiryWarningsParams struct {
+	Days       int32
+	MaxResults int32
+}
+
+type DueExpiryWarningsRow struct {
+	ID        uuid.UUID
+	Title     string
+	CreatedBy uuid.UUID
+	ExpiresAt *time.Time
+}
+
+// Published vacancies expiring within `days` whose author hasn't been warned about this
+// expiry date yet (TZ FN-04). Served by vacancies_expiry_idx; SKIP LOCKED keeps two
+// runs from warning twice.
+func (q *Queries) DueExpiryWarnings(ctx context.Context, arg DueExpiryWarningsParams) ([]DueExpiryWarningsRow, error) {
+	rows, err := q.db.Query(ctx, dueExpiryWarnings, arg.Days, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DueExpiryWarningsRow{}
+	for rows.Next() {
+		var i DueExpiryWarningsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.CreatedBy,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const expireFeatured = `-- name: ExpireFeatured :many
+UPDATE vacancies v SET is_featured = false, featured_until = NULL
 FROM companies c
-WHERE c.id = v.company_id AND v.status = 'published' AND v.expires_at < now()
+WHERE c.id = v.company_id AND v.is_featured AND v.featured_until < now()
 RETURNING v.id, v.slug, v.company_id, c.slug AS company_slug
 `
 
-type ExpireVacanciesRow struct {
+type ExpireFeaturedRow struct {
 	ID          uuid.UUID
 	Slug        string
 	CompanyID   uuid.UUID
 	CompanySlug string
 }
 
-// Returns what the response caches need to drop (TZ BE-05). Only vacancy rows are locked.
-func (q *Queries) ExpireVacancies(ctx context.Context) ([]ExpireVacanciesRow, error) {
-	rows, err := q.db.Query(ctx, expireVacancies)
+// Ends "TOP" placements whose date passed. Served by vacancies_featured_idx.
+func (q *Queries) ExpireFeatured(ctx context.Context) ([]ExpireFeaturedRow, error) {
+	rows, err := q.db.Query(ctx, expireFeatured)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []ExpireVacanciesRow{}
+	items := []ExpireFeaturedRow{}
 	for rows.Next() {
-		var i ExpireVacanciesRow
+		var i ExpireFeaturedRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Slug,
@@ -229,8 +285,53 @@ func (q *Queries) ExpireVacancies(ctx context.Context) ([]ExpireVacanciesRow, er
 	return items, nil
 }
 
+const expireVacancies = `-- name: ExpireVacancies :many
+UPDATE vacancies v SET status = 'expired'
+FROM companies c
+WHERE c.id = v.company_id AND v.status = 'published' AND v.expires_at < now()
+RETURNING v.id, v.slug, v.company_id, c.slug AS company_slug, v.created_by, v.title
+`
+
+type ExpireVacanciesRow struct {
+	ID          uuid.UUID
+	Slug        string
+	CompanyID   uuid.UUID
+	CompanySlug string
+	CreatedBy   uuid.UUID
+	Title       string
+}
+
+// Returns what the response caches need to drop (TZ BE-05) and whom to notify (TZ FN-04).
+// Only vacancy rows are locked.
+func (q *Queries) ExpireVacancies(ctx context.Context) ([]ExpireVacanciesRow, error) {
+	rows, err := q.db.Query(ctx, expireVacancies)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ExpireVacanciesRow{}
+	for rows.Next() {
+		var i ExpireVacanciesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.CompanyID,
+			&i.CompanySlug,
+			&i.CreatedBy,
+			&i.Title,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getVacancyByID = `-- name: GetVacancyByID :one
-SELECT id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at FROM vacancies WHERE id = $1
+SELECT id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at FROM vacancies WHERE id = $1
 `
 
 func (q *Queries) GetVacancyByID(ctx context.Context, id uuid.UUID) (Vacancy, error) {
@@ -266,12 +367,14 @@ func (q *Queries) GetVacancyByID(ctx context.Context, id uuid.UUID) (Vacancy, er
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
 
 const getVacancyBySlug = `-- name: GetVacancyBySlug :one
-SELECT id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at FROM vacancies WHERE slug = $1
+SELECT id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at FROM vacancies WHERE slug = $1
 `
 
 func (q *Queries) GetVacancyBySlug(ctx context.Context, slug string) (Vacancy, error) {
@@ -307,12 +410,14 @@ func (q *Queries) GetVacancyBySlug(ctx context.Context, slug string) (Vacancy, e
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
 
 const listCompanyVacancies = `-- name: ListCompanyVacancies :many
-SELECT id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at FROM vacancies
+SELECT id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at FROM vacancies
 WHERE company_id = $1
   AND ($2::vacancy_status IS NULL OR status = $2)
   AND ($3::timestamptz IS NULL
@@ -374,6 +479,8 @@ func (q *Queries) ListCompanyVacancies(ctx context.Context, arg ListCompanyVacan
 			&i.ExpiresAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.FeaturedUntil,
+			&i.ContentUpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -386,7 +493,7 @@ func (q *Queries) ListCompanyVacancies(ctx context.Context, arg ListCompanyVacan
 }
 
 const listModerationQueue = `-- name: ListModerationQueue :many
-SELECT v.id, v.company_id, v.created_by, v.title, v.slug, v.description, v.category_id, v.region_id, v.district_id, v.address, v.salary_min, v.salary_max, v.currency, v.employment_type, v.work_format, v.experience, v.schedule, v.status, v.reject_reason, v.moderated_by, v.moderated_at, v.is_featured, v.views_count, v.applications_count, v.submitted_at, v.published_at, v.expires_at, v.created_at, v.updated_at, c.name AS company_name, c.slug AS company_slug, c.verified_at AS company_verified_at
+SELECT v.id, v.company_id, v.created_by, v.title, v.slug, v.description, v.category_id, v.region_id, v.district_id, v.address, v.salary_min, v.salary_max, v.currency, v.employment_type, v.work_format, v.experience, v.schedule, v.status, v.reject_reason, v.moderated_by, v.moderated_at, v.is_featured, v.views_count, v.applications_count, v.submitted_at, v.published_at, v.expires_at, v.created_at, v.updated_at, v.featured_until, v.content_updated_at, c.name AS company_name, c.slug AS company_slug, c.verified_at AS company_verified_at
 FROM vacancies v JOIN companies c ON c.id = v.company_id
 WHERE v.status = 'moderation'
   AND ($1::timestamptz IS NULL
@@ -447,6 +554,8 @@ func (q *Queries) ListModerationQueue(ctx context.Context, arg ListModerationQue
 			&i.Vacancy.ExpiresAt,
 			&i.Vacancy.CreatedAt,
 			&i.Vacancy.UpdatedAt,
+			&i.Vacancy.FeaturedUntil,
+			&i.Vacancy.ContentUpdatedAt,
 			&i.CompanyName,
 			&i.CompanySlug,
 			&i.CompanyVerifiedAt,
@@ -528,6 +637,22 @@ func (q *Queries) ListVacancySkills(ctx context.Context, vacancyIds []uuid.UUID)
 	return items, nil
 }
 
+const markExpiryWarned = `-- name: MarkExpiryWarned :exec
+INSERT INTO vacancy_expiry_warnings (vacancy_id, expires_at)
+SELECT unnest($1::uuid[]), unnest($2::timestamptz[])
+ON CONFLICT (vacancy_id) DO UPDATE SET expires_at = EXCLUDED.expires_at, warned_at = now()
+`
+
+type MarkExpiryWarnedParams struct {
+	Ids     []uuid.UUID
+	Expires []time.Time
+}
+
+func (q *Queries) MarkExpiryWarned(ctx context.Context, arg MarkExpiryWarnedParams) error {
+	_, err := q.db.Exec(ctx, markExpiryWarned, arg.Ids, arg.Expires)
+	return err
+}
+
 const publishVacancy = `-- name: PublishVacancy :one
 UPDATE vacancies
 SET status = 'published',
@@ -538,7 +663,7 @@ SET status = 'published',
     moderated_by = $3,
     moderated_at = CASE WHEN $3::uuid IS NULL THEN moderated_at ELSE now() END
 WHERE id = $1 AND status::text = ANY($4::text[])
-RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
 `
 
 type PublishVacancyParams struct {
@@ -586,6 +711,8 @@ func (q *Queries) PublishVacancy(ctx context.Context, arg PublishVacancyParams) 
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
@@ -594,7 +721,7 @@ const rejectVacancy = `-- name: RejectVacancy :one
 UPDATE vacancies
 SET status = 'rejected', reject_reason = $2, moderated_by = $3, moderated_at = now()
 WHERE id = $1 AND status = 'moderation'
-RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
 `
 
 type RejectVacancyParams struct {
@@ -636,6 +763,120 @@ func (q *Queries) RejectVacancy(ctx context.Context, arg RejectVacancyParams) (V
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
+	)
+	return i, err
+}
+
+const republishVacancy = `-- name: RepublishVacancy :one
+UPDATE vacancies
+SET status = 'published', published_at = now(),
+    expires_at = now() + make_interval(days => $1::int), reject_reason = NULL
+WHERE id = $2 AND status IN ('expired', 'archived')
+  AND published_at IS NOT NULL
+  AND (content_updated_at IS NULL OR content_updated_at <= published_at)
+  AND (submitted_at IS NULL OR submitted_at <= published_at)
+  AND (moderated_at IS NULL OR moderated_at <= published_at)
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
+`
+
+type RepublishVacancyParams struct {
+	TtlDays int32
+	ID      uuid.UUID
+}
+
+// Republish an expired or archived vacancy as it was (TZ FN-04). Without moderation only
+// when nothing happened since it was last published: no content edit, no trip back to
+// moderation (an edit or enough reports), no unpublishing by an admin. Otherwise no row
+// comes back and the caller submits it the normal way.
+func (q *Queries) RepublishVacancy(ctx context.Context, arg RepublishVacancyParams) (Vacancy, error) {
+	row := q.db.QueryRow(ctx, republishVacancy, arg.TtlDays, arg.ID)
+	var i Vacancy
+	err := row.Scan(
+		&i.ID,
+		&i.CompanyID,
+		&i.CreatedBy,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.CategoryID,
+		&i.RegionID,
+		&i.DistrictID,
+		&i.Address,
+		&i.SalaryMin,
+		&i.SalaryMax,
+		&i.Currency,
+		&i.EmploymentType,
+		&i.WorkFormat,
+		&i.Experience,
+		&i.Schedule,
+		&i.Status,
+		&i.RejectReason,
+		&i.ModeratedBy,
+		&i.ModeratedAt,
+		&i.IsFeatured,
+		&i.ViewsCount,
+		&i.ApplicationsCount,
+		&i.SubmittedAt,
+		&i.PublishedAt,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
+	)
+	return i, err
+}
+
+const setVacancyFeatured = `-- name: SetVacancyFeatured :one
+UPDATE vacancies SET is_featured = $1::boolean, featured_until = $2
+WHERE id = $3
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
+`
+
+type SetVacancyFeaturedParams struct {
+	Featured bool
+	Until    *time.Time
+	ID       uuid.UUID
+}
+
+// "TOP" placement until a date (TZ FN-01); until NULL with featured=true means no end.
+func (q *Queries) SetVacancyFeatured(ctx context.Context, arg SetVacancyFeaturedParams) (Vacancy, error) {
+	row := q.db.QueryRow(ctx, setVacancyFeatured, arg.Featured, arg.Until, arg.ID)
+	var i Vacancy
+	err := row.Scan(
+		&i.ID,
+		&i.CompanyID,
+		&i.CreatedBy,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.CategoryID,
+		&i.RegionID,
+		&i.DistrictID,
+		&i.Address,
+		&i.SalaryMin,
+		&i.SalaryMax,
+		&i.Currency,
+		&i.EmploymentType,
+		&i.WorkFormat,
+		&i.Experience,
+		&i.Schedule,
+		&i.Status,
+		&i.RejectReason,
+		&i.ModeratedBy,
+		&i.ModeratedAt,
+		&i.IsFeatured,
+		&i.ViewsCount,
+		&i.ApplicationsCount,
+		&i.SubmittedAt,
+		&i.PublishedAt,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
@@ -645,7 +886,7 @@ const submitVacancy = `-- name: SubmitVacancy :one
 UPDATE vacancies
 SET status = 'moderation', submitted_at = now(), reject_reason = NULL
 WHERE id = $1 AND status::text = ANY($2::text[])
-RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
 `
 
 type SubmitVacancyParams struct {
@@ -688,6 +929,8 @@ func (q *Queries) SubmitVacancy(ctx context.Context, arg SubmitVacancyParams) (V
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }
@@ -696,9 +939,9 @@ const updateVacancy = `-- name: UpdateVacancy :one
 UPDATE vacancies
 SET title = $2, description = $3, category_id = $4, region_id = $5, district_id = $6,
     address = $7, salary_min = $8, salary_max = $9, currency = $10, employment_type = $11,
-    work_format = $12, experience = $13, schedule = $14
+    work_format = $12, experience = $13, schedule = $14, content_updated_at = now()
 WHERE id = $1
-RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at, featured_until, content_updated_at
 `
 
 type UpdateVacancyParams struct {
@@ -766,6 +1009,8 @@ func (q *Queries) UpdateVacancy(ctx context.Context, arg UpdateVacancyParams) (V
 		&i.ExpiresAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.FeaturedUntil,
+		&i.ContentUpdatedAt,
 	)
 	return i, err
 }

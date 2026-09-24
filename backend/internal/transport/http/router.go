@@ -65,7 +65,8 @@ type Deps struct {
 	AppHandler     *application.Handler
 }
 
-// Per-IP limits for unauthenticated auth endpoints (password guessing, sign-up spam).
+// Request limits. api_ip and api_user are counted by the request gate for every API
+// request; the others guard sensitive routes (password guessing, sign-up spam, codes).
 var (
 	apiIPRule   = ratelimit.Rule{Name: "api_ip", Limit: 1200, Window: time.Minute}
 	authIPRule  = ratelimit.Rule{Name: "auth_ip", Limit: 30, Window: time.Minute}
@@ -94,9 +95,12 @@ func NewRouter(d Deps) http.Handler {
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	r.Get("/readyz", readiness(d))
 
+	gate := &mw.Gate{RDB: d.Redis, Tokens: d.Auth.Tokens, IP: apiIPRule, User: apiUserRule, RevokedKey: auth.RevokedKey}
 	r.Route("/api/v1", func(r chi.Router) {
-		// Coarse per-IP ceiling for everything; stricter limits are layered below.
-		r.Use(mw.RateLimit(d.Limiter, apiIPRule, mw.KeyByIP))
+		// One Redis round trip per request (TZ BE-09): the coarse per-IP ceiling for
+		// everything and, with an access token, its revocation check and the per-user
+		// ceiling. Stricter limits for sensitive routes are layered below.
+		r.Use(gate.Middleware)
 
 		r.Route("/catalog", d.CatalogHandler.Routes)
 		r.Route("/companies", func(r chi.Router) {
@@ -128,7 +132,7 @@ func NewRouter(d Deps) http.Handler {
 
 		// Everything below requires a signed-in user.
 		r.Group(func(r chi.Router) {
-			r.Use(d.Auth.Require, mw.RateLimit(d.Limiter, apiUserRule, mw.KeyByUser))
+			r.Use(d.Auth.Require) // the per-user limit is counted by the gate
 			r.Route("/me", func(r chi.Router) {
 				d.UserHandler.Routes(r)
 				d.AuthHandler.MeRoutes(r)

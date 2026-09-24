@@ -13,7 +13,7 @@ import (
 )
 
 const getVacanciesByIDs = `-- name: GetVacanciesByIDs :many
-SELECT v.id, v.company_id, v.created_by, v.title, v.slug, v.description, v.category_id, v.region_id, v.district_id, v.address, v.salary_min, v.salary_max, v.currency, v.employment_type, v.work_format, v.experience, v.schedule, v.status, v.reject_reason, v.moderated_by, v.moderated_at, v.is_featured, v.views_count, v.applications_count, v.submitted_at, v.published_at, v.expires_at, v.created_at, v.updated_at, c.name AS company_name
+SELECT v.id, v.company_id, v.created_by, v.title, v.slug, v.description, v.category_id, v.region_id, v.district_id, v.address, v.salary_min, v.salary_max, v.currency, v.employment_type, v.work_format, v.experience, v.schedule, v.status, v.reject_reason, v.moderated_by, v.moderated_at, v.is_featured, v.views_count, v.applications_count, v.submitted_at, v.published_at, v.expires_at, v.created_at, v.updated_at, v.featured_until, v.content_updated_at, c.name AS company_name, c.slug AS company_slug
 FROM vacancies v JOIN companies c ON c.id = v.company_id
 WHERE v.id = ANY($1::uuid[])
 `
@@ -21,6 +21,7 @@ WHERE v.id = ANY($1::uuid[])
 type GetVacanciesByIDsRow struct {
 	Vacancy     Vacancy
 	CompanyName string
+	CompanySlug string
 }
 
 func (q *Queries) GetVacanciesByIDs(ctx context.Context, ids []uuid.UUID) ([]GetVacanciesByIDsRow, error) {
@@ -62,7 +63,10 @@ func (q *Queries) GetVacanciesByIDs(ctx context.Context, ids []uuid.UUID) ([]Get
 			&i.Vacancy.ExpiresAt,
 			&i.Vacancy.CreatedAt,
 			&i.Vacancy.UpdatedAt,
+			&i.Vacancy.FeaturedUntil,
+			&i.Vacancy.ContentUpdatedAt,
 			&i.CompanyName,
+			&i.CompanySlug,
 		); err != nil {
 			return nil, err
 		}

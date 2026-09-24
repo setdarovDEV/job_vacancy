@@ -14,7 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"jobvacancy.uz/backend/db/gen"
+	"jobvacancy.uz/backend/internal/modules/audit"
 	"jobvacancy.uz/backend/internal/modules/catalog"
+	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/phone"
 	"jobvacancy.uz/backend/internal/pkg/random"
@@ -49,6 +51,8 @@ type Service struct {
 	// Changed runs after a public-facing change (profile, logo, verification) committed,
 	// to drop cached pages that show the company (TZ BE-05). Optional.
 	Changed func(ctx context.Context, c gen.Company)
+	// Notify tells invitees about company invites (TZ FN-05); nil sends nothing.
+	Notify *notification.Service
 }
 
 // changed reports c to Changed, if set.
@@ -253,27 +257,27 @@ func (s *Service) Members(ctx context.Context, p reqctx.Principal, ref string) (
 	return s.Q.ListCompanyMembers(ctx, c.ID)
 }
 
-// AddMember adds (or re-roles) an existing employer account by e-mail.
+// AddMember is the old "add by e-mail" endpoint, kept for compatibility (TZ FN-05):
+// for someone already on the team it changes their role, for anyone else it sends an
+// invite they have to accept.
 func (s *Service) AddMember(ctx context.Context, p reqctx.Principal, ref, email string, role gen.CompanyMemberRole) error {
-	c, myRole, err := s.Authorize(ctx, p, ref, gen.CompanyMemberRoleAdmin)
+	c, _, err := s.Authorize(ctx, p, ref, gen.CompanyMemberRoleAdmin)
 	if err != nil {
 		return err
-	}
-	if role == gen.CompanyMemberRoleOwner || rank[role] >= rank[myRole] && myRole != gen.CompanyMemberRoleOwner {
-		return ErrForbidden
 	}
 	email = strings.ToLower(strings.TrimSpace(email))
-	u, err := s.Q.GetUserByEmail(ctx, &email)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && u.Role != gen.UserRoleEmployer) {
-		return ErrMemberNotFound
-	}
-	if err != nil {
+	if u, err := s.Q.GetUserByEmail(ctx, &email); err == nil {
+		if u.ID == c.OwnerID {
+			return ErrCannotRemoveOwner
+		}
+		if _, err := s.Q.GetMemberRole(ctx, gen.GetMemberRoleParams{CompanyID: c.ID, UserID: u.ID}); err == nil {
+			return s.SetMemberRole(ctx, p, ref, u.ID, role)
+		}
+	} else if !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	if u.ID == c.OwnerID {
-		return ErrCannotRemoveOwner
-	}
-	return s.Q.AddCompanyMember(ctx, gen.AddCompanyMemberParams{CompanyID: c.ID, UserID: u.ID, Role: role})
+	_, err = s.Invite(ctx, p, ref, email, role)
+	return err
 }
 
 func (s *Service) RemoveMember(ctx context.Context, p reqctx.Principal, ref string, userID uuid.UUID) error {
@@ -306,7 +310,15 @@ func (s *Service) SetVerified(ctx context.Context, ref string, verified bool) (g
 	if err != nil {
 		return c, err
 	}
-	c, err = s.Q.SetCompanyVerified(ctx, gen.SetCompanyVerifiedParams{ID: c.ID, Verified: verified})
+	action := map[bool]string{true: "company.verify", false: "company.unverify"}[verified]
+	err = postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+		var err error
+		if c, err = q.SetCompanyVerified(ctx, gen.SetCompanyVerifiedParams{ID: c.ID, Verified: verified}); err != nil {
+			return err
+		}
+		return audit.Write(ctx, q, audit.Entry{Action: action, ObjectType: audit.ObjectCompany,
+			ObjectID: c.ID.String(), Details: map[string]any{"name": c.Name}})
+	})
 	if err == nil {
 		s.changed(ctx, c)
 	}

@@ -12,7 +12,7 @@
 # Start it after the first `make deploy` (the app networks must exist). The project name is
 # always passed explicitly (-p <app project>-monitoring) because the env file sets
 # COMPOSE_PROJECT_NAME for the app itself.
-name: ${COMPOSE_PROJECT_NAME:-jobvacancy}-monitoring
+name: jobvacancy-monitoring   # always overridden by -p <app project>-monitoring
 
 x-logging: &logging
   driver: json-file
@@ -315,13 +315,15 @@ networks:
       config:
         - subnet: ${MONITORING_SUBNET:-10.250.30.0/24}
           gateway: ${MONITORING_GATEWAY:-10.250.30.1}
-  # The app stack's networks (nginx/docker-compose.prod.yml), joined from outside.
+  # The app stack's networks (nginx/docker-compose.prod.yml), joined from outside. APP_PROJECT
+  # is the app's compose project (COMPOSE_PROJECT_NAME of the env file); nginx/scripts/
+  # monitoring.sh sets it, since inside this project COMPOSE_PROJECT_NAME is our own name.
   app-front:
     external: true
-    name: ${COMPOSE_PROJECT_NAME:-jobvacancy}_front
+    name: ${APP_PROJECT:?run through nginx/scripts/monitoring.sh (APP_PROJECT)}_front
   app-back:
     external: true
-    name: ${COMPOSE_PROJECT_NAME:-jobvacancy}_back
+    name: ${APP_PROJECT:?run through nginx/scripts/monitoring.sh (APP_PROJECT)}_back
 
 volumes:
   prometheus:

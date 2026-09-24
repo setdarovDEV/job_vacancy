@@ -108,29 +108,46 @@ type ExpireVacanciesArgs struct{}
 
 func (ExpireVacanciesArgs) Kind() string { return "vacancy.expire" }
 
+// ExpireVacanciesWorker expires vacancies past their date (notifying their authors, TZ
+// FN-04) and ends "TOP" placements whose date passed (TZ FN-01).
 type ExpireVacanciesWorker struct {
 	river.WorkerDefaults[ExpireVacanciesArgs]
-	Q *gen.Queries
-	// Cache drops the expired vacancies' public pages (TZ BE-05); nil skips that.
-	Cache *vacancy.PublicCache
-	Log   *slog.Logger
+	Lifecycle *vacancy.Lifecycle
+	Log       *slog.Logger
 }
 
 func (w *ExpireVacanciesWorker) Work(ctx context.Context, _ *river.Job[ExpireVacanciesArgs]) error {
-	rows, err := w.Q.ExpireVacancies(ctx)
+	n, err := w.Lifecycle.Expire(ctx)
 	if err != nil {
 		return err
 	}
-	if len(rows) == 0 {
-		return nil
+	if n > 0 {
+		w.Log.Info("vacancies expired", "count", n)
 	}
-	refs := make([]vacancy.VacancyRef, len(rows))
-	for i, r := range rows {
-		refs[i] = vacancy.VacancyRef{ID: r.ID, Slug: r.Slug, CompanyID: r.CompanyID, CompanySlug: r.CompanySlug}
+	f, err := w.Lifecycle.EndFeatured(ctx)
+	if f > 0 {
+		w.Log.Info("featured placements ended", "count", f)
 	}
-	w.Cache.VacanciesChanged(ctx, refs...)
-	w.Log.Info("vacancies expired", "count", len(rows))
-	return nil
+	return err
+}
+
+type ExpiryWarningsArgs struct{}
+
+func (ExpiryWarningsArgs) Kind() string { return "vacancy.expiry_warnings" }
+
+// ExpiryWarningsWorker warns authors 3 days before their vacancies expire (TZ FN-04).
+type ExpiryWarningsWorker struct {
+	river.WorkerDefaults[ExpiryWarningsArgs]
+	Lifecycle *vacancy.Lifecycle
+	Log       *slog.Logger
+}
+
+func (w *ExpiryWarningsWorker) Work(ctx context.Context, _ *river.Job[ExpiryWarningsArgs]) error {
+	n, err := w.Lifecycle.WarnExpiring(ctx)
+	if n > 0 {
+		w.Log.Info("expiry warnings sent", "vacancies", n)
+	}
+	return err
 }
 
 // ---- files -------------------------------------------------------------------------------
@@ -151,6 +168,33 @@ func (w *CleanupUploadsWorker) Work(ctx context.Context, _ *river.Job[CleanupUpl
 		w.Log.Info("abandoned uploads removed", "count", n)
 	}
 	return err
+}
+
+// PurgeObjectsWorker removes stored objects whose rows were deleted (file.PurgeObjectsArgs).
+type PurgeObjectsWorker struct {
+	river.WorkerDefaults[file.PurgeObjectsArgs]
+	Storage *storage.Storage
+	Log     *slog.Logger
+}
+
+func (w *PurgeObjectsWorker) Timeout(*river.Job[file.PurgeObjectsArgs]) time.Duration { return 2 * time.Minute }
+
+// Work removes every object; a missing one counts as removed, so a retry after a partial
+// run is harmless.
+func (w *PurgeObjectsWorker) Work(ctx context.Context, job *river.Job[file.PurgeObjectsArgs]) error {
+	var failed int
+	var last error
+	for _, o := range job.Args.Objects {
+		if err := w.Storage.Remove(ctx, o.Bucket, o.Key); err != nil {
+			failed++
+			last = err
+		}
+	}
+	if failed > 0 {
+		return fmt.Errorf("%d of %d objects not removed: %w", failed, len(job.Args.Objects), last)
+	}
+	w.Log.Info("stored objects removed", "count", len(job.Args.Objects))
+	return nil
 }
 
 // ---- notifications -------------------------------------------------------------------------
@@ -203,7 +247,9 @@ type Deps struct {
 	Push    notification.PushSender
 	WebURL  string
 	Saved   *savedsearch.Service
-	Log     *slog.Logger
+	// Lifecycle runs vacancy expiry, expiry warnings and the end of "TOP" placements.
+	Lifecycle *vacancy.Lifecycle
+	Log       *slog.Logger
 	// River concurrency per queue (TZ BE-07: critical 10, default 20); 0 uses those.
 	CriticalWorkers int
 	DefaultWorkers  int
@@ -222,7 +268,9 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 	q := gen.New(d.Pool)
 	river.AddWorker(workers, &CleanupSessionsWorker{Q: q, Log: d.Log})
 	river.AddWorker(workers, &FlushViewsWorker{Views: &vacancy.ViewCounter{RDB: d.Redis}, Q: q})
-	river.AddWorker(workers, &ExpireVacanciesWorker{Q: q, Cache: vacancy.NewPublicCache(d.Redis, d.Log), Log: d.Log})
+	river.AddWorker(workers, &ExpireVacanciesWorker{Lifecycle: d.Lifecycle, Log: d.Log})
+	river.AddWorker(workers, &ExpiryWarningsWorker{Lifecycle: d.Lifecycle, Log: d.Log})
+	river.AddWorker(workers, &PurgeObjectsWorker{Storage: d.Storage, Log: d.Log})
 	river.AddWorker(workers, &DeliverWorker{D: &notification.Deliverer{
 		Q: q, Mailer: d.Mailer, Bot: d.Bot, Push: d.Push, WebURL: d.WebURL, Log: d.Log,
 	}})
@@ -245,6 +293,7 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 			periodic(6*time.Hour, CleanupSessionsArgs{}),
 			periodic(time.Minute, FlushViewsArgs{}),
 			periodic(10*time.Minute, ExpireVacanciesArgs{}),
+			periodic(30*time.Minute, ExpiryWarningsArgs{}),
 			periodic(6*time.Hour, CleanupUploadsArgs{}),
 			periodic(5*time.Minute, SavedSearchAlertsArgs{}),
 		},

@@ -252,6 +252,17 @@ func (q *Queries) GetFilesByIDs(ctx context.Context, ids []uuid.UUID) ([]File, e
 	return items, nil
 }
 
+const getHideOnline = `-- name: GetHideOnline :one
+SELECT hide_online FROM users WHERE id = $1
+`
+
+func (q *Queries) GetHideOnline(ctx context.Context, id uuid.UUID) (bool, error) {
+	row := q.db.QueryRow(ctx, getHideOnline, id)
+	var hide_online bool
+	err := row.Scan(&hide_online)
+	return hide_online, err
+}
+
 const getMessage = `-- name: GetMessage :one
 SELECT id, conversation_id, sender_id, kind, body, file_id, meta, client_id, created_at, deleted_at FROM messages WHERE id = $1
 `
@@ -440,49 +451,6 @@ func (q *Queries) GetUsersBrief(ctx context.Context, ids []uuid.UUID) ([]GetUser
 		return nil, err
 	}
 	return items, nil
-}
-
-const insertMessage = `-- name: InsertMessage :one
-INSERT INTO messages (conversation_id, sender_id, kind, body, file_id, meta, client_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-ON CONFLICT (sender_id, client_id) DO NOTHING
-RETURNING id, conversation_id, sender_id, kind, body, file_id, meta, client_id, created_at, deleted_at
-`
-
-type InsertMessageParams struct {
-	ConversationID uuid.UUID
-	SenderID       *uuid.UUID
-	Kind           MessageKind
-	Body           string
-	FileID         *uuid.UUID
-	Meta           []byte
-	ClientID       uuid.UUID
-}
-
-func (q *Queries) InsertMessage(ctx context.Context, arg InsertMessageParams) (Message, error) {
-	row := q.db.QueryRow(ctx, insertMessage,
-		arg.ConversationID,
-		arg.SenderID,
-		arg.Kind,
-		arg.Body,
-		arg.FileID,
-		arg.Meta,
-		arg.ClientID,
-	)
-	var i Message
-	err := row.Scan(
-		&i.ID,
-		&i.ConversationID,
-		&i.SenderID,
-		&i.Kind,
-		&i.Body,
-		&i.FileID,
-		&i.Meta,
-		&i.ClientID,
-		&i.CreatedAt,
-		&i.DeletedAt,
-	)
-	return i, err
 }
 
 const listConversations = `-- name: ListConversations :many
@@ -777,6 +745,58 @@ func (q *Queries) MarkConversationRead(ctx context.Context, arg MarkConversation
 	return last_read_id, err
 }
 
+const presenceAudience = `-- name: PresenceAudience :many
+SELECT u.id, u.hide_online
+FROM users u
+WHERE u.id = ANY($1::uuid[])
+  AND (u.id = $2::uuid
+       OR EXISTS (SELECT 1 FROM conversations c
+                  JOIN company_members m ON m.company_id = c.company_id AND m.user_id = u.id
+                  WHERE c.seeker_id = $2::uuid)
+       OR EXISTS (SELECT 1 FROM conversations c
+                  JOIN company_members m ON m.company_id = c.company_id AND m.user_id = $2::uuid
+                  WHERE c.seeker_id = u.id)
+       OR EXISTS (SELECT 1 FROM company_members a
+                  JOIN company_members b ON b.company_id = a.company_id AND b.user_id = u.id
+                  WHERE a.user_id = $2::uuid
+                    AND EXISTS (SELECT 1 FROM conversations c WHERE c.company_id = a.company_id)))
+`
+
+type PresenceAudienceParams struct {
+	Ids    []uuid.UUID
+	Viewer uuid.UUID
+}
+
+type PresenceAudienceRow struct {
+	ID         uuid.UUID
+	HideOnline bool
+}
+
+// Presence audience (TZ SEC-05): which of ids the viewer may see online — people they
+// share a conversation with (seeker ↔ members of the company, or colleagues in a company
+// that has conversations) and themselves. hide_online makes a user read as offline.
+// Each branch is an index lookup: conversations_seeker_idx, company_members_pkey,
+// company_members_user_idx, conversations_company_idx.
+func (q *Queries) PresenceAudience(ctx context.Context, arg PresenceAudienceParams) ([]PresenceAudienceRow, error) {
+	rows, err := q.db.Query(ctx, presenceAudience, arg.Ids, arg.Viewer)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []PresenceAudienceRow{}
+	for rows.Next() {
+		var i PresenceAudienceRow
+		if err := rows.Scan(&i.ID, &i.HideOnline); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sendMessage = `-- name: SendMessage :one
 WITH m AS (
     INSERT INTO messages (conversation_id, sender_id, kind, body, file_id, meta, client_id)
@@ -875,19 +895,4 @@ func (q *Queries) SoftDeleteMessage(ctx context.Context, arg SoftDeleteMessagePa
 		&i.DeletedAt,
 	)
 	return i, err
-}
-
-const touchConversation = `-- name: TouchConversation :exec
-UPDATE conversations SET last_message_id = $2, last_message_at = $3 WHERE id = $1
-`
-
-type TouchConversationParams struct {
-	ID            uuid.UUID
-	LastMessageID *int64
-	LastMessageAt *time.Time
-}
-
-func (q *Queries) TouchConversation(ctx context.Context, arg TouchConversationParams) error {
-	_, err := q.db.Exec(ctx, touchConversation, arg.ID, arg.LastMessageID, arg.LastMessageAt)
-	return err
 }

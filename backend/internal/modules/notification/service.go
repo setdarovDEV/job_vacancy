@@ -39,6 +39,10 @@ type DeliverArgs struct {
 	Type           string    `json:"type"`
 	Payload        Payload   `json:"payload"`
 	NotificationID *int64    `json:"notification_id,omitempty"`
+	// Email and Locale address an e-mail to someone without an account (UserID is nil),
+	// e.g. a company invite to a new colleague (TZ FN-05).
+	Email  string `json:"email,omitempty"`
+	Locale string `json:"locale,omitempty"`
 }
 
 func (DeliverArgs) Kind() string { return "notification.deliver" }
@@ -68,6 +72,8 @@ type DTO struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
+const publishTimeout = 2 * time.Second
+
 // Recipient is one user and the payload they get.
 type Recipient struct {
 	UserID  uuid.UUID
@@ -88,6 +94,9 @@ func (s Sent) Publish(ctx context.Context) {
 	if s.svc == nil || len(s.events) == 0 {
 		return
 	}
+	// The change is committed: a client hanging up now shouldn't cancel the push.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
+	defer cancel()
 	if err := s.svc.Publisher.Send(ctx, s.events); err != nil {
 		s.svc.Log.WarnContext(ctx, "publish notifications", "count", len(s.events), "err", err)
 	}
@@ -96,10 +105,10 @@ func (s Sent) Publish(ctx context.Context) {
 // target is one recipient row: the stored notification (if any) and the channels the
 // user has.
 type target struct {
-	userID                        uuid.UUID
-	id                            *int64
-	at                            *time.Time
-	payload                       Payload
+	userID                         uuid.UUID
+	id                             *int64
+	at                             *time.Time
+	payload                        Payload
 	hasEmail, hasTelegram, hasPush bool
 }
 
@@ -187,6 +196,17 @@ func (s *Service) enqueue(ctx context.Context, tx pgx.Tx, typ string, targets []
 	return sent, nil
 }
 
+// EmailAddressTx queues one e-mail of type typ to an address that has no account yet,
+// inside the caller's transaction. The worker renders it in locale.
+func (s *Service) EmailAddressTx(ctx context.Context, tx pgx.Tx, email, locale, typ string, p Payload) error {
+	job := DeliverArgs{Channel: ChannelEmail, Type: typ, Payload: p, Email: email, Locale: locale}
+	if err := s.Jobs.InsertManyTx(ctx, tx, []river.JobArgs{job}); err != nil {
+		return fmt.Errorf("enqueue e-mail: %w", err)
+	}
+	jobsEnqueued.Inc()
+	return nil
+}
+
 // Notify sends notifications that have no business transaction to join (saved-search
 // alerts, admin actions): the rows and jobs still commit together, then the live events
 // go out. Failures are logged, not returned: a notification must never break the action
@@ -244,6 +264,9 @@ type Deliverer struct {
 }
 
 func (d *Deliverer) Deliver(ctx context.Context, a DeliverArgs) error {
+	if a.UserID == uuid.Nil {
+		return d.deliverToAddress(ctx, a)
+	}
 	u, err := d.Q.GetNotificationTarget(ctx, a.UserID)
 	if err != nil {
 		return err
@@ -296,6 +319,24 @@ func (d *Deliverer) Deliver(ctx context.Context, a DeliverArgs) error {
 		return nil
 	}
 	return river.JobCancel(errors.New("unknown channel " + a.Channel))
+}
+
+// deliverToAddress sends an e-mail to an address without an account.
+func (d *Deliverer) deliverToAddress(ctx context.Context, a DeliverArgs) error {
+	if a.Channel != ChannelEmail || a.Email == "" {
+		return river.JobCancel(errors.New("a delivery without a user needs an e-mail address"))
+	}
+	lang := langOr(a.Locale)
+	t, ok := render(a.Type, lang, a.Payload)
+	if !ok {
+		return river.JobCancel(errors.New("unknown notification type " + a.Type))
+	}
+	msg, err := mailer.RenderNotice(mailer.Notice{Locale: lang, To: a.Email, Title: t.Title,
+		Body: t.Body, Button: t.Button, URL: d.WebURL + t.Path, Footer: footers[lang]})
+	if err != nil {
+		return river.JobCancel(err)
+	}
+	return d.Mailer.Send(ctx, msg)
 }
 
 func langOr(l string) string {

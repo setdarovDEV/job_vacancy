@@ -84,7 +84,7 @@ func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
 }
 
 const listRegions = `-- name: ListRegions :many
-SELECT id, parent_id, kind, slug, name_uz, name_uz_cyrl, name_ru, name_en, sort_order FROM regions ORDER BY parent_id NULLS FIRST, sort_order, id
+SELECT id, parent_id, kind, slug, name_uz, name_uz_cyrl, name_ru, name_en, sort_order, soato FROM regions ORDER BY parent_id NULLS FIRST, sort_order, id
 `
 
 func (q *Queries) ListRegions(ctx context.Context) ([]Region, error) {
@@ -106,6 +106,7 @@ func (q *Queries) ListRegions(ctx context.Context) ([]Region, error) {
 			&i.NameRu,
 			&i.NameEn,
 			&i.SortOrder,
+			&i.Soato,
 		); err != nil {
 			return nil, err
 		}
@@ -177,6 +178,77 @@ func (q *Queries) SearchSkills(ctx context.Context, arg SearchSkillsParams) ([]S
 	for rows.Next() {
 		var i SearchSkillsRow
 		if err := rows.Scan(&i.ID, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const upsertDistricts = `-- name: UpsertDistricts :many
+INSERT INTO regions (parent_id, kind, slug, name_uz, name_uz_cyrl, name_ru, name_en, sort_order, soato)
+SELECT p.id, d.kind::region_kind, d.slug, d.name_uz, d.name_uz_cyrl, d.name_ru, d.name_en, d.sort_order, d.soato
+FROM (SELECT unnest($1::text[]) AS region_slug, unnest($2::text[]) AS kind,
+             unnest($3::text[]) AS slug, unnest($4::text[]) AS name_uz,
+             unnest($5::text[]) AS name_uz_cyrl, unnest($6::text[]) AS name_ru,
+             unnest($7::text[]) AS name_en, unnest($8::int[]) AS sort_order,
+             unnest($9::int[]) AS soato) d
+JOIN regions p ON p.slug = d.region_slug AND p.parent_id IS NULL
+ON CONFLICT (slug) DO UPDATE
+SET parent_id = EXCLUDED.parent_id, kind = EXCLUDED.kind, name_uz = EXCLUDED.name_uz,
+    name_uz_cyrl = EXCLUDED.name_uz_cyrl, name_ru = EXCLUDED.name_ru, name_en = EXCLUDED.name_en,
+    sort_order = EXCLUDED.sort_order, soato = EXCLUDED.soato
+WHERE (regions.parent_id, regions.kind, regions.name_uz, regions.name_uz_cyrl, regions.name_ru,
+       regions.name_en, regions.sort_order, regions.soato)
+      IS DISTINCT FROM (EXCLUDED.parent_id, EXCLUDED.kind, EXCLUDED.name_uz, EXCLUDED.name_uz_cyrl,
+                        EXCLUDED.name_ru, EXCLUDED.name_en, EXCLUDED.sort_order, EXCLUDED.soato)
+RETURNING slug, (xmax = 0)::boolean AS inserted
+`
+
+type UpsertDistrictsParams struct {
+	RegionSlugs []string
+	Kinds       []string
+	Slugs       []string
+	NamesUz     []string
+	NamesUzCyrl []string
+	NamesRu     []string
+	NamesEn     []string
+	SortOrders  []int32
+	Soatos      []int32
+}
+
+type UpsertDistrictsRow struct {
+	Slug     string
+	Inserted bool
+}
+
+// Districts and cities of regional subordination from the SOATO file (TZ FN-06), in one
+// statement. Rows are matched by slug; a row whose values are all unchanged is left
+// alone, so a repeated import changes nothing. Rows whose region slug is unknown are
+// skipped (the caller compares counts).
+func (q *Queries) UpsertDistricts(ctx context.Context, arg UpsertDistrictsParams) ([]UpsertDistrictsRow, error) {
+	rows, err := q.db.Query(ctx, upsertDistricts,
+		arg.RegionSlugs,
+		arg.Kinds,
+		arg.Slugs,
+		arg.NamesUz,
+		arg.NamesUzCyrl,
+		arg.NamesRu,
+		arg.NamesEn,
+		arg.SortOrders,
+		arg.Soatos,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []UpsertDistrictsRow{}
+	for rows.Next() {
+		var i UpsertDistrictsRow
+		if err := rows.Scan(&i.Slug, &i.Inserted); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

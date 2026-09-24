@@ -8,8 +8,8 @@ make -C backend build
 ./bin/api > /tmp/api.log 2>&1 &   # LOG_LEVEL=debug, no TELEGRAM_GATEWAY_TOKEN
 ./bin/worker > /tmp/worker.log 2>&1 &
 
-API_LOG=/tmp/api.log test/e2e/auth.sh            # 45 checks
-test/e2e/companies_vacancies.sh                  # 86 checks (needs bin/ctl, waits ~1 min for view flush)
+API_LOG=/tmp/api.log test/e2e/auth.sh            # 50 checks (waits for the auth rate-limit window if needed)
+test/e2e/companies_vacancies.sh                  # 96 checks (needs bin/ctl, waits ~1 min for view flush)
 test/e2e/search.sh                               # 49 checks (needs bin/ctl)
 test/e2e/resumes_applications.sh                 # 75 checks (needs bin/ctl; PDF checks need pdftotext)
 API_LOG=/tmp/api.log WORKER_LOG=/tmp/worker.log test/e2e/notifications.sh  # 26 checks

@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -38,6 +39,7 @@ func (h *Handler) Routes(r chi.Router, auth *mw.Authenticator) {
 		r.Delete("/{vacancy}", h.delete)
 		r.Post("/{vacancy}/submit", h.submit)
 		r.Post("/{vacancy}/archive", h.archive)
+		r.Post("/{vacancy}/republish", h.republish)
 	})
 }
 
@@ -59,6 +61,8 @@ func (h *Handler) AdminRoutes(r chi.Router) {
 	r.Get("/moderation", h.moderationQueue)
 	r.Post("/{vacancy}/approve", h.approve)
 	r.Post("/{vacancy}/reject", h.reject)
+	r.Put("/{vacancy}/featured", h.setFeatured)
+	r.Delete("/{vacancy}/featured", h.clearFeatured)
 }
 
 // AdminSearchRoutes are mounted under /admin/search (TZ SEC-07 moderation).
@@ -107,6 +111,10 @@ func (h *Handler) submit(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) archive(w http.ResponseWriter, r *http.Request) {
 	h.transition(w, r, h.Svc.Archive)
+}
+
+func (h *Handler) republish(w http.ResponseWriter, r *http.Request) {
+	h.transition(w, r, h.Svc.Republish)
 }
 
 func (h *Handler) approve(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +189,40 @@ func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d, err := h.Svc.Reject(r.Context(), reqctx.MustPrincipal(r.Context()), id, req.Reason)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, d)
+}
+
+type featuredRequest struct {
+	Until time.Time `json:"until" validate:"required"`
+}
+
+func (h *Handler) setFeatured(w http.ResponseWriter, r *http.Request) {
+	id, ok := vacancyID(w, r)
+	if !ok {
+		return
+	}
+	var req featuredRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	d, err := h.Svc.SetFeatured(r.Context(), id, req.Until)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, d)
+}
+
+func (h *Handler) clearFeatured(w http.ResponseWriter, r *http.Request) {
+	id, ok := vacancyID(w, r)
+	if !ok {
+		return
+	}
+	d, err := h.Svc.ClearFeatured(r.Context(), id)
 	if err != nil {
 		response.Error(w, r, err)
 		return

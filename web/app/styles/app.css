@@ -751,6 +751,22 @@
   --animate-marquee: marquee 45s linear infinite;
   @keyframes marquee { to { transform: translateX(calc(-50% - 1.5rem)); } }
 }
+/* Native <details> accordions (FAQ): no marker, and the panel eases open where the browser can
+   animate to auto height (::details-content + interpolate-size, Chromium); elsewhere it simply
+   opens. A user-initiated, one-off height change of a short block, so layout cost is negligible. */
+@utility disclosure {
+  interpolate-size: allow-keywords;
+  & > summary { list-style: none; }
+  & > summary::-webkit-details-marker { display: none; }
+  &::details-content {
+    block-size: 0;
+    overflow-y: clip;
+    opacity: 0;
+    transition: block-size var(--dur-3) var(--ease-out-quint), opacity var(--dur-3) var(--ease-out-quint),
+      content-visibility var(--dur-3) allow-discrete;
+  }
+  &[open]::details-content { block-size: auto; opacity: 1; }
+}
 
 /* Site header material (SiteHeader): a sibling layer under the header's content, clear at rest and
    materializing once content scrolls under it (a scroll-edge effect, compositor-only opacity).
@@ -899,6 +915,8 @@
 @view-transition { navigation: auto; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: var(--dur-2); }
 ::view-transition-group(*) { animation-timing-function: var(--ease-out-quint); animation-duration: var(--dur-3); }
+/* Auth card (login ↔ register ↔ reset): the card resizes, its content cross-fades inside it. */
+::view-transition-group(auth-card) { overflow: clip; border-radius: var(--radius-sheet); }
 
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }

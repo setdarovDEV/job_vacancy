@@ -34,3 +34,17 @@ func (s *Service) DTO(ctx context.Context, f gen.File) (DTO, error) {
 	}
 	return d, nil
 }
+
+// PurgeObjectsArgs is a job that removes stored objects after the rows that pointed at
+// them were deleted (account deletion, TZ FN-03); it is enqueued in that transaction.
+type PurgeObjectsArgs struct {
+	Objects []StoredObject `json:"objects"`
+}
+
+// StoredObject names one object in object storage.
+type StoredObject struct {
+	Bucket string `json:"bucket"`
+	Key    string `json:"key"`
+}
+
+func (PurgeObjectsArgs) Kind() string { return "file.purge_objects" }

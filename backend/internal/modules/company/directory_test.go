@@ -102,8 +102,8 @@ func TestOpenVacanciesCounter(t *testing.T) {
 		t.Fatalf("after 2 published inserts: %d", got)
 	}
 	f.exec(`UPDATE vacancies SET status = 'published', published_at = now() WHERE id = $1`, d) // publish
-	f.exec(`UPDATE vacancies SET status = 'archived' WHERE id = $1`, v1)                        // archive
-	f.exec(`UPDATE vacancies SET status = 'expired' WHERE id = $1`, v2)                         // expire
+	f.exec(`UPDATE vacancies SET status = 'archived' WHERE id = $1`, v1)                       // archive
+	f.exec(`UPDATE vacancies SET status = 'expired' WHERE id = $1`, v2)                        // expire
 	if got := f.open(a); got != 1 {
 		t.Fatalf("after publish+archive+expire: %d, want 1", got)
 	}

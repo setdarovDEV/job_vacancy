@@ -12,18 +12,20 @@ import (
 )
 
 const createGoogleUser = `-- name: CreateGoogleUser :one
-INSERT INTO users (email, email_verified_at, google_sub, full_name, avatar_url, role, locale)
-VALUES ($1, now(), $2, $3, $4, $5, $6)
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+INSERT INTO users (email, email_verified_at, google_sub, full_name, avatar_url, role, locale,
+                   consent_version, consent_at)
+VALUES ($1, now(), $2, $3, $4, $5, $6, $7::text, now())
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 type CreateGoogleUserParams struct {
-	Email     *string
-	GoogleSub *string
-	FullName  string
-	AvatarUrl *string
-	Role      UserRole
-	Locale    AppLocale
+	Email          *string
+	GoogleSub      *string
+	FullName       string
+	AvatarUrl      *string
+	Role           UserRole
+	Locale         AppLocale
+	ConsentVersion string
 }
 
 func (q *Queries) CreateGoogleUser(ctx context.Context, arg CreateGoogleUserParams) (User, error) {
@@ -34,6 +36,7 @@ func (q *Queries) CreateGoogleUser(ctx context.Context, arg CreateGoogleUserPara
 		arg.AvatarUrl,
 		arg.Role,
 		arg.Locale,
+		arg.ConsentVersion,
 	)
 	var i User
 	err := row.Scan(
@@ -55,24 +58,31 @@ func (q *Queries) CreateGoogleUser(ctx context.Context, arg CreateGoogleUserPara
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (email, password_hash, full_name, role, locale)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+INSERT INTO users (email, password_hash, full_name, role, locale, consent_version, consent_at)
+VALUES ($1, $2, $3, $4, $5, $6::text, now())
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 type CreateUserParams struct {
-	Email        *string
-	PasswordHash *string
-	FullName     string
-	Role         UserRole
-	Locale       AppLocale
+	Email          *string
+	PasswordHash   *string
+	FullName       string
+	Role           UserRole
+	Locale         AppLocale
+	ConsentVersion string
 }
 
+// consent_version is the privacy policy version the user agreed to at sign-up (TZ FN-08);
+// the agreement time is the insert time.
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser,
 		arg.Email,
@@ -80,6 +90,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.FullName,
 		arg.Role,
 		arg.Locale,
+		arg.ConsentVersion,
 	)
 	var i User
 	err := row.Scan(
@@ -101,12 +112,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram FROM users WHERE email = $1
+SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online FROM users WHERE email = $1
 `
 
 func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, error) {
@@ -131,12 +146,16 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (User, erro
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
 
 const getUserByGoogleSub = `-- name: GetUserByGoogleSub :one
-SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram FROM users WHERE google_sub = $1
+SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online FROM users WHERE google_sub = $1
 `
 
 func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub *string) (User, error) {
@@ -161,12 +180,16 @@ func (q *Queries) GetUserByGoogleSub(ctx context.Context, googleSub *string) (Us
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram FROM users WHERE id = $1
+SELECT id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -191,6 +214,10 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
@@ -217,7 +244,7 @@ SET google_sub        = $2,
     email_verified_at = COALESCE(email_verified_at, now()),
     avatar_url        = COALESCE(avatar_url, $3)
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 type LinkGoogleAccountParams struct {
@@ -248,6 +275,10 @@ func (q *Queries) LinkGoogleAccount(ctx context.Context, arg LinkGoogleAccountPa
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
@@ -255,7 +286,7 @@ func (q *Queries) LinkGoogleAccount(ctx context.Context, arg LinkGoogleAccountPa
 const markEmailVerified = `-- name: MarkEmailVerified :one
 UPDATE users SET email_verified_at = COALESCE(email_verified_at, now())
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) (User, error) {
@@ -280,12 +311,57 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, id uuid.UUID) (User, er
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
+	)
+	return i, err
+}
+
+const setUserConsent = `-- name: SetUserConsent :one
+UPDATE users SET consent_version = $2::text, consent_at = now()
+WHERE id = $1
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
+`
+
+type SetUserConsentParams struct {
+	ID             uuid.UUID
+	ConsentVersion string
+}
+
+func (q *Queries) SetUserConsent(ctx context.Context, arg SetUserConsentParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserConsent, arg.ID, arg.ConsentVersion)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.EmailVerifiedAt,
+		&i.Phone,
+		&i.PhoneVerifiedAt,
+		&i.PasswordHash,
+		&i.GoogleSub,
+		&i.FullName,
+		&i.AvatarUrl,
+		&i.Role,
+		&i.Status,
+		&i.Locale,
+		&i.LastSeenAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.TelegramChatID,
+		&i.NotifyEmail,
+		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
 
 const setUserRole = `-- name: SetUserRole :one
-UPDATE users SET role = $2 WHERE email = $1 RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+UPDATE users SET role = $2 WHERE email = $1 RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 type SetUserRoleParams struct {
@@ -315,6 +391,10 @@ func (q *Queries) SetUserRole(ctx context.Context, arg SetUserRoleParams) (User,
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
@@ -322,7 +402,7 @@ func (q *Queries) SetUserRole(ctx context.Context, arg SetUserRoleParams) (User,
 const setVerifiedPhone = `-- name: SetVerifiedPhone :one
 UPDATE users SET phone = $2, phone_verified_at = now()
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 type SetVerifiedPhoneParams struct {
@@ -352,6 +432,10 @@ func (q *Queries) SetVerifiedPhone(ctx context.Context, arg SetVerifiedPhonePara
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }
@@ -381,20 +465,27 @@ func (q *Queries) UpdatePassword(ctx context.Context, arg UpdatePasswordParams) 
 
 const updateProfile = `-- name: UpdateProfile :one
 UPDATE users
-SET full_name = COALESCE($2, full_name),
-    locale    = COALESCE($3, locale)
+SET full_name   = COALESCE($2, full_name),
+    locale      = COALESCE($3, locale),
+    hide_online = COALESCE($4, hide_online)
 WHERE id = $1
-RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram
+RETURNING id, email, email_verified_at, phone, phone_verified_at, password_hash, google_sub, full_name, avatar_url, role, status, locale, last_seen_at, created_at, updated_at, telegram_chat_id, notify_email, notify_telegram, deleted_at, consent_version, consent_at, hide_online
 `
 
 type UpdateProfileParams struct {
-	ID       uuid.UUID
-	FullName *string
-	Locale   *AppLocale
+	ID         uuid.UUID
+	FullName   *string
+	Locale     *AppLocale
+	HideOnline *bool
 }
 
 func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (User, error) {
-	row := q.db.QueryRow(ctx, updateProfile, arg.ID, arg.FullName, arg.Locale)
+	row := q.db.QueryRow(ctx, updateProfile,
+		arg.ID,
+		arg.FullName,
+		arg.Locale,
+		arg.HideOnline,
+	)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -415,6 +506,10 @@ func (q *Queries) UpdateProfile(ctx context.Context, arg UpdateProfileParams) (U
 		&i.TelegramChatID,
 		&i.NotifyEmail,
 		&i.NotifyTelegram,
+		&i.DeletedAt,
+		&i.ConsentVersion,
+		&i.ConsentAt,
+		&i.HideOnline,
 	)
 	return i, err
 }

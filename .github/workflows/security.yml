@@ -1,0 +1,87 @@
+name: security
+
+# Supply-chain and secret checks (TZ SEC-08). Required status checks on main (branch
+# protection, docs/RUNBOOK.md "CI/CD"): a red job blocks the merge. Weekly as well, because
+# new advisories appear for code that didn't change.
+#   govulncheck      Go vulnerabilities reachable from our code (backend/)
+#   pnpm audit       known advisories in the web's production dependencies
+#   gitleaks         secrets in the git history of the change
+#   pins             images by digest, actions by commit SHA (nginx/scripts/check-pins.sh)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"   # Mondays 08:17 Tashkent
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  govulncheck:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: govulncheck (symbol level; fails on vulnerabilities our code calls)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
+  pnpm-audit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with: { version: 10.33.0 }
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+      # Reads the lockfile only; nothing is installed or executed.
+      - name: pnpm audit --prod
+        run: pnpm audit --prod
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks v8.30.1 (checksum pinned)
+        run: |
+          curl -fsSL -o /tmp/gitleaks.tgz https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+      - name: gitleaks (commits of this change; full history on main and weekly)
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            /tmp/gitleaks git --redact --no-banner --exit-code 1 --log-opts="$BASE..$HEAD" .
+          else
+            /tmp/gitleaks git --redact --no-banner --exit-code 1 .
+          fi
+          /tmp/gitleaks dir --redact --no-banner --exit-code 1 .
+
+  pins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Images pinned by digest, actions by commit SHA
+        run: nginx/scripts/check-pins.sh

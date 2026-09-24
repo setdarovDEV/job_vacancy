@@ -269,7 +269,7 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "Scrape of {{ $labels.job }} ({{ $labels.instance }}) fails: its dashboards and alerts are blind"
-          runbook: "docs/RUNBOOK.md#10-monitoring-va-alertlar"
+          runbook: "docs/RUNBOOK.md#102-alertlar"
       # Always firing. Alertmanager sends it to ALERT_WATCHDOG_URL (healthchecks.io), which
       # alerts from outside when the pings stop: the monitoring itself is down.
       - alert: Watchdog

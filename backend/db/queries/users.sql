@@ -1,11 +1,19 @@
+-- consent_version is the privacy policy version the user agreed to at sign-up (TZ FN-08);
+-- the agreement time is the insert time.
 -- name: CreateUser :one
-INSERT INTO users (email, password_hash, full_name, role, locale)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO users (email, password_hash, full_name, role, locale, consent_version, consent_at)
+VALUES ($1, $2, $3, $4, $5, sqlc.arg(consent_version)::text, now())
 RETURNING *;
 
 -- name: CreateGoogleUser :one
-INSERT INTO users (email, email_verified_at, google_sub, full_name, avatar_url, role, locale)
-VALUES ($1, now(), $2, $3, $4, $5, $6)
+INSERT INTO users (email, email_verified_at, google_sub, full_name, avatar_url, role, locale,
+                   consent_version, consent_at)
+VALUES ($1, now(), $2, $3, $4, $5, $6, sqlc.arg(consent_version)::text, now())
+RETURNING *;
+
+-- name: SetUserConsent :one
+UPDATE users SET consent_version = sqlc.arg(consent_version)::text, consent_at = now()
+WHERE id = $1
 RETURNING *;
 
 -- name: GetUserByID :one
@@ -43,8 +51,9 @@ UPDATE users SET password_hash = $2 WHERE id = $1;
 
 -- name: UpdateProfile :one
 UPDATE users
-SET full_name = COALESCE(sqlc.narg(full_name), full_name),
-    locale    = COALESCE(sqlc.narg(locale), locale)
+SET full_name   = COALESCE(sqlc.narg(full_name), full_name),
+    locale      = COALESCE(sqlc.narg(locale), locale),
+    hide_online = COALESCE(sqlc.narg(hide_online), hide_online)
 WHERE id = $1
 RETURNING *;
 
