@@ -51,7 +51,7 @@ var (
 type Processor struct {
 	Pool      *pgxpool.Pool
 	Q         *gen.Queries
-	Storage   *storage.Storage
+	Storage   media.Objects
 	Jobs      media.Enqueuer      // queues the retirement in the publishing transaction
 	Publisher *realtime.Publisher // tells the uploader's open tabs (media.ready / media.failed)
 	RDB       *redis.Client       // answers the request waiting on media.DoneChannel
@@ -143,7 +143,10 @@ func (p *Processor) Process(ctx context.Context, a media.ProcessArgs) error {
 		return err
 	}
 	largest := p.Storage.PublicURL(imgurl.Key(a.Target, f.ID, f.CreatedAt, a.Target.Largest()))
-	if shown != nil && *shown == largest {
+	if shown != nil && *shown == largest { // a retry after the swap: only the original may be left
+		if f.Bucket != p.Storage.PublicBucket() {
+			_ = p.Storage.Remove(ctx, f.Bucket, f.ObjectKey)
+		}
 		result("done_before")
 		return nil
 	}

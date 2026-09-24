@@ -11,6 +11,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/company"
 	"jobvacancy.uz/backend/internal/pkg/cursor"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 	"jobvacancy.uz/backend/internal/pkg/searchq"
 	"jobvacancy.uz/backend/internal/pkg/sqlb"
 )
@@ -203,6 +204,7 @@ func (s *Service) list(ctx context.Context, f Filter) (ListResult, error) {
 			return ListResult{}, err
 		}
 		v.Status = gen.VacancyStatusPublished
+		cs.LogoURLs = imgurl.URLs(cs.LogoURL)
 		vs = append(vs, v)
 		summaries[v.ID] = cs
 		scores[v.ID] = score

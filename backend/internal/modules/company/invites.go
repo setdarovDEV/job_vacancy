@@ -170,8 +170,8 @@ func (s *Service) MyInvites(ctx context.Context, userID uuid.UUID) ([]MyInvite, 
 	out := make([]MyInvite, len(rows))
 	for i, r := range rows {
 		out[i] = MyInvite{ID: r.ID, Role: string(r.Role), InvitedByName: r.InvitedByName, ExpiresAt: r.ExpiresAt,
-			CreatedAt: r.CreatedAt, Company: Summary{ID: r.CompanyID, Name: r.CompanyName, Slug: r.CompanySlug,
-				LogoURL: r.CompanyLogo, Verified: r.CompanyVerified}}
+			CreatedAt: r.CreatedAt, Company: NewSummary(r.CompanyID, r.CompanyName, r.CompanySlug,
+				r.CompanyLogo, r.CompanyVerified)}
 	}
 	return out, nil
 }

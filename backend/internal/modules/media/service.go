@@ -17,12 +17,21 @@ import (
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/imgurl"
-	"jobvacancy.uz/backend/internal/platform/storage"
 )
 
 // ErrImageRejected: the worker could not use the upload (not a decodable image, or more
 // than imaging.MaxPixels).
 var ErrImageRejected = apperr.Validation(map[string]string{"file_id": "image"})
+
+// Objects is the object storage images need (storage.Storage; an in-memory map in tests).
+type Objects interface {
+	Get(ctx context.Context, bucket, key string, max int64) ([]byte, error)
+	Put(ctx context.Context, bucket, key string, data []byte, contentType, cacheControl string) error
+	Remove(ctx context.Context, bucket, key string) error
+	PublicBucket() string
+	PublicURL(key string) string
+	PublicKey(url string) (string, bool)
+}
 
 // Enqueuer inserts jobs in the caller's transaction (jobs.Enqueuer; fixture.Jobs in tests).
 type Enqueuer interface {
@@ -34,7 +43,7 @@ type Service struct {
 	Pool    *pgxpool.Pool
 	Q       *gen.Queries
 	Files   *file.Service
-	Storage *storage.Storage
+	Storage Objects
 	Jobs    Enqueuer
 	// RDB lets a choice wait for its variants (Wait, default 4 s) so the response already
 	// shows the new image; nil answers at once with *_pending.
@@ -170,7 +179,7 @@ func (s *Service) clear(ctx context.Context, update func(*gen.Queries) (*string,
 // processed image (and its upload row), or a legacy upload shown straight from the public
 // bucket. keep is an upload that must survive (the one replacing it, when a legacy
 // original is reprocessed). External URLs (Google avatars) need nothing.
-func Retire(ctx context.Context, q *gen.Queries, st *storage.Storage, old *string, keep uuid.UUID) (RetireArgs, bool) {
+func Retire(ctx context.Context, q *gen.Queries, st Objects, old *string, keep uuid.UUID) (RetireArgs, bool) {
 	if old == nil || st == nil {
 		return RetireArgs{}, false
 	}

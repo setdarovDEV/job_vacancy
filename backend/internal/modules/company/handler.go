@@ -23,22 +23,29 @@ import (
 
 // DTO is the public company profile.
 type DTO struct {
-	ID          uuid.UUID `json:"id"`
-	Name        string    `json:"name"`
-	Slug        string    `json:"slug"`
-	LogoURL     *string   `json:"logo_url"`
-	CoverURL    *string   `json:"cover_url"`
-	IndustryID  *int32    `json:"industry_id"`
-	Size        *string   `json:"size"`
-	Website     *string   `json:"website"`
-	Email       *string   `json:"email"`
-	Phone       *string   `json:"phone"`
-	RegionID    *int32    `json:"region_id"`
-	Address     *string   `json:"address"`
-	About       string    `json:"about"`
-	FoundedYear *int16    `json:"founded_year"`
-	Verified    bool      `json:"verified"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Slug     string    `json:"slug"`
+	LogoURL  *string   `json:"logo_url"`
+	CoverURL *string   `json:"cover_url"`
+	// Sizes for srcset (TZ BE-14/FE-04): logo "64","128","256"; cover "640","1280"; null
+	// for images from before processing. CoverLQIP is a tiny blurred-preview data URI.
+	LogoURLs     map[string]string `json:"logo_urls"`
+	CoverURLs    map[string]string `json:"cover_urls"`
+	CoverLQIP    *string           `json:"cover_lqip"`
+	LogoPending  bool              `json:"logo_pending"`
+	CoverPending bool              `json:"cover_pending"`
+	IndustryID   *int32            `json:"industry_id"`
+	Size         *string           `json:"size"`
+	Website      *string           `json:"website"`
+	Email        *string           `json:"email"`
+	Phone        *string           `json:"phone"`
+	RegionID     *int32            `json:"region_id"`
+	Address      *string           `json:"address"`
+	About        string            `json:"about"`
+	FoundedYear  *int16            `json:"founded_year"`
+	Verified     bool              `json:"verified"`
+	CreatedAt    time.Time         `json:"created_at"`
 	// Set on the public profile page.
 	OpenVacancies *int64 `json:"open_vacancies,omitempty"`
 	// Set in "my companies".
@@ -50,16 +57,24 @@ type DTO struct {
 
 // Summary is embedded in vacancy cards.
 type Summary struct {
-	ID       uuid.UUID `json:"id"`
-	Name     string    `json:"name"`
-	Slug     string    `json:"slug"`
-	LogoURL  *string   `json:"logo_url"`
-	Verified bool      `json:"verified"`
+	ID       uuid.UUID         `json:"id"`
+	Name     string            `json:"name"`
+	Slug     string            `json:"slug"`
+	LogoURL  *string           `json:"logo_url"`
+	LogoURLs map[string]string `json:"logo_urls"`
+	Verified bool              `json:"verified"`
+}
+
+// NewSummary builds a card's company, logo sizes included.
+func NewSummary(id uuid.UUID, name, slug string, logo *string, verified bool) Summary {
+	return Summary{ID: id, Name: name, Slug: slug, LogoURL: logo, LogoURLs: imgurl.URLs(logo), Verified: verified}
 }
 
 func ToDTO(c gen.Company) DTO {
 	d := DTO{
 		ID: c.ID, Name: c.Name, Slug: c.Slug, LogoURL: c.LogoUrl, CoverURL: c.CoverUrl,
+		LogoURLs: imgurl.URLs(c.LogoUrl), CoverURLs: imgurl.URLs(c.CoverUrl), CoverLQIP: c.CoverLqip,
+		LogoPending: imgurl.Pending(c.LogoFileID, c.LogoUrl), CoverPending: imgurl.Pending(c.CoverFileID, c.CoverUrl),
 		IndustryID: c.IndustryID, Website: c.Website, Email: c.Email, Phone: c.Phone,
 		RegionID: c.RegionID, Address: c.Address, About: c.About, FoundedYear: c.FoundedYear,
 		Verified: c.VerifiedAt != nil, CreatedAt: c.CreatedAt,
@@ -72,12 +87,13 @@ func ToDTO(c gen.Company) DTO {
 }
 
 type memberDTO struct {
-	UserID    uuid.UUID `json:"user_id"`
-	FullName  string    `json:"full_name"`
-	Email     *string   `json:"email"`
-	AvatarURL *string   `json:"avatar_url"`
-	Role      string    `json:"role"`
-	JoinedAt  time.Time `json:"joined_at"`
+	UserID     uuid.UUID         `json:"user_id"`
+	FullName   string            `json:"full_name"`
+	Email      *string           `json:"email"`
+	AvatarURL  *string           `json:"avatar_url"`
+	AvatarURLs map[string]string `json:"avatar_urls"`
+	Role       string            `json:"role"`
+	JoinedAt   time.Time         `json:"joined_at"`
 }
 
 type addMemberRequest struct {
@@ -342,7 +358,7 @@ func (h *Handler) members(w http.ResponseWriter, r *http.Request) {
 	out := make([]memberDTO, len(rows))
 	for i, m := range rows {
 		out[i] = memberDTO{UserID: m.ID, FullName: m.FullName, Email: m.Email,
-			AvatarURL: m.AvatarUrl, Role: string(m.Role), JoinedAt: m.CreatedAt}
+			AvatarURL: m.AvatarUrl, AvatarURLs: imgurl.URLs(m.AvatarUrl), Role: string(m.Role), JoinedAt: m.CreatedAt}
 	}
 	response.JSON(w, http.StatusOK, out)
 }

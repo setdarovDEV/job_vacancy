@@ -9,9 +9,10 @@ import (
 )
 
 type Person struct {
-	ID        uuid.UUID `json:"id"`
-	FullName  string    `json:"full_name"`
-	AvatarURL *string   `json:"avatar_url"`
+	ID         uuid.UUID         `json:"id"`
+	FullName   string            `json:"full_name"`
+	AvatarURL  *string           `json:"avatar_url"`
+	AvatarURLs map[string]string `json:"avatar_urls"`
 }
 
 type Location struct {
@@ -39,10 +40,11 @@ type Brief struct {
 }
 
 type CompanyBrief struct {
-	ID      uuid.UUID `json:"id"`
-	Name    string    `json:"name"`
-	Slug    string    `json:"slug"`
-	LogoURL *string   `json:"logo_url"`
+	ID       uuid.UUID         `json:"id"`
+	Name     string            `json:"name"`
+	Slug     string            `json:"slug"`
+	LogoURL  *string           `json:"logo_url"`
+	LogoURLs map[string]string `json:"logo_urls"`
 }
 
 type Conversation struct {

@@ -11,6 +11,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/cursor"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/pkg/searchq"
 	"jobvacancy.uz/backend/internal/pkg/sqlb"
@@ -180,7 +181,7 @@ func (s *Service) search(ctx context.Context, f SearchFilter) (SearchResult, err
 	for _, id := range pageIDs { // keep ranking order; skip owners that were blocked
 		if l, ok := byID[id]; ok {
 			res.Cards = append(res.Cards, cardOf(l.Resume,
-				Person{ID: l.Resume.UserID, FullName: l.FullName, AvatarURL: l.AvatarUrl}, sec, false))
+				Person{ID: l.Resume.UserID, FullName: l.FullName, AvatarURL: l.AvatarUrl, AvatarURLs: imgurl.URLs(l.AvatarUrl)}, sec, false))
 		}
 	}
 

@@ -77,7 +77,7 @@ func (s *Service) Suggest(ctx context.Context, raw string) (Suggestions, error) 
 			continue
 		}
 		seen[c.ID] = true
-		out.Companies = append(out.Companies, company.Summary{ID: c.ID, Name: c.Name, Slug: c.Slug, LogoURL: c.LogoUrl, Verified: c.Verified})
+		out.Companies = append(out.Companies, company.NewSummary(c.ID, c.Name, c.Slug, c.LogoUrl, c.Verified))
 	}
 
 	if out.Skills, err = s.Catalog.SearchSkills(ctx, name, 4); err != nil {

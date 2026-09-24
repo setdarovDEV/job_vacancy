@@ -8,6 +8,7 @@ import (
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/company"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 )
 
 // CardsByIDs loads vacancy cards in any status (applications and bookmarks outlive a
@@ -35,6 +36,7 @@ func (s *Service) CardsByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUI
 			&cs.ID, &cs.Name, &cs.Slug, &cs.LogoURL, &cs.Verified, &v.Status); err != nil {
 			return nil, err
 		}
+		cs.LogoURLs = imgurl.URLs(cs.LogoURL)
 		vs = append(vs, v)
 		sums[v.ID] = cs
 	}

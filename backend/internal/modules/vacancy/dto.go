@@ -83,7 +83,7 @@ func salaryOf(min, max *int64, cur gen.Currency) *Salary {
 }
 
 func summaryOf(c gen.Company) company.Summary {
-	return company.Summary{ID: c.ID, Name: c.Name, Slug: c.Slug, LogoURL: c.LogoUrl, Verified: c.VerifiedAt != nil}
+	return company.NewSummary(c.ID, c.Name, c.Slug, c.LogoUrl, c.VerifiedAt != nil)
 }
 
 func cardOf(v gen.Vacancy, c company.Summary, skills []catalog.Skill) Card {

@@ -328,15 +328,6 @@ func (s *Service) SetVerified(ctx context.Context, ref string, verified bool) (g
 	return c, err
 }
 
-// SetLogo stores the logo URL (nil removes it).
-func (s *Service) SetLogo(ctx context.Context, id uuid.UUID, url *string) (gen.Company, error) {
-	c, err := s.Q.SetCompanyLogoURL(ctx, gen.SetCompanyLogoURLParams{ID: id, LogoUrl: url})
-	if err == nil {
-		s.changed(ctx, c)
-	}
-	return c, err
-}
-
 // ---- helpers -----------------------------------------------------------------------------
 
 func (s *Service) uniqueSlug(ctx context.Context, name string) (string, error) {

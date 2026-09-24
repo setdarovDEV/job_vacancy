@@ -16,6 +16,3 @@ SELECT * FROM files WHERE status = 'pending' AND created_at < now() - interval '
 
 -- name: DeleteFile :exec
 DELETE FROM files WHERE id = $1;
-
--- name: SetUserAvatar :one
-UPDATE users SET avatar_url = $2 WHERE id = $1 RETURNING *;

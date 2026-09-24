@@ -107,3 +107,17 @@ func URLs(u *string) map[string]string {
 	}
 	return out
 }
+
+// Pending reports that the owner chose an upload (chosen) that isn't shown yet: the worker
+// is still publishing its sizes.
+func Pending(chosen *uuid.UUID, shown *string) bool {
+	if chosen == nil {
+		return false
+	}
+	if shown != nil {
+		if v, ok := Parse(*shown); ok && v.FileID == *chosen {
+			return false
+		}
+	}
+	return true
+}

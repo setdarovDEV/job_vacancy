@@ -487,46 +487,6 @@ func (q *Queries) SetCompanyLogo(ctx context.Context, arg SetCompanyLogoParams) 
 	return i, err
 }
 
-const setCompanyLogoURL = `-- name: SetCompanyLogoURL :one
-UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at, open_vacancies, logo_file_id, cover_file_id, cover_lqip
-`
-
-type SetCompanyLogoURLParams struct {
-	ID      uuid.UUID
-	LogoUrl *string
-}
-
-func (q *Queries) SetCompanyLogoURL(ctx context.Context, arg SetCompanyLogoURLParams) (Company, error) {
-	row := q.db.QueryRow(ctx, setCompanyLogoURL, arg.ID, arg.LogoUrl)
-	var i Company
-	err := row.Scan(
-		&i.ID,
-		&i.OwnerID,
-		&i.Name,
-		&i.Slug,
-		&i.LogoUrl,
-		&i.CoverUrl,
-		&i.IndustryID,
-		&i.Size,
-		&i.Website,
-		&i.Email,
-		&i.Phone,
-		&i.RegionID,
-		&i.Address,
-		&i.About,
-		&i.FoundedYear,
-		&i.VerifiedAt,
-		&i.Status,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.OpenVacancies,
-		&i.LogoFileID,
-		&i.CoverFileID,
-		&i.CoverLqip,
-	)
-	return i, err
-}
-
 const setCompanyVerified = `-- name: SetCompanyVerified :one
 UPDATE companies
 SET verified_at = CASE WHEN $2::boolean THEN COALESCE(verified_at, now()) END

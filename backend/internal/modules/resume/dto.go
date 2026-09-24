@@ -58,9 +58,10 @@ type Salary struct {
 }
 
 type Person struct {
-	ID        uuid.UUID `json:"id"`
-	FullName  string    `json:"full_name"`
-	AvatarURL *string   `json:"avatar_url"`
+	ID         uuid.UUID         `json:"id"`
+	FullName   string            `json:"full_name"`
+	AvatarURL  *string           `json:"avatar_url"`
+	AvatarURLs map[string]string `json:"avatar_urls"`
 }
 
 // Contacts are shown only to the owner, admins, and companies the seeker applied to.

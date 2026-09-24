@@ -16,6 +16,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/pkg/translit"
 	"jobvacancy.uz/backend/internal/platform/postgres"
@@ -442,7 +443,7 @@ func totalMonths(spans [][2]int) int32 {
 }
 
 func personOf(u gen.User) Person {
-	return Person{ID: u.ID, FullName: u.FullName, AvatarURL: u.AvatarUrl}
+	return Person{ID: u.ID, FullName: u.FullName, AvatarURL: u.AvatarUrl, AvatarURLs: imgurl.URLs(u.AvatarUrl)}
 }
 
 func ids(rs []gen.Resume) []uuid.UUID {

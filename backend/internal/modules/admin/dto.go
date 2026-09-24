@@ -8,27 +8,30 @@ import (
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/company"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 )
 
 // UserDTO is a user as the admin panel shows it.
 type UserDTO struct {
-	ID            uuid.UUID  `json:"id"`
-	Email         *string    `json:"email"`
-	Phone         *string    `json:"phone"`
-	FullName      string     `json:"full_name"`
-	AvatarURL     *string    `json:"avatar_url"`
-	Role          string     `json:"role"`
-	Status        string     `json:"status"`
-	EmailVerified bool       `json:"email_verified"`
-	PhoneVerified bool       `json:"phone_verified"`
-	LastSeenAt    *time.Time `json:"last_seen_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	DeletedAt     *time.Time `json:"deleted_at"`
+	ID            uuid.UUID         `json:"id"`
+	Email         *string           `json:"email"`
+	Phone         *string           `json:"phone"`
+	FullName      string            `json:"full_name"`
+	AvatarURL     *string           `json:"avatar_url"`
+	AvatarURLs    map[string]string `json:"avatar_urls"`
+	Role          string            `json:"role"`
+	Status        string            `json:"status"`
+	EmailVerified bool              `json:"email_verified"`
+	PhoneVerified bool              `json:"phone_verified"`
+	LastSeenAt    *time.Time        `json:"last_seen_at"`
+	CreatedAt     time.Time         `json:"created_at"`
+	DeletedAt     *time.Time        `json:"deleted_at"`
 }
 
 func userOf(u gen.User) UserDTO {
 	return UserDTO{ID: u.ID, Email: u.Email, Phone: u.Phone, FullName: u.FullName, AvatarURL: u.AvatarUrl,
-		Role: string(u.Role), Status: string(u.Status), EmailVerified: u.EmailVerifiedAt != nil,
+		AvatarURLs: imgurl.URLs(u.AvatarUrl),
+		Role:       string(u.Role), Status: string(u.Status), EmailVerified: u.EmailVerifiedAt != nil,
 		PhoneVerified: u.PhoneVerifiedAt != nil, LastSeenAt: u.LastSeenAt, CreatedAt: u.CreatedAt, DeletedAt: u.DeletedAt}
 }
 

@@ -7,6 +7,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/modules/company"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 )
 
 // QueueCards adds the queries of CardsByIDs to a pgx.Batch, so the cards arrive in the
@@ -29,6 +30,7 @@ func QueueCards(b *pgx.Batch, ids []uuid.UUID) func() map[uuid.UUID]Card {
 					&cs.ID, &cs.Name, &cs.Slug, &cs.LogoURL, &cs.Verified, &v.Status); err != nil {
 					return err
 				}
+				cs.LogoURLs = imgurl.URLs(cs.LogoURL)
 				vs = append(vs, v)
 				sums[v.ID] = cs
 			}

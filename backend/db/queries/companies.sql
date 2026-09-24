@@ -51,9 +51,6 @@ FROM company_members m JOIN companies c ON c.id = m.company_id
 WHERE m.user_id = $1
 ORDER BY m.created_at;
 
--- name: SetCompanyLogoURL :one
-UPDATE companies SET logo_url = $2 WHERE id = $1 RETURNING *;
-
 -- Company directory page (TZ BE-03): verified first, then by open vacancies, name, id,
 -- which is the order of companies_directory_idx. Pages are keyset: the query seeks past the
 -- key of the previous page's last row. The first page passes a key below every row

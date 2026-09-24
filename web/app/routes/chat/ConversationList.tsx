@@ -53,8 +53,17 @@ export function ConversationList({ activeId }: { activeId?: string }) {
   const typing = useTypingIds(user?.id);
   const narrow = useNarrow();
   // Only the rows of the first paint get the entrance stagger; later pages and refetches don't.
+  // The class goes once it has played: a list shown again after display:none (phones, back from
+  // a thread) would otherwise replay it.
   const entered = useRef<Set<string> | null>(null);
   if (!entered.current && items.length) entered.current = new Set(items.slice(0, 8).map((c) => c.id));
+  const [settled, setSettled] = useState(false);
+  const firstPaint = items.length > 0;
+  useEffect(() => {
+    if (!firstPaint) return;
+    const timer = setTimeout(() => setSettled(true), 700);
+    return () => clearTimeout(timer);
+  }, [firstPaint]);
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
@@ -105,7 +114,7 @@ export function ConversationList({ activeId }: { activeId?: string }) {
           <>
             <ul aria-labelledby="chat-title" className={listBox}>
               {items.map((c, i) => {
-                const enter = entered.current?.has(c.id);
+                const enter = !settled && entered.current?.has(c.id);
                 return (
                   <li key={c.id} className={cn("group/item", enter && "anim-enter")} style={enter ? ({ "--i": i } as CSSProperties) : undefined}>
                     <Row c={c} active={c.id === activeId} typing={typing.has(c.id)} slide={narrow} me={user?.id} t={t} locale={locale} />

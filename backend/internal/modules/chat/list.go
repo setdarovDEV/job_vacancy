@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"jobvacancy.uz/backend/db/gen"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 )
 
@@ -113,9 +114,10 @@ func (s *Service) conversations(ctx context.Context, p reqctx.Principal, rows []
 		}
 		c := Conversation{
 			ID: r.ID, ApplicationID: r.ApplicationID, Vacancy: Brief{ID: r.VacancyID, Title: r.VacancyTitle},
-			Company: CompanyBrief{ID: r.CompanyID, Name: r.CompanyName, Slug: r.CompanySlug, LogoURL: r.CompanyLogo},
-			Seeker:  Person{ID: r.SeekerID, FullName: r.SeekerName, AvatarURL: r.SeekerAvatar},
-			Side:    side, LastMessageAt: r.LastMessageAt, Unread: r.Unread, CreatedAt: r.CreatedAt,
+			Company: CompanyBrief{ID: r.CompanyID, Name: r.CompanyName, Slug: r.CompanySlug, LogoURL: r.CompanyLogo,
+				LogoURLs: imgurl.URLs(r.CompanyLogo)},
+			Seeker: Person{ID: r.SeekerID, FullName: r.SeekerName, AvatarURL: r.SeekerAvatar, AvatarURLs: imgurl.URLs(r.SeekerAvatar)},
+			Side:   side, LastMessageAt: r.LastMessageAt, Unread: r.Unread, CreatedAt: r.CreatedAt,
 		}
 		if r.LastMessageID != nil {
 			if m, ok := last[*r.LastMessageID]; ok {
@@ -162,7 +164,7 @@ func (s *Service) joinedDTOs(ctx context.Context, rows []joinedRow) ([]Message, 
 		d := Message{ID: m.ID, ConversationID: m.ConversationID, Kind: string(m.Kind), Body: m.Body,
 			ClientID: m.ClientID, CreatedAt: m.CreatedAt, Deleted: m.DeletedAt != nil}
 		if m.SenderID != nil && r.SenderName != nil {
-			d.Sender = &Person{ID: *m.SenderID, FullName: *r.SenderName, AvatarURL: r.SenderAvatar}
+			d.Sender = &Person{ID: *m.SenderID, FullName: *r.SenderName, AvatarURL: r.SenderAvatar, AvatarURLs: imgurl.URLs(r.SenderAvatar)}
 		}
 		if f, ok := fileOf(r); ok {
 			fd, err := s.Files.DTO(ctx, f)

@@ -8,6 +8,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 )
 
 type Summary struct {
@@ -24,13 +25,14 @@ type Summary struct {
 
 // Candidate is the employer's view of who applied.
 type Candidate struct {
-	UserID           uuid.UUID      `json:"user_id"`
-	FullName         string         `json:"full_name"`
-	AvatarURL        *string        `json:"avatar_url"`
-	ResumeTitle      string         `json:"resume_title"`
-	ExperienceMonths int32          `json:"experience_months"`
-	DesiredSalary    *resume.Salary `json:"desired_salary"`
-	RegionID         *int32         `json:"region_id"`
+	UserID           uuid.UUID         `json:"user_id"`
+	FullName         string            `json:"full_name"`
+	AvatarURL        *string           `json:"avatar_url"`
+	AvatarURLs       map[string]string `json:"avatar_urls"`
+	ResumeTitle      string            `json:"resume_title"`
+	ExperienceMonths int32             `json:"experience_months"`
+	DesiredSalary    *resume.Salary    `json:"desired_salary"`
+	RegionID         *int32            `json:"region_id"`
 }
 
 type SeekerItem struct {
@@ -69,7 +71,7 @@ func summaryOf(a gen.Application) Summary {
 
 func candidateOf(a gen.Application, name string, avatar *string, title string, months int32,
 	salary *int64, cur gen.Currency, region *int32) Candidate {
-	c := Candidate{UserID: a.SeekerID, FullName: name, AvatarURL: avatar, ResumeTitle: title,
+	c := Candidate{UserID: a.SeekerID, FullName: name, AvatarURL: avatar, AvatarURLs: imgurl.URLs(avatar), ResumeTitle: title,
 		ExperienceMonths: months, RegionID: region}
 	if salary != nil {
 		c.DesiredSalary = &resume.Salary{Amount: *salary, Currency: string(cur)}
