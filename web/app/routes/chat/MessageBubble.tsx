@@ -69,9 +69,8 @@ export function MessageBubble({ m, mine, seen, first = true, onDelete, onRetry }
           m.kind === "file" && !m.deleted && "px-2.5 py-2.5",
           tone,
           shape,
-          // The bubble whose menu is open lifts a little, so it's clear what the actions apply to.
-          "transition-[scale,box-shadow] duration-200 ease-spring",
-          open && "scale-102 shadow-3",
+          // The bubble whose menu is open lifts, so it's clear what the actions apply to.
+          open && "shadow-3",
           m.failed && "opacity-75",
         )}
       >
@@ -97,7 +96,7 @@ export function MessageBubble({ m, mine, seen, first = true, onDelete, onRetry }
               type="button"
               aria-label={t("chatPage.actions")}
               className={cn(
-                "mb-0.5 grid size-8 shrink-0 place-items-center rounded-full text-ink-3 transition-[opacity,background-color] duration-150",
+                "mb-0.5 grid size-8 shrink-0 place-items-center rounded-full text-ink-3 transition-[opacity,scale] duration-150",
                 "hover:bg-sunken hover:text-ink data-[state=open]:bg-sunken data-[state=open]:opacity-100",
                 "opacity-0 focus-visible:opacity-100 group-hover/msg:opacity-100",
                 // Touch uses long press; the button stays for screen readers and anchors the menu.
@@ -143,7 +142,7 @@ function Meta({ m, mine, seen, overlay }: { m: Message; mine: boolean; seen: boo
 
 // Invisible room at the end of the text for the absolutely placed time (+ ticks for own messages).
 function Spacer({ mine }: { mine: boolean }) {
-  return <span aria-hidden="true" className={cn("inline-block h-3", mine ? "w-15" : "w-10")} />;
+  return <span aria-hidden="true" className={cn("inline-block h-3", mine ? "w-14" : "w-10")} />;
 }
 
 const linkRe = /(https?:\/\/[^\s<>"]+[^\s<>".,;:!?)\]])/g;

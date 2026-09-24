@@ -153,6 +153,31 @@ func (q *Queries) PurgeUserData(ctx context.Context, arg PurgeUserDataParams) er
 	return err
 }
 
+const userResumeIDs = `-- name: UserResumeIDs :many
+SELECT id FROM resumes WHERE user_id = $1
+`
+
+// The account's resumes (their cached PDF exports are removed with it, TZ BE-13).
+func (q *Queries) UserResumeIDs(ctx context.Context, userID uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, userResumeIDs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const wipeUserResumes = `-- name: WipeUserResumes :execrows
 WITH r AS (SELECT id FROM resumes WHERE resumes.user_id = $1::uuid),
      e AS (DELETE FROM resume_experiences WHERE resume_id IN (SELECT id FROM r)),

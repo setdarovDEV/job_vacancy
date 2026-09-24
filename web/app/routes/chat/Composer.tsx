@@ -155,7 +155,7 @@ export function Composer({ onSend, onTyping }: { onSend: (o: Outgoing) => void; 
           // Keep the focus (and the phone keyboard) in the field when the send button is tapped.
           onPointerDown={(e) => e.preventDefault()}
           className={cn(
-            "absolute inset-0 grid place-items-center rounded-full bg-lapis text-on-lapis shadow-2 transition-[background-color,opacity,scale] duration-200 ease-spring hover:bg-lapis-hover active:scale-90",
+            "absolute inset-0 grid place-items-center rounded-full bg-lapis text-on-lapis shadow-2 transition-[opacity,scale] duration-200 ease-spring hover:bg-lapis-hover active:scale-90",
             !has && "scale-50 opacity-0",
           )}
         >

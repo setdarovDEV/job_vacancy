@@ -6,6 +6,7 @@
 //	ctl telegram-webhook <https://jobvacancy.uz/api/v1/telegram/webhook>
 //	ctl import-districts [file.csv]   (default: the embedded SOATO list, db/data/districts.csv)
 //	ctl vacancy-lifecycle             (one run of expiry, expiry warnings and "TOP" end; the worker does it periodically)
+//	ctl reprocess-images              (queue avatars and logos uploaded before WebP processing, TZ BE-14)
 package main
 
 import (
@@ -17,15 +18,20 @@ import (
 
 	"log/slog"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
 
 	"jobvacancy.uz/backend/db"
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/app"
 	"jobvacancy.uz/backend/internal/config"
+	"jobvacancy.uz/backend/internal/jobs"
 	"jobvacancy.uz/backend/internal/modules/catalog"
+	"jobvacancy.uz/backend/internal/modules/media"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
+	"jobvacancy.uz/backend/internal/pkg/imgurl"
 	"jobvacancy.uz/backend/internal/platform/postgres"
 	"jobvacancy.uz/backend/internal/platform/redis"
 	"jobvacancy.uz/backend/internal/platform/telegram"
@@ -44,7 +50,8 @@ const usage = `usage:
   ctl run-alerts
   ctl telegram-webhook <url>
   ctl import-districts [file.csv]
-  ctl vacancy-lifecycle`
+  ctl vacancy-lifecycle
+  ctl reprocess-images`
 
 func run(args []string) error {
 	if len(args) == 0 {
@@ -100,6 +107,8 @@ func run(args []string) error {
 		ended, err := l.EndFeatured(ctx)
 		fmt.Printf("expired %d, warned about %d, TOP ended for %d vacancies\n", expired, warned, ended)
 		return err
+	case args[0] == "reprocess-images" && len(args) == 1:
+		return reprocessImages(ctx, pool, cfg.S3.PublicBaseURL)
 	case args[0] == "import-districts" && len(args) <= 2:
 		return importDistricts(ctx, pool, args[1:])
 	case args[0] == "telegram-webhook" && len(args) == 2:
@@ -141,6 +150,69 @@ func importDistricts(ctx context.Context, pool *pgxpool.Pool, args []string) err
 	if res.Updated > 0 {
 		fmt.Println("existing names changed: run `ctl reindex-search` so search matches the new names")
 	}
+	return nil
+}
+
+// reprocessImages queues every avatar and logo still shown straight from its original
+// upload (before TZ BE-14) for processing: the worker publishes WebP sizes without EXIF and
+// retires the original an hour later. Idempotent: processed images no longer match.
+func reprocessImages(ctx context.Context, pool *pgxpool.Pool, base string) error {
+	base = strings.TrimRight(base, "/")
+	enq, err := jobs.NewEnqueuer(pool, slog.Default())
+	if err != nil {
+		return err
+	}
+	q := gen.New(pool)
+	var avatars, logos int
+	for after := uuid.Nil; ; {
+		rows, err := q.LegacyAvatars(ctx, gen.LegacyAvatarsParams{Base: base, After: after, Lim: 200})
+		if err != nil || len(rows) == 0 {
+			if err != nil {
+				return err
+			}
+			break
+		}
+		err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			var args []river.JobArgs
+			for _, r := range rows {
+				if err := q.WithTx(tx).ChooseUserAvatar(ctx, gen.ChooseUserAvatarParams{FileID: &r.FileID, ID: r.ID}); err != nil {
+					return err
+				}
+				args = append(args, media.ProcessArgs{FileID: r.FileID, Target: imgurl.Avatar, OwnerID: r.ID})
+			}
+			return enq.InsertManyTx(ctx, tx, args)
+		})
+		if err != nil {
+			return err
+		}
+		avatars += len(rows)
+		after = rows[len(rows)-1].ID
+	}
+	for after := uuid.Nil; ; {
+		rows, err := q.LegacyLogos(ctx, gen.LegacyLogosParams{Base: base, After: after, Lim: 200})
+		if err != nil || len(rows) == 0 {
+			if err != nil {
+				return err
+			}
+			break
+		}
+		err = pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
+			var args []river.JobArgs
+			for _, r := range rows {
+				if err := q.WithTx(tx).ChooseCompanyLogo(ctx, gen.ChooseCompanyLogoParams{FileID: &r.FileID, ID: r.ID}); err != nil {
+					return err
+				}
+				args = append(args, media.ProcessArgs{FileID: r.FileID, Target: imgurl.Logo, OwnerID: r.ID})
+			}
+			return enq.InsertManyTx(ctx, tx, args)
+		})
+		if err != nil {
+			return err
+		}
+		logos += len(rows)
+		after = rows[len(rows)-1].ID
+	}
+	fmt.Printf("queued %d avatars and %d logos for processing (the worker publishes them)\n", avatars, logos)
 	return nil
 }
 

@@ -30,6 +30,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/auth"
 	"jobvacancy.uz/backend/internal/modules/file"
+	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/hash"
@@ -85,9 +86,11 @@ type Service struct {
 	Google  GoogleVerifier
 	Jobs    Inserter
 	Cache   *vacancy.PublicCache // nil skips cache invalidation
-	// PublicBucket holds the published avatar sizes, removed with the account.
-	PublicBucket string
-	Log          *slog.Logger
+	// PublicBucket holds the published avatar sizes, PrivateBucket the cached resume
+	// PDFs; both are removed with the account.
+	PublicBucket  string
+	PrivateBucket string
+	Log           *slog.Logger
 }
 
 func deref(s *string) string {
@@ -152,6 +155,10 @@ func (s *Service) Delete(ctx context.Context, p reqctx.Principal, in DeleteInput
 			}
 		}
 		closed = owned
+		resumes, err := q.UserResumeIDs(ctx, u.ID)
+		if err != nil {
+			return err
+		}
 		if _, err := q.DeleteUnusedResumes(ctx, u.ID); err != nil {
 			return err
 		}
@@ -177,7 +184,7 @@ func (s *Service) Delete(ctx context.Context, p reqctx.Principal, in DeleteInput
 				files = append(files, gen.DeleteUserFilesRow{Bucket: s.PublicBucket, ObjectKey: k})
 			}
 		}
-		return s.purge(ctx, tx, files)
+		return s.purge(ctx, tx, files, resumes)
 	})
 	if err != nil {
 		return err
@@ -233,12 +240,20 @@ func (s *Service) reauth(ctx context.Context, u gen.User, sessionID uuid.UUID, i
 	return nil
 }
 
-// purge queues the removal of the deleted uploads' objects.
-func (s *Service) purge(ctx context.Context, tx pgx.Tx, files []gen.DeleteUserFilesRow) error {
-	if len(files) == 0 || s.Jobs == nil {
+// purge queues the removal of the deleted uploads' objects and of the resumes' cached
+// PDF exports (they carry contacts).
+func (s *Service) purge(ctx context.Context, tx pgx.Tx, files []gen.DeleteUserFilesRow, resumes []uuid.UUID) error {
+	if (len(files) == 0 && len(resumes) == 0) || s.Jobs == nil {
 		return nil
 	}
 	var jobs []river.JobArgs
+	if len(resumes) > 0 && s.PrivateBucket != "" {
+		var dirs []file.StoredObject
+		for _, id := range resumes {
+			dirs = append(dirs, file.StoredObject{Bucket: s.PrivateBucket, Key: resume.PDFPrefix + id.String() + "/"})
+		}
+		jobs = append(jobs, file.PurgeObjectsArgs{Objects: []file.StoredObject{}, Prefixes: dirs})
+	}
 	for i := 0; i < len(files); i += purgeBatch {
 		batch := files[i:min(i+purgeBatch, len(files))]
 		objs := make([]file.StoredObject, len(batch))

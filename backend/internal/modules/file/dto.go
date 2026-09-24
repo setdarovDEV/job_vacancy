@@ -39,6 +39,8 @@ func (s *Service) DTO(ctx context.Context, f gen.File) (DTO, error) {
 // them were deleted (account deletion, TZ FN-03); it is enqueued in that transaction.
 type PurgeObjectsArgs struct {
 	Objects []StoredObject `json:"objects"`
+	// Prefixes are whole folders to empty (a deleted account's cached resume PDFs).
+	Prefixes []StoredObject `json:"prefixes,omitempty"`
 }
 
 // StoredObject names one object in object storage.

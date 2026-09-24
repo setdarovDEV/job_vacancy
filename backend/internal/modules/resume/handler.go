@@ -18,7 +18,11 @@ import (
 	"jobvacancy.uz/backend/internal/transport/http/response"
 )
 
-type Handler struct{ Svc *Service }
+type Handler struct {
+	Svc *Service
+	// PDF caches rendered exports in object storage (TZ BE-13); nil renders every time.
+	PDF *PDFCache
+}
 
 // Routes are mounted under /resumes behind RequireAuth.
 func (h *Handler) Routes(r chi.Router) {
@@ -132,8 +136,17 @@ func (h *Handler) pdf(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	var buf bytes.Buffer // render fully first so a failure can still send a JSON error
-	if err := h.Svc.RenderPDF(&buf, d, r.URL.Query().Get("lang")); err != nil {
+	lang := r.URL.Query().Get("lang")
+	if _, ok := labels[lang]; !ok {
+		lang = "uz"
+	}
+	p := reqctx.MustPrincipal(r.Context())
+	pdf, etag, hit, err := h.PDF.PDF(r.Context(), "u:"+p.UserID.String(), d, lang, func() ([]byte, error) {
+		var buf bytes.Buffer // rendered fully first so a failure can still send a JSON error
+		err := h.Svc.RenderPDF(&buf, d, lang)
+		return buf.Bytes(), err
+	})
+	if err != nil {
 		response.Error(w, r, err)
 		return
 	}
@@ -141,10 +154,21 @@ func (h *Handler) pdf(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "resume"
 	}
+	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("ETag", etag)
+	if hit {
+		w.Header().Set("X-Cache", "HIT")
+	} else {
+		w.Header().Set("X-Cache", "MISS")
+	}
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", "application/pdf")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.pdf"`)
-	w.Header().Set("Cache-Control", "private, no-store")
-	_, _ = w.Write(buf.Bytes())
+	w.Header().Set("Content-Length", strconv.Itoa(len(pdf)))
+	_, _ = w.Write(pdf)
 }
 
 // ---- candidate search ----------------------------------------------------------------------

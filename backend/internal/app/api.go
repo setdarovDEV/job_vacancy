@@ -84,6 +84,10 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	if err := st.EnsureBuckets(ctx); err != nil {
 		return err
 	}
+	// Cached resume PDFs (TZ BE-13) are keyed by content; old versions expire after a week.
+	if err := st.ExpirePrefix(ctx, st.PrivateBucket(), "resume-pdf-cache", resume.PDFPrefix, 7); err != nil {
+		log.Warn("resume pdf cache: no lifecycle rule, old copies stay until removed", "err", err)
+	}
 
 	// TZ SEC-04: repeated failed sign-ins need a Cloudflare Turnstile captcha.
 	var captcha auth.CaptchaVerifier
@@ -161,7 +165,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	reportSvc := &report.Service{Pool: pool, Q: q, Limiter: limiter, Vacancies: vacancySvc, Notify: notifySvc,
 		Threshold: cfg.Product.ReportThreshold, Log: log}
 	accountSvc := &account.Service{Pool: pool, Q: q, Limiter: limiter, Revoked: revoked, Jobs: enq, Cache: publicCache,
-		PublicBucket: st.PublicBucket(), Log: log}
+		PublicBucket: st.PublicBucket(), PrivateBucket: st.PrivateBucket(), Log: log}
 	if google != nil {
 		accountSvc.Google = google
 	}

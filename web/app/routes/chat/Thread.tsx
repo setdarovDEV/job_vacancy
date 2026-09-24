@@ -79,6 +79,12 @@ export function Thread({ id }: { id: string }) {
   const pendingFiles = useRef(new Map<string, Outgoing>());
   const { confirm, dialog } = useConfirm();
   useKeyboardInset(root);
+  // Toasts (copy, errors) float above the composer instead of covering it.
+  useEffect(() => {
+    const html = document.documentElement.style;
+    html.setProperty("--toast-lift", "4.5rem");
+    return () => { html.removeProperty("--toast-lift"); };
+  }, []);
 
   // Initial page (also the Retry of the error state, which waits for this promise).
   const loadInitial = useCallback(
@@ -485,9 +491,9 @@ export function Thread({ id }: { id: string }) {
                 title={t("chatPage.toLatest")}
                 className={cn(
                   "glass-panel pointer-events-auto flex h-11 items-center justify-center gap-1.5 rounded-pill text-ink",
-                  "transition-[opacity,translate,scale] duration-200 ease-spring active:scale-95",
+                  "transition-[opacity,scale] duration-200 ease-spring active:scale-95",
                   unseen ? "px-4 text-sm font-medium" : "w-11",
-                  !away && !unseen && "pointer-events-none translate-y-2 scale-90 opacity-0",
+                  !away && !unseen && "pointer-events-none scale-75 opacity-0",
                 )}
               >
                 <ArrowDown className="size-5 shrink-0" />

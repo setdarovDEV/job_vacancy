@@ -43,7 +43,7 @@ export default function Chat() {
 
   return (
     <div className="h-app md:container-page md:py-5 lg:py-6">
-      <div className="flex h-full overflow-hidden md:surface-card md:rounded-sheet md:shadow-2">
+      <div className="flex h-full overflow-hidden md:surface-card md:rounded-sheet">
         <aside aria-labelledby="chat-title" className={cn("flex min-w-0 flex-1 md:w-72 md:flex-none lg:w-88 md:border-r md:border-line", id && "max-md:hidden")}>
           <ConversationList activeId={id} />
         </aside>

@@ -60,3 +60,7 @@ SET email = 'deleted-' || id::text || '@deleted.invalid', email_verified_at = NU
     notify_email = false, notify_telegram = false, hide_online = true, last_seen_at = NULL,
     status = 'deleted', deleted_at = now()
 WHERE id = $1 AND status <> 'deleted';
+
+-- The account's resumes (their cached PDF exports are removed with it, TZ BE-13).
+-- name: UserResumeIDs :many
+SELECT id FROM resumes WHERE user_id = $1;

@@ -1,7 +1,8 @@
 // Package storage talks to S3-compatible object storage.
 //
-// Two buckets: a public one (avatars, logos) readable by anyone through nginx, and a
-// private one (chat attachments) readable only through short-lived signed URLs.
+// Two buckets: a public one (the published image variants: avatars, logos, covers)
+// readable by anyone through nginx, and a private one (every upload as sent, chat
+// attachments, cached resume PDFs) readable only through short-lived signed URLs.
 // Clients upload directly to storage with presigned POST policies, so file bytes never
 // pass through the API.
 package storage
@@ -17,6 +18,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/lifecycle"
 
 	"jobvacancy.uz/backend/internal/config"
 )
@@ -70,6 +72,46 @@ func (s *Storage) EnsureBuckets(ctx context.Context) error {
 		return fmt.Errorf("storage: public policy: %w", err)
 	}
 	return nil
+}
+
+// ExpirePrefix makes objects under prefix in bucket expire days after they were written
+// (a lifecycle rule, merged with the bucket's other rules by id). Stores without
+// lifecycle support return an error the caller may only log.
+func (s *Storage) ExpirePrefix(ctx context.Context, bucket, id, prefix string, days int) error {
+	cfg, err := s.api.GetBucketLifecycle(ctx, bucket)
+	if err != nil {
+		if code := minio.ToErrorResponse(err).Code; code != "NoSuchLifecycleConfiguration" {
+			return fmt.Errorf("storage: lifecycle of %s: %w", bucket, err)
+		}
+		cfg = lifecycle.NewConfiguration()
+	}
+	rules := cfg.Rules[:0]
+	for _, r := range cfg.Rules {
+		if r.ID != id {
+			rules = append(rules, r)
+		}
+	}
+	cfg.Rules = append(rules, lifecycle.Rule{ID: id, Status: "Enabled",
+		RuleFilter: lifecycle.Filter{Prefix: prefix}, Expiration: lifecycle.Expiration{Days: lifecycle.ExpirationDays(days)}})
+	if err := s.api.SetBucketLifecycle(ctx, bucket, cfg); err != nil {
+		return fmt.Errorf("storage: lifecycle of %s: %w", bucket, err)
+	}
+	return nil
+}
+
+// RemovePrefix deletes every object under prefix; it returns how many.
+func (s *Storage) RemovePrefix(ctx context.Context, bucket, prefix string) (int, error) {
+	n := 0
+	for obj := range s.api.ListObjects(ctx, bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return n, obj.Err
+		}
+		if err := s.api.RemoveObject(ctx, bucket, obj.Key, minio.RemoveObjectOptions{}); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
 }
 
 // PresignPost returns a URL and form fields for a browser/app multipart upload of exactly

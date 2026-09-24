@@ -209,10 +209,19 @@ func (w *PurgeObjectsWorker) Work(ctx context.Context, job *river.Job[file.Purge
 			last = err
 		}
 	}
-	if failed > 0 {
-		return fmt.Errorf("%d of %d objects not removed: %w", failed, len(job.Args.Objects), last)
+	removed := len(job.Args.Objects) - failed
+	for _, p := range job.Args.Prefixes {
+		n, err := w.Storage.RemovePrefix(ctx, p.Bucket, p.Key)
+		removed += n
+		if err != nil {
+			failed++
+			last = err
+		}
 	}
-	w.Log.Info("stored objects removed", "count", len(job.Args.Objects))
+	if failed > 0 {
+		return fmt.Errorf("%d removals failed: %w", failed, last)
+	}
+	w.Log.Info("stored objects removed", "count", removed)
 	return nil
 }
 

@@ -180,3 +180,17 @@ func (j *Jobs) Kinds() []string {
 	}
 	return out
 }
+
+// Take removes and returns the first recorded job for which pick returns true (tests
+// that play the worker).
+func (j *Jobs) Take(pick func(river.JobArgs) bool) river.JobArgs {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	for i, a := range j.Args {
+		if pick(a) {
+			j.Args = append(j.Args[:i], j.Args[i+1:]...)
+			return a
+		}
+	}
+	return nil
+}
