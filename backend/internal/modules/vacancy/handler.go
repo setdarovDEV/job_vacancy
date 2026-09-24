@@ -68,7 +68,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, err)
 		return
 	}
-	res, err := h.Svc.Cache.Get(r.Context(), f, func() (ListResult, error) { return h.Svc.List(r.Context(), f) })
+	res, err := h.Svc.Cache.Get(r.Context(), f, func(ctx context.Context) (ListResult, error) { return h.Svc.List(ctx, f) })
 	if err != nil {
 		response.Error(w, r, err)
 		return

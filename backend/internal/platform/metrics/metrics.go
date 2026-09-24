@@ -30,7 +30,12 @@ var (
 func Serve(ctx context.Context, addr string, log *slog.Logger) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.Handler())
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	ServeHandler(ctx, addr, mux, log)
+}
+
+// ServeHandler runs h (metrics and other private endpoints) until ctx is cancelled.
+func ServeHandler(ctx context.Context, addr string, h http.Handler, log *slog.Logger) {
+	srv := &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 5 * time.Second}
 
 	go func() {
 		<-ctx.Done()

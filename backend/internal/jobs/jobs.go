@@ -193,6 +193,9 @@ type Deps struct {
 	WebURL  string
 	Saved   *savedsearch.Service
 	Log     *slog.Logger
+	// River concurrency per queue (TZ BE-07: critical 10, default 20); 0 uses those.
+	CriticalWorkers int
+	DefaultWorkers  int
 }
 
 func periodic(every time.Duration, args river.JobArgs) *river.PeriodicJob {
@@ -218,9 +221,12 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 	return river.NewClient(riverpgxv5.New(d.Pool), &river.Config{
 		Logger: d.Log,
 		Queues: map[string]river.QueueConfig{
-			QueueCritical: {MaxWorkers: 20},
-			QueueDefault:  {MaxWorkers: 50},
+			QueueCritical: {MaxWorkers: orDefault(d.CriticalWorkers, 10)},
+			QueueDefault:  {MaxWorkers: orDefault(d.DefaultWorkers, 20)},
 		},
+		// A job whose worker died (SIGKILL after the grace period) is picked up again after
+		// this; it must stay above the longest job timeout (saved-search alerts, 10 min).
+		RescueStuckJobsAfter: 15 * time.Minute,
 		Workers: workers,
 		// Finished jobs may contain one-time codes; don't keep them around.
 		CompletedJobRetentionPeriod: time.Hour,
@@ -232,6 +238,13 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 			periodic(5*time.Minute, SavedSearchAlertsArgs{}),
 		},
 	})
+}
+
+func orDefault(n, def int) int {
+	if n > 0 {
+		return n
+	}
+	return def
 }
 
 // Enqueuer is the insert-only side used by the API process.

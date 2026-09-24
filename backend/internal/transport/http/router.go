@@ -5,6 +5,8 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"net/netip"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -37,6 +39,17 @@ type Deps struct {
 	Auth        *mw.Authenticator
 	CORSOrigins []string
 	TrustProxy  bool
+	// Peers allowed to set X-Real-IP (nginx / the SSR server's network).
+	TrustedProxies []netip.Prefix
+	// Request deadlines (TZ BE-01): normal routes and the slow ones (PDF export).
+	RequestTimeout     time.Duration
+	SlowRequestTimeout time.Duration
+	// Compress gzips responses in Go; only when nginx isn't in front (TZ BE-06).
+	Compress bool
+	// Storage is pinged by /readyz (TZ OPS-07); nil skips the check.
+	Storage Pinger
+	// Draining turns /readyz into 503 during graceful shutdown; nil means never.
+	Draining *atomic.Bool
 
 	AuthHandler    *auth.Handler
 	UserHandler    *user.Handler
@@ -62,7 +75,14 @@ var (
 
 func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
-	r.Use(mw.RequestID, mw.ClientIP(d.TrustProxy), mw.Observe(d.Log), mw.Recover(d.Log), mw.CORS(d.CORSOrigins))
+	r.Use(mw.RequestID, mw.ClientIP(d.TrustProxy, d.TrustedProxies), mw.Observe(d.Log), mw.Recover(d.Log),
+		mw.CORS(d.CORSOrigins))
+	if d.RequestTimeout > 0 {
+		r.Use(mw.Timeout(d.RequestTimeout, d.SlowRequestTimeout))
+	}
+	if d.Compress {
+		r.Use(mw.Compress(5))
+	}
 
 	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, r, apperr.NotFound("route_not_found", "route not found"))
@@ -141,7 +161,13 @@ func NewRouter(d Deps) http.Handler {
 	return r
 }
 
-// readiness is polled by Docker/nginx; it fails while Postgres or Redis are unreachable.
+// Pinger is a dependency /readyz checks (object storage).
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
+// readiness is polled by Docker/nginx; it fails while Postgres, Redis or object storage
+// are unreachable, and while the process drains before shutdown.
 func readiness(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -154,6 +180,16 @@ func readiness(d Deps) http.HandlerFunc {
 		if err := d.Redis.Ping(ctx).Err(); err != nil {
 			status["redis"], code = "down", http.StatusServiceUnavailable
 		}
+		if d.Storage != nil {
+			status["storage"] = "ok"
+			if err := d.Storage.Ping(ctx); err != nil {
+				status["storage"], code = "down", http.StatusServiceUnavailable
+			}
+		}
+		if d.Draining != nil && d.Draining.Load() {
+			status["api"], code = "draining", http.StatusServiceUnavailable
+		}
+		w.Header().Set("Cache-Control", "no-store")
 		response.JSON(w, code, status)
 	}
 }

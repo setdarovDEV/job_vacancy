@@ -421,6 +421,33 @@ const uz = {
     confirm: "Tasdiqlash", notifications: "Bildirishnomalar",
     toastAction: "«{{action}}» uchun F8 tugmasini bosing",
   },
+  shell: {
+    search: "Qidirish", mainNav: "Asosiy bo'limlar", tabBar: "Tezkor menyu", menuMain: "Bo'limlar",
+    tabs: {
+      search: "Qidiruv", companies: "Kompaniyalar", employers: "Ish beruvchi", login: "Kirish",
+      vacancies: "E'lonlar", candidates: "Nomzodlar", chat: "Chat", company: "Kompaniya", profile: "Profil",
+      saved: "Saqlangan", applications: "Arizalar",
+    },
+    unreadChats_one: "Xabarlar: {{count}} ta o'qilmagan suhbat", unreadChats_few: "Xabarlar: {{count}} ta o'qilmagan suhbat", unreadChats_many: "Xabarlar: {{count}} ta o'qilmagan suhbat", unreadChats_other: "Xabarlar: {{count}} ta o'qilmagan suhbat",
+    unreadNotifications_one: "Bildirishnomalar: {{count}} ta yangi", unreadNotifications_few: "Bildirishnomalar: {{count}} ta yangi", unreadNotifications_many: "Bildirishnomalar: {{count}} ta yangi", unreadNotifications_other: "Bildirishnomalar: {{count}} ta yangi",
+    newCount_one: "{{count}} ta yangi", newCount_few: "{{count}} ta yangi", newCount_many: "{{count}} ta yangi", newCount_other: "{{count}} ta yangi",
+    appearance: "Ko'rinish", preferences: "Til va ko'rinish", preferencesCurrent: "Til va ko'rinish (hozir: {{language}})",
+    languageCurrent: "Til: {{language}}",
+    glass: {
+      label: "Shaffoflik", auto: "Avto", full: "To'liq", lite: "Yengil", off: "O'chiq",
+      hint: "Avto — qurilmangiz quvvati va tizim sozlamalariga qarab tanlanadi.",
+    },
+    palette: {
+      title: "Tezkor qidiruv", placeholder: "Lavozim yoki kompaniya", results: "Natijalar", pages: "Bo'limlar",
+      home: "Bosh sahifa", searchFor: "«{{q}}» bo'yicha vakansiyalar", hintMove: "tanlash", hintOpen: "ochish", hintClose: "yopish",
+    },
+    footer: {
+      byCategory: "Kasb bo'yicha", byRegion: "Hudud bo'yicha", allVacancies: "Barcha vakansiyalar",
+      candidates: "Nomzodlar bazasi", cabinet: "Ish beruvchi kabineti", telegram: "Telegram bot", newTab: "(yangi oynada ochiladi)",
+    },
+    notFoundBody: "Havola eskirgan yoki manzilda xato bor. Kerakli ishni qidiruvdan toping yoki quyidagi bo'limlarga o'ting.",
+    notFoundLinks: "Foydali bo'limlar",
+  },
   picker: {
     chooseMonth: "Oyni tanlang", chooseYear: "Yilni tanlang", pickYear: "Yilni tanlash",
     prevYear: "Oldingi yil", nextYear: "Keyingi yil", prevYears: "Oldingi yillar", nextYears: "Keyingi yillar",

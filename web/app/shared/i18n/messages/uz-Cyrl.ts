@@ -371,6 +371,33 @@ const uzCyrl: Messages = {
     confirm: "Тасдиқлаш", notifications: "Билдиришномалар",
     toastAction: "«{{action}}» учун F8 тугмасини босинг",
   },
+  shell: {
+    search: "Қидириш", mainNav: "Асосий бўлимлар", tabBar: "Тезкор меню", menuMain: "Бўлимлар",
+    tabs: {
+      search: "Қидирув", companies: "Компаниялар", employers: "Иш берувчи", login: "Кириш",
+      vacancies: "Эълонлар", candidates: "Номзодлар", chat: "Чат", company: "Компания", profile: "Профил",
+      saved: "Сақланган", applications: "Аризалар",
+    },
+    unreadChats_one: "Хабарлар: {{count}} та ўқилмаган суҳбат", unreadChats_few: "Хабарлар: {{count}} та ўқилмаган суҳбат", unreadChats_many: "Хабарлар: {{count}} та ўқилмаган суҳбат", unreadChats_other: "Хабарлар: {{count}} та ўқилмаган суҳбат",
+    unreadNotifications_one: "Билдиришномалар: {{count}} та янги", unreadNotifications_few: "Билдиришномалар: {{count}} та янги", unreadNotifications_many: "Билдиришномалар: {{count}} та янги", unreadNotifications_other: "Билдиришномалар: {{count}} та янги",
+    newCount_one: "{{count}} та янги", newCount_few: "{{count}} та янги", newCount_many: "{{count}} та янги", newCount_other: "{{count}} та янги",
+    appearance: "Кўриниш", preferences: "Тил ва кўриниш", preferencesCurrent: "Тил ва кўриниш (ҳозир: {{language}})",
+    languageCurrent: "Тил: {{language}}",
+    glass: {
+      label: "Шаффофлик", auto: "Авто", full: "Тўлиқ", lite: "Енгил", off: "Ўчиқ",
+      hint: "Авто — қурилмангиз қуввати ва тизим созламаларига қараб танланади.",
+    },
+    palette: {
+      title: "Тезкор қидирув", placeholder: "Лавозим ёки компания", results: "Натижалар", pages: "Бўлимлар",
+      home: "Бош саҳифа", searchFor: "«{{q}}» бўйича вакансиялар", hintMove: "танлаш", hintOpen: "очиш", hintClose: "ёпиш",
+    },
+    footer: {
+      byCategory: "Касб бўйича", byRegion: "Ҳудуд бўйича", allVacancies: "Барча вакансиялар",
+      candidates: "Номзодлар базаси", cabinet: "Иш берувчи кабинети", telegram: "Telegram бот", newTab: "(янги ойнада очилади)",
+    },
+    notFoundBody: "Ҳавола эскирган ёки манзилда хато бор. Керакли ишни қидирувдан топинг ёки қуйидаги бўлимларга ўтинг.",
+    notFoundLinks: "Фойдали бўлимлар",
+  },
   picker: {
     chooseMonth: "Ойни танланг", chooseYear: "Йилни танланг", pickYear: "Йилни танлаш",
     prevYear: "Олдинги йил", nextYear: "Кейинги йил", prevYears: "Олдинги йиллар", nextYears: "Кейинги йиллар",

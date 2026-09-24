@@ -40,10 +40,24 @@ func NoContent(w http.ResponseWriter) { w.WriteHeader(http.StatusNoContent) }
 func Error(w http.ResponseWriter, r *http.Request, err error) {
 	ae, ok := apperr.As(err)
 	if !ok {
-		slog.ErrorContext(r.Context(), "unhandled error",
-			"err", err, "request_id", reqctx.RequestID(r.Context()),
-			"method", r.Method, "path", r.URL.Path)
-		ae = apperr.Internal
+		switch {
+		case isClientGone(r, err):
+			// The client disconnected; nobody reads this response. 499 as in nginx.
+			slog.DebugContext(r.Context(), "request canceled by client",
+				"request_id", reqctx.RequestID(r.Context()), "path", r.URL.Path)
+			w.WriteHeader(StatusClientClosed)
+			return
+		case isTimeout(err):
+			slog.WarnContext(r.Context(), "request timed out",
+				"err", err, "request_id", reqctx.RequestID(r.Context()),
+				"method", r.Method, "path", r.URL.Path)
+			ae = apperr.Timeout
+		default:
+			slog.ErrorContext(r.Context(), "unhandled error",
+				"err", err, "request_id", reqctx.RequestID(r.Context()),
+				"method", r.Method, "path", r.URL.Path)
+			ae = apperr.Internal
+		}
 	}
 	if ae.RetryAfter > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(ae.RetryAfter))

@@ -371,6 +371,33 @@ const en: Messages = {
     confirm: "Confirm", notifications: "Notifications",
     toastAction: "Press F8 for “{{action}}”",
   },
+  shell: {
+    search: "Search", mainNav: "Main sections", tabBar: "Quick menu", menuMain: "Sections",
+    tabs: {
+      search: "Search", companies: "Companies", employers: "Employers", login: "Sign in",
+      vacancies: "Vacancies", candidates: "Candidates", chat: "Chat", company: "Company", profile: "Profile",
+      saved: "Saved", applications: "Applied",
+    },
+    unreadChats_one: "Messages: {{count}} unread conversation", unreadChats_few: "Messages: {{count}} unread conversations", unreadChats_many: "Messages: {{count}} unread conversations", unreadChats_other: "Messages: {{count}} unread conversations",
+    unreadNotifications_one: "Notifications: {{count}} new", unreadNotifications_few: "Notifications: {{count}} new", unreadNotifications_many: "Notifications: {{count}} new", unreadNotifications_other: "Notifications: {{count}} new",
+    newCount_one: "{{count}} new", newCount_few: "{{count}} new", newCount_many: "{{count}} new", newCount_other: "{{count}} new",
+    appearance: "Appearance", preferences: "Language and appearance", preferencesCurrent: "Language and appearance (now: {{language}})",
+    languageCurrent: "Language: {{language}}",
+    glass: {
+      label: "Transparency", auto: "Auto", full: "Full", lite: "Lite", off: "Off",
+      hint: "Auto picks a level from your device's power and system settings.",
+    },
+    palette: {
+      title: "Quick search", placeholder: "Job title or company", results: "Results", pages: "Pages",
+      home: "Home", searchFor: "Vacancies for “{{q}}”", hintMove: "navigate", hintOpen: "open", hintClose: "close",
+    },
+    footer: {
+      byCategory: "By field", byRegion: "By region", allVacancies: "All vacancies",
+      candidates: "Candidate database", cabinet: "Employer dashboard", telegram: "Telegram bot", newTab: "(opens in a new tab)",
+    },
+    notFoundBody: "The link is outdated or the address has a typo. Search for the job you need or go to one of the sections below.",
+    notFoundLinks: "Helpful pages",
+  },
   picker: {
     chooseMonth: "Choose a month", chooseYear: "Choose a year", pickYear: "Pick a year",
     prevYear: "Previous year", nextYear: "Next year", prevYears: "Earlier years", nextYears: "Later years",

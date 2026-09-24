@@ -1,14 +1,60 @@
-import { SearchX } from "lucide-react";
-import { useTranslation } from "~/shared/i18n/i18n";
-import { data, isRouteErrorResponse, Outlet, redirect, useMatches } from "react-router";
+import { Briefcase, Building2, House } from "lucide-react";
+import type { ReactNode } from "react";
+import { data, isRouteErrorResponse, Outlet, redirect, useMatches, useRevalidator, type UIMatch } from "react-router";
 
 import type { Route } from "./+types/site";
 import { isLocaleSegment } from "~/shared/i18n/config";
 import { LocalizedLink } from "~/shared/i18n/hooks";
+import { useTranslation } from "~/shared/i18n/i18n";
+import { MobileTabBar } from "~/shared/layout/MobileTabBar";
+import { NavigationProgress } from "~/shared/layout/NavigationProgress";
 import { SiteFooter } from "~/shared/layout/SiteFooter";
 import { SiteHeader } from "~/shared/layout/SiteHeader";
 import { Button } from "~/shared/ui/Button";
-import { EmptyState } from "~/shared/ui/EmptyState";
+import { ErrorState } from "~/shared/ui/ErrorState";
+import { SearchBar } from "~/shared/ui/SearchBar";
+
+/*
+ * Route handle contract — the shell reads these from `export const handle = { … }` in any route
+ * (the deepest route that sets a key wins, so a layout can set it for all its children):
+ *
+ *   bare?: boolean
+ *     No footer: full-height app screens (chat). Bare screens get no bottom padding either:
+ *     size them with the `h-app` utility (100dvh − --header-h − --tabbar-reserve), or add
+ *     `pb-tabbar` yourself if the screen scrolls like a normal page.
+ *   tabBar?: boolean | ((m: UIMatch) => boolean)
+ *     false hides the floating mobile tab bar (< md): auth pages, the vacancy page with its own
+ *     sticky Apply bar, the chat thread. A function receives the route match ({ params,
+ *     pathname, data, … }) and returns whether to show it, e.g. ({ params }) => !params.id.
+ *   mobileHeader?: boolean | ((m: UIMatch) => boolean)
+ *     false hides the site header below md (a chat thread with its own glass-bar top bar).
+ *
+ * While the tab bar shows, the footer carries `pb-tabbar`, so the page end is never under the
+ * bar and the footer surface runs on beneath it. app.css derives from the bar's presence:
+ *   --tabbar-space   distance from the bottom edge the bar covers (safe-area inset when hidden)
+ *                    → toasts; floating sticky bars use the `bottom-above-tabbar` utility.
+ *   --tabbar-reserve the same, but 0 when there's no bar (for height calculations).
+ *   --header-h       header height incl. the notch inset (0 below md when mobileHeader is false).
+ */
+export type ShellHandle = {
+  bare?: boolean;
+  tabBar?: boolean | ((m: UIMatch) => boolean);
+  mobileHeader?: boolean | ((m: UIMatch) => boolean);
+};
+
+function useShellFlags() {
+  const matches = useMatches();
+  const pick = (flag: "tabBar" | "mobileHeader"): boolean => {
+    for (let i = matches.length - 1; i >= 0; i--) {
+      const v = (matches[i].handle as ShellHandle | undefined)?.[flag];
+      if (v === undefined) continue;
+      return typeof v === "function" ? v(matches[i]) : v;
+    }
+    return true;
+  };
+  const bare = matches.some((m) => (m.handle as ShellHandle | undefined)?.bare);
+  return { bare, tabBar: pick("tabBar"), mobileHeader: pick("mobileHeader") };
+}
 
 export function loader({ params, request }: Route.LoaderArgs) {
   if (params.lang === "uz") {
@@ -22,35 +68,96 @@ export function loader({ params, request }: Route.LoaderArgs) {
   return null;
 }
 
-export default function Site() {
-  // Full-height app screens (chat) set handle.bare and get no footer.
-  const bare = useMatches().some((m) => (m.handle as { bare?: boolean } | undefined)?.bare);
+function Shell({ children, bare = false, tabBar = true, mobileHeader = true }: { children: ReactNode; bare?: boolean; tabBar?: boolean; mobileHeader?: boolean }) {
   return (
     <div className="flex min-h-dvh flex-col">
-      <SiteHeader />
-      <main id="main" className="flex-1">
-        <Outlet />
-      </main>
-      {!bare && <SiteFooter />}
+      <NavigationProgress />
+      <SiteHeader mobileHidden={!mobileHeader} />
+      <main id="main" className="flex-1">{children}</main>
+      {!bare && <SiteFooter className={tabBar ? "pb-tabbar" : undefined} />}
+      {tabBar && <MobileTabBar />}
     </div>
   );
 }
 
+export default function Site() {
+  const flags = useShellFlags();
+  return (
+    <Shell {...flags}>
+      <Outlet />
+    </Shell>
+  );
+}
+
+/** X-Request-ID of a failed call, when the thrown error carries one. */
+function requestIdOf(error: unknown): string | undefined {
+  const body = isRouteErrorResponse(error) ? (error.data as unknown) : error;
+  if (!body || typeof body !== "object") return undefined;
+  const b = body as { request_id?: unknown; requestId?: unknown; error?: { request_id?: unknown } };
+  const id = b.request_id ?? b.requestId ?? b.error?.request_id;
+  return typeof id === "string" && id ? id : undefined;
+}
+
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
   const { t } = useTranslation();
+  const revalidator = useRevalidator();
   const notFound = isRouteErrorResponse(error) && error.status === 404;
   return (
-    <div className="flex min-h-dvh flex-col">
-      <SiteHeader />
-      <main id="main" className="container-page flex-1 py-16">
-        <EmptyState
-          icon={<SearchX className="size-6" />}
-          title={notFound ? t("errors.not_found") : t("errors.internal_error")}
-          body={notFound ? t("errors.notFoundBody") : undefined}
-          action={<Button asChild><LocalizedLink to="/">{t("errors.toHome")}</LocalizedLink></Button>}
-        />
-      </main>
-      <SiteFooter />
-    </div>
+    <Shell>
+      <title>{`${notFound ? t("errors.not_found") : t("states.errorTitle")} | ${t("brand.name")}`}</title>
+      <meta name="robots" content="noindex" />
+      {notFound ? (
+        <NotFound />
+      ) : (
+        <div className="container-page py-10 md:py-16">
+          <div className="surface-card mx-auto max-w-xl">
+            <ErrorState
+              error={error}
+              headingAs="h1"
+              onRetry={() => revalidator.revalidate()}
+              homeLink
+              requestId={requestIdOf(error)}
+            />
+          </div>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+/** Friendly 404: say what happened, then offer a search and the main ways back in. */
+function NotFound() {
+  const { t } = useTranslation();
+  const links = [
+    { to: "/vacancies", key: "nav.vacancies", icon: Briefcase },
+    { to: "/companies", key: "nav.companies", icon: Building2 },
+    { to: "/", key: "errors.toHome", icon: House },
+  ] as const;
+  return (
+    <section className="relative isolate overflow-hidden">
+      <div aria-hidden="true" className="aurora-hero pointer-events-none absolute inset-0 -z-10" />
+      <div className="container-page flex flex-col items-center pb-16 pt-12 text-center md:pb-24 md:pt-20">
+        <p aria-hidden="true" className="num font-display text-5xl font-semibold tracking-display text-lapis">404</p>
+        <h1 className="mt-4 max-w-xl break-words font-display text-2xl font-semibold tracking-heading text-ink md:text-3xl">
+          {t("errors.not_found")}
+        </h1>
+        <p className="mt-3 max-w-md text-base text-ink-2">{t("shell.notFoundBody")}</p>
+        <SearchBar action="/vacancies" size="lg" material="glass" suggest recent className="mt-8 w-full max-w-2xl" />
+        <nav aria-label={t("shell.notFoundLinks")} className="mt-6">
+          <ul className="flex flex-wrap justify-center gap-2">
+            {links.map((l) => {
+              const Icon = l.icon;
+              return (
+                <li key={l.to}>
+                  <Button asChild variant="glass" shape="pill" icon={<Icon className="size-4.5" />}>
+                    <LocalizedLink to={l.to} prefetch="intent">{t(l.key)}</LocalizedLink>
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </nav>
+      </div>
+    </section>
   );
 }

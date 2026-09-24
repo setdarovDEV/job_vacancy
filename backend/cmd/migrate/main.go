@@ -17,7 +17,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	log := logger.New(cfg.Log.Level, cfg.Log.Format)
+	log := logger.New(cfg.Log.Level, cfg.Log.Format, logger.WithRedaction(cfg.RedactLogs()))
 
 	direction := "up"
 	if len(os.Args) > 1 {

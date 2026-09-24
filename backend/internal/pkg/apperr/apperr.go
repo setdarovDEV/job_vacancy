@@ -43,6 +43,11 @@ func TooManyRequests(retryAfter int) *Error {
 
 var Internal = New(http.StatusInternalServerError, "internal_error", "internal server error")
 
+// Timeout is returned when a request ran past its deadline or a database statement/lock
+// timeout; it is transient, so clients may retry.
+var Timeout = &Error{Status: http.StatusServiceUnavailable, Code: "timeout",
+	Message: "the server took too long to respond, try again", RetryAfter: 1}
+
 // As extracts an *Error from err, if there is one.
 func As(err error) (*Error, bool) {
 	var e *Error

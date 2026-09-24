@@ -373,6 +373,33 @@ const ru: Messages = {
     confirm: "Подтвердить", notifications: "Уведомления",
     toastAction: "Чтобы выбрать «{{action}}», нажмите F8",
   },
+  shell: {
+    search: "Поиск", mainNav: "Основные разделы", tabBar: "Быстрое меню", menuMain: "Разделы",
+    tabs: {
+      search: "Поиск", companies: "Компании", employers: "Работодатели", login: "Войти",
+      vacancies: "Вакансии", candidates: "Кандидаты", chat: "Чат", company: "Компания", profile: "Профиль",
+      saved: "Избранное", applications: "Отклики",
+    },
+    unreadChats_one: "Сообщения, непрочитанных диалогов: {{count}}", unreadChats_few: "Сообщения, непрочитанных диалогов: {{count}}", unreadChats_many: "Сообщения, непрочитанных диалогов: {{count}}", unreadChats_other: "Сообщения, непрочитанных диалогов: {{count}}",
+    unreadNotifications_one: "Уведомления, новых: {{count}}", unreadNotifications_few: "Уведомления, новых: {{count}}", unreadNotifications_many: "Уведомления, новых: {{count}}", unreadNotifications_other: "Уведомления, новых: {{count}}",
+    newCount_one: "новых: {{count}}", newCount_few: "новых: {{count}}", newCount_many: "новых: {{count}}", newCount_other: "новых: {{count}}",
+    appearance: "Оформление", preferences: "Язык и оформление", preferencesCurrent: "Язык и оформление (сейчас: {{language}})",
+    languageCurrent: "Язык: {{language}}",
+    glass: {
+      label: "Прозрачность", auto: "Авто", full: "Полная", lite: "Лёгкая", off: "Выкл.",
+      hint: "Авто — подбирается по мощности устройства и настройкам системы.",
+    },
+    palette: {
+      title: "Быстрый поиск", placeholder: "Должность или компания", results: "Результаты", pages: "Разделы",
+      home: "Главная", searchFor: "Вакансии по запросу «{{q}}»", hintMove: "выбор", hintOpen: "открыть", hintClose: "закрыть",
+    },
+    footer: {
+      byCategory: "По профессиям", byRegion: "По регионам", allVacancies: "Все вакансии",
+      candidates: "База кандидатов", cabinet: "Кабинет работодателя", telegram: "Telegram-бот", newTab: "(откроется в новой вкладке)",
+    },
+    notFoundBody: "Ссылка устарела или в адресе ошибка. Найдите нужную работу через поиск или перейдите в разделы ниже.",
+    notFoundLinks: "Полезные разделы",
+  },
   picker: {
     chooseMonth: "Выберите месяц", chooseYear: "Выберите год", pickYear: "Выбрать год",
     prevYear: "Предыдущий год", nextYear: "Следующий год", prevYears: "Предыдущие годы", nextYears: "Следующие годы",

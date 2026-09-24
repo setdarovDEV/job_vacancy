@@ -4,9 +4,9 @@ import type { Locale } from "../i18n/config";
 
 type Currency = "UZS" | "USD";
 
-/** Groups digits with a thin non-breaking space: 15 000 000. */
+/** Groups digits with a non-breaking space (U+00A0 — Unbounded has no U+202F glyph): 15 000 000. */
 export function groupDigits(n: number): string {
-  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
 }
 
 /** 4.5 → "4,5" (uz, ru) or "4.5" (en); trailing zeros dropped. */

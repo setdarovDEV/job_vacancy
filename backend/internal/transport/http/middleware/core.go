@@ -32,29 +32,38 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
-// ClientIP resolves the caller address. Proxy headers are honoured only when trustProxy
-// is set (i.e. the API is reachable exclusively through our nginx).
-func ClientIP(trustProxy bool) func(http.Handler) http.Handler {
+// ClientIP resolves the caller address (TZ SEC-02). X-Real-IP is honoured only when
+// trustProxy is set and the TCP peer is one of the trusted proxies (our nginx, which
+// overwrites X-Real-IP with $remote_addr, or the SSR web server forwarding it).
+// X-Forwarded-For is never read: clients can prepend anything to it.
+func ClientIP(trustProxy bool, trusted []netip.Prefix) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var ip netip.Addr
-			if trustProxy {
+			var peer netip.Addr
+			if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+				peer, _ = netip.ParseAddr(host)
+			}
+			peer = peer.Unmap()
+			ip := peer
+			if trustProxy && peer.IsValid() && inPrefixes(peer, trusted) {
 				if v := r.Header.Get("X-Real-IP"); v != "" {
-					ip, _ = netip.ParseAddr(strings.TrimSpace(v))
-				} else if v := r.Header.Get("X-Forwarded-For"); v != "" {
-					first, _, _ := strings.Cut(v, ",")
-					ip, _ = netip.ParseAddr(strings.TrimSpace(first))
+					if real, err := netip.ParseAddr(strings.TrimSpace(v)); err == nil {
+						ip = real.Unmap()
+					}
 				}
 			}
-			if !ip.IsValid() {
-				host, _, err := net.SplitHostPort(r.RemoteAddr)
-				if err == nil {
-					ip, _ = netip.ParseAddr(host)
-				}
-			}
-			next.ServeHTTP(w, r.WithContext(reqctx.WithClientIP(r.Context(), ip.Unmap())))
+			next.ServeHTTP(w, r.WithContext(reqctx.WithClientIP(r.Context(), ip)))
 		})
 	}
+}
+
+func inPrefixes(ip netip.Addr, prefixes []netip.Prefix) bool {
+	for _, p := range prefixes {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }
 
 type statusWriter struct {
@@ -109,9 +118,13 @@ func Observe(log *slog.Logger) func(http.Handler) http.Handler {
 			if sw.status >= 500 {
 				level = slog.LevelError
 			}
+			path := r.URL.Path
+			if strings.Contains(route, "{token}") {
+				path = route // e.g. DELETE /me/devices/{token}: never log push tokens
+			}
 			log.LogAttrs(r.Context(), level, "http",
 				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
+				slog.String("path", path),
 				slog.Int("status", sw.status),
 				slog.Int("bytes", sw.bytes),
 				slog.Duration("took", elapsed),

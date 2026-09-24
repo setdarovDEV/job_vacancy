@@ -13,12 +13,16 @@ import (
 )
 
 func main() {
+	// "/app/worker healthcheck" exits 0 when the worker's /healthz answers 200 (TZ OPS-07).
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(app.Healthcheck("WORKER_METRICS_ADDR", "127.0.0.1:9092", "/healthz"))
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	log := logger.New(cfg.Log.Level, cfg.Log.Format)
+	log := logger.New(cfg.Log.Level, cfg.Log.Format, logger.WithRedaction(cfg.RedactLogs()))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	goredis "github.com/redis/go-redis/v9"
@@ -27,7 +28,8 @@ import (
 
 // RunWorker processes background jobs until ctx is cancelled, then lets running jobs finish.
 func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
-	pool, err := postgres.NewPool(ctx, cfg.DB)
+	pool, err := postgres.NewPool(ctx, cfg.DB, postgres.Named("worker"),
+		postgres.DefaultMaxConns(WorkerPoolSize(cfg.Worker)), postgres.WithSessionLimits())
 	if err != nil {
 		return err
 	}
@@ -38,6 +40,8 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 		return err
 	}
 	defer rdb.Close()
+	registerPoolMetrics(ctx, "worker", pool, rdb, log)
+	go serveWorkerOps(ctx, cfg.Worker.MetricsAddr, pool, rdb, log)
 
 	st, err := storage.New(cfg.S3)
 	if err != nil {
@@ -59,6 +63,7 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 	client, err := jobs.NewWorkerClient(jobs.Deps{
 		Pool: pool, Redis: rdb, Mailer: m, Storage: st, Bot: bot,
 		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: saved, Log: log,
+		CriticalWorkers: cfg.Worker.CriticalWorkers, DefaultWorkers: cfg.Worker.DefaultWorkers,
 	})
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
@@ -70,10 +75,30 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 	log.Info("worker started")
 
 	<-ctx.Done()
-	log.Info("shutting down worker")
-	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	return stopWorker(client, cfg.Worker.ShutdownTimeout, log)
+}
+
+// riverStopper is the part of *river.Client used for shutdown.
+type riverStopper interface {
+	Stop(ctx context.Context) error
+	StopAndCancel(ctx context.Context) error
+}
+
+// stopWorker lets running jobs finish for up to timeout, then cancels the rest (TZ OPS-07).
+// Cancelled jobs are marked retryable by River and run again on the next worker, so a
+// rolling restart loses nothing; jobs not yet fetched simply stay in the queue.
+func stopWorker(c riverStopper, timeout time.Duration, log *slog.Logger) error {
+	log.Info("shutting down worker", "timeout", timeout)
+	stopCtx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return client.Stop(stopCtx)
+	err := c.Stop(stopCtx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+	log.Warn("jobs still running after the shutdown timeout; cancelling them (they will be retried)")
+	cancelCtx, cancel2 := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel2()
+	return c.StopAndCancel(cancelCtx)
 }
 
 // SavedSearches builds the alert service outside the API: it needs vacancy listing (with

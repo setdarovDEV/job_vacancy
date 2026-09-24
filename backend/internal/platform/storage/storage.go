@@ -144,3 +144,15 @@ func (s *Storage) Remove(ctx context.Context, bucket, key string) error {
 func (s *Storage) PublicURL(key string) string {
 	return strings.TrimRight(s.cfg.PublicBaseURL, "/") + "/" + key
 }
+
+// Ping checks that object storage answers and the public bucket exists (/readyz).
+func (s *Storage) Ping(ctx context.Context) error {
+	ok, err := s.api.BucketExists(ctx, s.cfg.PublicBucket)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("storage: bucket %s is missing", s.cfg.PublicBucket)
+	}
+	return nil
+}

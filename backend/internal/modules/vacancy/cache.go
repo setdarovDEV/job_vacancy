@@ -18,10 +18,12 @@ import (
 // once per TTL across all API instances. Concurrent misses for the same key inside one
 // instance are collapsed into a single database query.
 type ListCache struct {
-	RDB   *redis.Client
-	TTL   time.Duration
-	Log   *slog.Logger
-	group singleflight.Group
+	RDB *redis.Client
+	TTL time.Duration
+	Log *slog.Logger
+	// LoadTimeout bounds one shared load; 0 means defaultLoadTimeout.
+	LoadTimeout time.Duration
+	group       singleflight.Group
 }
 
 func cacheKey(f Filter) string {
@@ -30,7 +32,16 @@ func cacheKey(f Filter) string {
 	return "vacancy:list:" + hex.EncodeToString(sum[:12])
 }
 
-func (c *ListCache) Get(ctx context.Context, f Filter, load func() (ListResult, error)) (ListResult, error) {
+// defaultLoadTimeout bounds a shared cache fill. The fill runs detached from the request
+// that happened to start it (TZ BE-01): if that client disconnects, everybody else
+// waiting on the same key must still get the result.
+const defaultLoadTimeout = 3 * time.Second
+
+// Get returns the cached page for f or loads it. Concurrent misses for one key share a
+// single load; load receives a context detached from any one caller (values such as the
+// request id are kept) with its own LoadTimeout. Each caller still stops waiting when its
+// own ctx is done.
+func (c *ListCache) Get(ctx context.Context, f Filter, load func(ctx context.Context) (ListResult, error)) (ListResult, error) {
 	key := cacheKey(f)
 	if raw, err := c.RDB.Get(ctx, key).Bytes(); err == nil {
 		var res ListResult
@@ -41,22 +52,33 @@ func (c *ListCache) Get(ctx context.Context, f Filter, load func() (ListResult, 
 		c.Log.WarnContext(ctx, "list cache read failed", "err", err)
 	}
 
-	v, err, _ := c.group.Do(key, func() (any, error) {
-		res, err := load()
+	ch := c.group.DoChan(key, func() (any, error) {
+		timeout := c.LoadTimeout
+		if timeout <= 0 {
+			timeout = defaultLoadTimeout
+		}
+		lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+		defer cancel()
+		res, err := load(lctx)
 		if err != nil {
 			return res, err
 		}
 		if raw, err := json.Marshal(res); err == nil {
-			if err := c.RDB.Set(ctx, key, raw, c.TTL).Err(); err != nil {
-				c.Log.WarnContext(ctx, "list cache write failed", "err", err)
+			if err := c.RDB.Set(lctx, key, raw, c.TTL).Err(); err != nil {
+				c.Log.WarnContext(lctx, "list cache write failed", "err", err)
 			}
 		}
 		return res, nil
 	})
-	if err != nil {
-		return ListResult{}, err
+	select {
+	case r := <-ch:
+		if r.Err != nil {
+			return ListResult{}, r.Err
+		}
+		return r.Val.(ListResult), nil
+	case <-ctx.Done():
+		return ListResult{}, ctx.Err()
 	}
-	return v.(ListResult), nil
 }
 
 // ---- popular searches ------------------------------------------------------------------

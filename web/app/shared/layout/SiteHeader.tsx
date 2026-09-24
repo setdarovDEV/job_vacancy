@@ -1,84 +1,183 @@
-import { Menu as MenuIcon } from "lucide-react";
+import { Briefcase, Building2, Handshake, Menu as MenuIcon, Plus, Search } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { useTranslation } from "~/shared/i18n/i18n";
 import { NavLink } from "react-router";
 
-import { Logo } from "../brand/Logo";
+import { useSession } from "../auth/session";
+import { LogoMark } from "../brand/Logo";
 import { localizedPath } from "../i18n/config";
 import { LocalizedLink, useLocale } from "../i18n/hooks";
+import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
-import { IconButton } from "../ui/Button";
-import { LanguageMenu, ThemeMenu } from "./Switchers";
-import { UserArea } from "./UserArea";
+import { Button, IconButton } from "../ui/Button";
+import { Kbd } from "../ui/Kbd";
+import { Tooltip } from "../ui/Tooltip";
+import type { MenuNavItem } from "./MobileMenu";
+import { PreferencesMenu } from "./Switchers";
+import { postVacancyHref, UserArea } from "./UserArea";
 
-const MobileMenu = lazy(() => import("./MobileMenu"));
+// Both overlays are separate chunks, fetched on first intent (pointerdown / hover / shortcut).
+const loadMenu = () => import("./MobileMenu");
+const loadPalette = () => import("./CommandPalette");
+const MobileMenu = lazy(loadMenu);
+const CommandPalette = lazy(loadPalette);
 
-const nav = [
-  { to: "/vacancies", key: "nav.vacancies" },
-  { to: "/companies", key: "nav.companies" },
-  { to: "/employers", key: "nav.forEmployers" },
-] as const;
+export const primaryNav: readonly MenuNavItem[] = [
+  { to: "/vacancies", key: "nav.vacancies", icon: Briefcase },
+  { to: "/companies", key: "nav.companies", icon: Building2 },
+  { to: "/employers", key: "nav.forEmployers", icon: Handshake },
+];
 
-export function SiteHeader() {
+const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+
+/**
+ * Sticky glass header. Phones (< md): logo, search, menu — the tab bar carries the main
+ * destinations. md–lg: logo mark, nav pills, search, sign-in / messages, menu sheet for the rest.
+ * lg+: full set with language, appearance, the "Post a vacancy" CTA and the avatar menu.
+ * `mobileHidden` drops it below md for screens with their own top bar (chat thread).
+ */
+export function SiteHeader({ mobileHidden = false }: { mobileHidden?: boolean }) {
   const { t } = useTranslation();
   const locale = useLocale();
-  // A hairline appears once the page scrolls, instead of a permanent heavy border.
-  const [scrolled, setScrolled] = useState(false);
+  const { user, status } = useSession();
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuWanted, setMenuWanted] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteWanted, setPaletteWanted] = useState(false);
+  // ⌘K on Apple devices, Ctrl K elsewhere. Unknown on the server: the hint appears after mount
+  // inside a fixed-size slot, so nothing moves.
+  const [mac, setMac] = useState<boolean | null>(null);
+
   useEffect(() => {
-    const on = () => setScrolled(window.scrollY > 4);
-    on();
-    window.addEventListener("scroll", on, { passive: true });
-    return () => window.removeEventListener("scroll", on);
+    setMac(isMac());
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() !== "k" || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.repeat) return;
+      e.preventDefault();
+      setPaletteWanted(true);
+      setPaletteOpen((o) => !o);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // The mobile menu's code is fetched on first touch, before the tap completes.
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuRequested, setMenuRequested] = useState(false);
-  const loadMenu = () => setMenuRequested(true);
+  const openPalette = () => {
+    setPaletteWanted(true);
+    setPaletteOpen(true);
+  };
 
-  const link = ({ isActive }: { isActive: boolean }) =>
-    cn("rounded-control px-3 py-2 text-[0.9375rem] font-medium transition-colors",
-      isActive ? "text-ink" : "text-ink-2 hover:text-ink");
+  const pill = ({ isActive }: { isActive: boolean }) =>
+    cn(
+      "inline-flex h-10 items-center whitespace-nowrap rounded-pill px-3.5 text-md font-medium",
+      "transition-[background-color,color,scale] duration-150 ease-spring active:scale-[0.97]",
+      isActive ? "bg-lapis-soft text-lapis-ink" : "text-ink-2 hover:bg-sunken hover:text-ink",
+    );
+
+  const shortcut = mac == null ? null : mac ? "⌘K" : "Ctrl K";
+  const searchLabel = t("shell.search");
 
   return (
-    <header className={cn("sticky top-0 z-40 border-b bg-paper transition-colors duration-200", scrolled ? "border-line" : "border-transparent")}>
-      <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-control focus:bg-surface focus:px-3 focus:py-2">
+    <header
+      id="site-header"
+      data-mobile-hidden={mobileHidden || undefined}
+      className={cn("glass-bar sticky top-0 z-40 pt-safe", mobileHidden && "max-md:hidden")}
+    >
+      <a
+        href="#main"
+        className="sr-only rounded-pill bg-raised px-4 py-2.5 text-md font-medium text-ink shadow-3 focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50"
+      >
         {t("nav.skipToContent")}
       </a>
-      <div className="container-page flex h-16 items-center gap-6">
-        <LocalizedLink to="/" aria-label={t("brand.name")} className="rounded-control">
-          <Logo />
+      <div className="container-page flex h-16 items-center gap-3 lg:gap-4">
+        <LocalizedLink to="/" aria-label={t("brand.name")} className="-ml-1 flex shrink-0 items-center gap-2.5 rounded-control p-1">
+          <LogoMark className="size-7" />
+          {/* The wordmark gives way to the nav pills between md and xl. */}
+          <span className="font-display text-lead font-semibold leading-none tracking-heading text-ink md:max-xl:hidden" aria-hidden="true">
+            {t("brand.name")}
+          </span>
         </LocalizedLink>
-        <nav className="hidden items-center gap-1 md:flex" aria-label={t("nav.menu")}>
-          {nav.map((n) => (
-            <NavLink key={n.to} to={localizedPath(locale, n.to)} className={link}>
+
+        <nav aria-label={t("shell.mainNav")} className="hidden min-w-0 items-center gap-1 md:flex">
+          {primaryNav.map((n) => (
+            <NavLink key={n.to} to={localizedPath(locale, n.to)} prefetch="intent" className={pill}>
               {t(n.key)}
             </NavLink>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-1">
-          <div className="hidden items-center gap-1 md:flex">
-            <LanguageMenu />
-            <ThemeMenu />
-            <UserArea />
+
+        <div className="ml-auto flex shrink-0 items-center gap-1">
+          <Tooltip
+            content={
+              <span className="inline-flex items-center gap-2">
+                {searchLabel}
+                {shortcut && <Kbd className="pointer-coarse:hidden">{shortcut}</Kbd>}
+              </span>
+            }
+          >
+            <button
+              type="button"
+              onPointerEnter={() => void loadPalette()}
+              onPointerDown={() => setPaletteWanted(true)}
+              onClick={openPalette}
+              aria-label={searchLabel}
+              aria-haspopup="dialog"
+              aria-expanded={paletteOpen}
+              aria-keyshortcuts="Meta+K Control+K"
+              className={cn(
+                "inline-flex size-11 shrink-0 items-center justify-center gap-2 rounded-pill text-ink-2",
+                "transition-[background-color,color,border-color,scale] duration-150 ease-spring hover:bg-sunken hover:text-ink active:scale-[0.97]",
+                // xl with a mouse: a quiet field-like pill with the shortcut in a fixed-width slot.
+                "xl:pointer-fine:w-auto xl:pointer-fine:border xl:pointer-fine:border-line xl:pointer-fine:bg-surface/60 xl:pointer-fine:pl-3 xl:pointer-fine:pr-2",
+              )}
+            >
+              <Search className="size-5 xl:pointer-fine:size-4.5" aria-hidden="true" />
+              <span className="hidden w-12 justify-end xl:pointer-fine:flex" aria-hidden="true">
+                {shortcut && <Kbd className="anim-fade">{shortcut}</Kbd>}
+              </span>
+            </button>
+          </Tooltip>
+
+          <div className="hidden lg:contents">
+            <PreferencesMenu />
           </div>
+          <div className="hidden items-center gap-1 md:flex">
+            <UserArea
+              cta={
+                // Same label and size for every role, so it never shifts; only the target differs.
+                <Button asChild shape="pill" icon={<Plus className="size-4.5" strokeWidth={2.5} />} className="mx-1 hidden lg:inline-flex">
+                  <LocalizedLink to={postVacancyHref(status === "authed" ? user : null)} prefetch="intent">
+                    {t("nav.postVacancy")}
+                  </LocalizedLink>
+                </Button>
+              }
+            />
+          </div>
+
           <IconButton
             label={t("nav.menu")}
-            className="md:hidden"
+            shape="pill"
+            className="-mr-1.5 lg:hidden"
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
-            onPointerDown={loadMenu}
-            onClick={() => { loadMenu(); setMenuOpen(true); }}
+            onPointerDown={() => setMenuWanted(true)}
+            onClick={() => {
+              setMenuWanted(true);
+              setMenuOpen(true);
+            }}
           >
             <MenuIcon className="size-6" />
           </IconButton>
-          {menuRequested && (
-            <Suspense fallback={null}>
-              <MobileMenu open={menuOpen} onOpenChange={setMenuOpen} nav={nav} locale={locale} />
-            </Suspense>
-          )}
         </div>
       </div>
+      {menuWanted && (
+        <Suspense fallback={null}>
+          <MobileMenu open={menuOpen} onOpenChange={setMenuOpen} nav={primaryNav} locale={locale} />
+        </Suspense>
+      )}
+      {paletteWanted && (
+        <Suspense fallback={null}>
+          <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+        </Suspense>
+      )}
     </header>
   );
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -25,7 +26,6 @@ import (
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/otp"
 	"jobvacancy.uz/backend/internal/pkg/ratelimit"
-	"jobvacancy.uz/backend/internal/pkg/token"
 	"jobvacancy.uz/backend/internal/platform/metrics"
 	"jobvacancy.uz/backend/internal/platform/postgres"
 	"jobvacancy.uz/backend/internal/platform/redis"
@@ -38,7 +38,8 @@ import (
 
 // RunAPI starts the HTTP API and blocks until ctx is cancelled, then drains connections.
 func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
-	pool, err := postgres.NewPool(ctx, cfg.DB)
+	pool, err := postgres.NewPool(ctx, cfg.DB, postgres.Named("api"), postgres.DefaultMaxConns(APIPoolSize),
+		postgres.WithSessionLimits())
 	if err != nil {
 		return err
 	}
@@ -49,6 +50,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		return err
 	}
 	defer rdb.Close()
+	registerPoolMetrics(ctx, "api", pool, rdb, log)
 
 	enq, err := jobs.NewEnqueuer(pool, log)
 	if err != nil {
@@ -78,7 +80,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 
 	q := gen.New(pool)
-	tokens := token.NewManager(cfg.Auth.JWTSecret, cfg.Auth.JWTIssuer, cfg.Auth.AccessTokenTTL)
+	tokens := accessTokens(cfg.Auth)
 	revoked := auth.NewRevocationStore(rdb, cfg.Auth.AccessTokenTTL)
 	limiter := ratelimit.New(rdb)
 
@@ -128,6 +130,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Notify: notifySvc, Log: log,
 	}
 
+	var draining atomic.Bool
 	handler := httpapi.NewRouter(httpapi.Deps{
 		Log:         log,
 		DB:          pool,
@@ -136,6 +139,13 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Auth:        &mw.Authenticator{Tokens: tokens, Revoked: revoked},
 		CORSOrigins: cfg.HTTP.CORSOrigins,
 		TrustProxy:  cfg.HTTP.TrustProxy,
+
+		TrustedProxies:     cfg.HTTP.TrustedProxies,
+		RequestTimeout:     cfg.HTTP.RequestTimeout,
+		SlowRequestTimeout: cfg.HTTP.SlowRequestTimeout,
+		Compress:           cfg.CompressEnabled(),
+		Storage:            st,
+		Draining:           &draining,
 		AuthHandler: &auth.Handler{Svc: authSvc, Cookie: auth.CookieConfig{
 			Domain: cfg.Auth.CookieDomain, Secure: cfg.Auth.CookieSecure,
 		}},
@@ -180,7 +190,11 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		return err
 	case <-ctx.Done():
 	}
-	log.Info("shutting down api")
+	// Fail /readyz first so the load balancer stops routing here, then close the listener
+	// and let in-flight requests finish (TZ OPS-07).
+	draining.Store(true)
+	log.Info("shutting down api", "drain_delay", cfg.HTTP.DrainDelay)
+	time.Sleep(cfg.HTTP.DrainDelay)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)

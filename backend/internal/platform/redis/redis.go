@@ -14,6 +14,8 @@ func New(ctx context.Context, url string) (*goredis.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("redis: parse url: %w", err)
 	}
+	// Honour request deadlines (TZ BE-01) instead of only the fixed read/write timeouts.
+	opts.ContextTimeoutEnabled = true
 	c := goredis.NewClient(opts)
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
