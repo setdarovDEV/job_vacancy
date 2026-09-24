@@ -55,6 +55,7 @@ func TestProductionRejectsUnsafeSettings(t *testing.T) {
 		{"no sms gateway", "TELEGRAM_GATEWAY_TOKEN", "", "TELEGRAM_GATEWAY_TOKEN"},
 		{"redaction off", "LOG_REDACT", "off", "LOG_REDACT"},
 		{"http web url", "WEB_URL", "http://jobvacancy.uz", "WEB_URL"},
+		{"popular searches from one ip", "SEARCH_POPULAR_MIN_IPS", "1", "SEARCH_POPULAR_MIN_IPS"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

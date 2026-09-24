@@ -118,5 +118,8 @@ func (c *Config) validateProduction() error {
 	if u, err := url.Parse(c.WebURL); err != nil || u.Scheme != "https" {
 		bad("WEB_URL must be an https URL in production (got %q)", c.WebURL)
 	}
+	if c.Search.PopularMinIPs < 3 {
+		bad("SEARCH_POPULAR_MIN_IPS must be at least 3 in production, or one client can put spam on the home page")
+	}
 	return errors.Join(errs...)
 }

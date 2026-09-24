@@ -67,7 +67,7 @@ tests:
         exp_alerts:
           - exp_labels: { severity: warning }
             exp_annotations:
-              summary: "API p95 462.5ms (> 200 ms for 5 minutes)"
+              summary: "API p95 479.2ms (> 200 ms for 5 minutes)"
               description: "Slowest routes: Grafana → jobvacancy RED → p95 by route. Then pg_stat_statements and the db pool panels."
               runbook: "docs/RUNBOOK.md#91-sayt-sekin-yoki-5xx"
 
@@ -142,15 +142,18 @@ tests:
         exp_alerts: []
 
   - name: failed and stale backups
-    interval: 1h
+    interval: 5m
     input_series:
       - series: 'jv_backup_last_run_ok{job="sql",instance="postgres",target="postgres"}'
-        values: '1 1 0'
-      # Last success at t=0 (unix 0): 27 h later it is too old.
+        values: '1x20 0x5'
+      # Last success at t=0 (unix 0): after 26 h (+10 m) it is too old.
       - series: 'jv_backup_last_success_timestamp_seconds{job="sql",instance="postgres",target="postgres"}'
-        values: '0x30'
+        values: '0x400'
     alert_rule_test:
-      - eval_time: 2h
+      - eval_time: 1h
+        alertname: BackupFailed
+        exp_alerts: []
+      - eval_time: 1h45m
         alertname: BackupFailed
         exp_alerts:
           - exp_labels: { severity: critical, job: sql, instance: postgres, target: postgres }

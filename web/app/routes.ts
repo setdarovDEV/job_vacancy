@@ -37,6 +37,7 @@ export default [
         route("employer/candidates", "routes/employer/candidates.tsx"),
       ]),
       route("resumes/:id", "routes/resume.tsx"),
+      route("admin", "routes/admin/index.tsx"),
       route("chat/:id?", "routes/chat/index.tsx"),
     ]),
     // Design system reference; not shipped to production.
