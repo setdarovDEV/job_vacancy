@@ -116,12 +116,12 @@ function LegalLayout({ page }: { page: Page }) {
           <QuestionsCard />
         </article>
         {/* After the article in the DOM (read after the H1), first column on screen. */}
-        <aside className="max-lg:hidden lg:sticky lg:top-24 lg:order-first lg:self-start">
+        <div className="max-lg:hidden lg:sticky lg:top-24 lg:order-first lg:self-start">
           <nav aria-label={t("staticPage.onThisPage")}>
             <p className="mb-3 text-xs font-semibold uppercase tracking-caps text-ink-2">{t("staticPage.onThisPage")}</p>
             <TocList sections={page.sections} active={active} onJump={jump} />
           </nav>
-        </aside>
+        </div>
       </div>
     </div>
   );
