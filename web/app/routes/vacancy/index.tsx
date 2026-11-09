@@ -200,7 +200,7 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
       </div>
 
       {/* Phones: the primary actions stay within thumb reach. */}
-      <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-2 border-t border-line bg-surface/95 px-4 py-3 backdrop-blur sm:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-2 border-t border-line glass-bar px-4 py-3 sm:hidden">
         {user?.role !== "employer" ? <div className="flex-1">{applyButton}</div> : <div className="flex-1" />}
         <SaveButton id={v.id} className="size-12 border border-line-strong" />
         <button type="button" onClick={share} aria-label={t("jobs.share")} className="grid size-12 place-items-center rounded-control border border-line-strong text-ink-2">

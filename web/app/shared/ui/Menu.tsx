@@ -4,11 +4,15 @@ import type { ReactNode } from "react";
 
 import { cn } from "../lib/cn";
 
-export const MenuRoot = M.Root;
+// Non-modal: a modal menu locks page scroll, and hiding the scrollbar shifts the whole
+// page sideways while the menu is open.
+export function MenuRoot(props: M.DropdownMenuProps) {
+  return <M.Root modal={false} {...props} />;
+}
 export const MenuTrigger = M.Trigger;
 
 const panel =
-  "anim-pop z-50 min-w-48 rounded-panel border border-line bg-surface p-1.5 shadow-pop outline-none";
+  "anim-pop z-50 min-w-48 rounded-panel border border-line glass-float p-1.5 outline-none";
 const item =
   "flex h-10 cursor-pointer select-none items-center gap-2.5 rounded-[0.625rem] px-2.5 text-sm text-ink outline-none " +
   "data-[highlighted]:bg-sunken data-[disabled]:pointer-events-none data-[disabled]:opacity-50";

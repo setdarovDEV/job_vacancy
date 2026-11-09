@@ -18,14 +18,22 @@
 
 :root {
   color-scheme: light;
-  --paper: #f5f7fb;
-  --surface: #ffffff;
-  --sunken: #edf1f8;
+  --paper: #eef2fa;
+  /* Glass: translucent panels over the tinted backdrop (see body::before). */
+  --surface: rgb(255 255 255 / 0.62);
+  --sunken: rgb(27 58 140 / 0.055);
   --ink: #151a33;
   --ink-2: #4b5272;
   --ink-3: #6b7191;
-  --line: #e1e6f0;
-  --line-strong: #c9d1e1;
+  --line: rgb(21 26 51 / 0.09);
+  --line-strong: rgb(21 26 51 / 0.17);
+  --glass-float: rgb(255 255 255 / 0.74);
+  --glass-bar: rgb(246 248 253 / 0.68);
+  --glass-edge: rgb(255 255 255 / 0.85);
+  --glass-shadow: 0 10px 30px -18px rgb(21 26 51 / 0.22), 0 1px 2px rgb(21 26 51 / 0.04);
+  --blob-1: rgb(61 107 255 / 0.34);
+  --blob-2: rgb(14 159 150 / 0.26);
+  --blob-3: rgb(240 180 41 / 0.24);
 
   --lapis: #1b3a8c;
   --lapis-hover: #142d6e;
@@ -48,21 +56,28 @@
   --focus: #3d6bff;
   --overlay: rgb(13 18 38 / 0.45);
   --shadow-pop: 0 18px 40px -16px rgb(21 26 51 / 0.3), 0 2px 6px rgb(21 26 51 / 0.06);
-  --pattern: rgb(27 58 140 / 0.09);
+  --pattern: rgb(27 58 140 / 0.22);
 }
 
 /* Dark: "night lapis". Explicit choice wins; otherwise follow the system. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: #0d1226;
-    --surface: #141a33;
-    --sunken: #10152c;
+    --paper: #0a0f22;
+    --surface: rgb(30 38 74 / 0.5);
+    --sunken: rgb(255 255 255 / 0.055);
     --ink: #edf0fa;
     --ink-2: #aab1ce;
     --ink-3: #8a91b2;
-    --line: #252d4f;
-    --line-strong: #36416c;
+    --line: rgb(255 255 255 / 0.08);
+    --line-strong: rgb(255 255 255 / 0.16);
+    --glass-float: rgb(24 31 62 / 0.76);
+    --glass-bar: rgb(10 15 34 / 0.62);
+    --glass-edge: rgb(255 255 255 / 0.09);
+    --glass-shadow: 0 12px 32px -18px rgb(0 0 0 / 0.7);
+    --blob-1: rgb(61 107 255 / 0.34);
+    --blob-2: rgb(43 196 184 / 0.2);
+    --blob-3: rgb(142 103 255 / 0.24);
     --lapis: #8ea7ff;
     --lapis-hover: #a9bcff;
     --lapis-soft: #1c2757;
@@ -80,20 +95,27 @@
     --focus: #8ea7ff;
     --overlay: rgb(3 5 14 / 0.6);
     --shadow-pop: 0 18px 40px -16px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
-    --pattern: rgb(142 167 255 / 0.08);
+    --pattern: rgb(142 167 255 / 0.18);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: #0d1226;
-  --surface: #141a33;
-  --sunken: #10152c;
+  --paper: #0a0f22;
+  --surface: rgb(30 38 74 / 0.5);
+  --sunken: rgb(255 255 255 / 0.055);
   --ink: #edf0fa;
   --ink-2: #aab1ce;
   --ink-3: #8a91b2;
-  --line: #252d4f;
-  --line-strong: #36416c;
+  --line: rgb(255 255 255 / 0.08);
+  --line-strong: rgb(255 255 255 / 0.16);
+  --glass-float: rgb(24 31 62 / 0.76);
+  --glass-bar: rgb(10 15 34 / 0.62);
+  --glass-edge: rgb(255 255 255 / 0.09);
+  --glass-shadow: 0 12px 32px -18px rgb(0 0 0 / 0.7);
+  --blob-1: rgb(61 107 255 / 0.34);
+  --blob-2: rgb(43 196 184 / 0.2);
+  --blob-3: rgb(142 103 255 / 0.24);
   --lapis: #8ea7ff;
   --lapis-hover: #a9bcff;
   --lapis-soft: #1c2757;
@@ -111,7 +133,7 @@
   --focus: #8ea7ff;
   --overlay: rgb(3 5 14 / 0.6);
   --shadow-pop: 0 18px 40px -16px rgb(0 0 0 / 0.6), 0 2px 6px rgb(0 0 0 / 0.3);
-  --pattern: rgb(142 167 255 / 0.08);
+  --pattern: rgb(142 167 255 / 0.18);
 }
 
 @theme inline {
@@ -189,9 +211,27 @@
     text-rendering: optimizeLegibility;
     font-feature-settings: "ss01", "cv11";
   }
+  html {
+    scroll-behavior: smooth;
+  }
+  /* No body background: it would paint over the backdrop layer below (html has the paper). */
   body {
     min-height: 100dvh;
-    background: var(--paper);
+  }
+  /*
+   * The colour behind the glass: soft lapis/firuza/saffron light on a fixed layer, painted
+   * once and composited, so scrolling never repaints it.
+   */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -50;
+    pointer-events: none;
+    background:
+      radial-gradient(46rem 36rem at 6% 8%, var(--blob-1), transparent 68%),
+      radial-gradient(40rem 34rem at 96% 30%, var(--blob-2), transparent 68%),
+      radial-gradient(48rem 34rem at 40% 104%, var(--blob-3), transparent 68%);
   }
   ::selection {
     background: var(--lapis-soft);
@@ -225,16 +265,42 @@
   }
 }
 
+/* ---- glass ---------------------------------------------------------------------------- */
+
+/* Floating layers (menus, selects, dialogs, toasts): frosted, with a lit top edge. */
+@utility glass-float {
+  background-color: var(--glass-float);
+  -webkit-backdrop-filter: blur(22px) saturate(1.6);
+  backdrop-filter: blur(22px) saturate(1.6);
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--shadow-pop);
+}
+/* Bars that content scrolls under (header, sticky action bars). */
+@utility glass-bar {
+  background-color: var(--glass-bar);
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+}
+/*
+ * Cards are translucent over a fixed, smooth backdrop, which reads as glass without a
+ * per-card backdrop blur (dozens of those make long lists stutter while scrolling).
+ * Utilities win over this layer, so an explicit shadow-* on a card still applies.
+ */
+@layer components {
+  .bg-surface:is(.rounded-panel, .rounded-sheet) {
+    box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
+  }
+}
+
 /* ---- motion ------------------------------------------------------------------------- */
 
-/* Hero tilework: a diagonal mask sweep, played once. */
-.girih-reveal {
+/* Hero dot grid: a diagonal mask sweep, played once. */
+.pattern-reveal {
   mask-image: linear-gradient(135deg, black 45%, transparent 55%);
   mask-size: 300% 300%;
   mask-position: 100% 100%;
-  animation: girih-sweep 1.6s var(--ease-out-quint) 0.1s both;
+  animation: pattern-sweep 1.6s var(--ease-out-quint) 0.1s both;
 }
-@keyframes girih-sweep {
+@keyframes pattern-sweep {
   from { mask-position: 100% 100%; }
   to { mask-position: 0% 0%; }
 }
@@ -273,27 +339,34 @@
   &[data-state="closed"] { animation: sheet-right-out 200ms ease-in; }
 }
 
-/* Native popovers: fade/slide in via @starting-style (no JS). */
+/*
+ * Native popovers. A panel stays invisible until JS has placed it (`data-placed`, set
+ * before the first paint), then fades/slides in from @starting-style. Only opacity and
+ * transform animate, so it runs on the compositor.
+ */
 .popover-panel {
   opacity: 0;
-  transform: translateY(4px) scale(0.98);
-  transition: opacity 150ms var(--ease-out-quint), transform 150ms var(--ease-out-quint),
-    overlay 150ms allow-discrete, display 150ms allow-discrete;
+  transform: translateY(6px) scale(0.97);
+  transform-origin: top center;
+  transition: opacity 120ms ease-in, transform 120ms ease-in,
+    overlay 120ms allow-discrete, display 120ms allow-discrete;
 }
-.popover-panel:popover-open {
+.popover-panel[data-side="top"] {
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: bottom center;
+}
+.popover-panel:popover-open[data-placed] {
   opacity: 1;
   transform: none;
+  transition-duration: 180ms;
+  transition-timing-function: var(--ease-out-quint);
 }
 @starting-style {
-  .popover-panel:popover-open {
+  .popover-panel:popover-open[data-placed] {
     opacity: 0;
-    transform: translateY(4px) scale(0.98);
+    transform: translateY(6px) scale(0.97);
   }
-}
-
-/* Select lists that open upwards slide in from above. */
-@starting-style {
-  .select-panel[data-side="top"]:popover-open {
-    transform: translateY(-4px) scale(0.98);
+  .popover-panel[data-side="top"]:popover-open[data-placed] {
+    transform: translateY(-6px) scale(0.97);
   }
 }

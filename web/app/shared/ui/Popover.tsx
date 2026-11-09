@@ -1,6 +1,7 @@
 import { useId, useRef, type ReactNode } from "react";
 
 import { cn } from "../lib/cn";
+import { placeBeforePaint } from "./anchor";
 
 /**
  * Disclosure popover built on the HTML Popover API: the browser handles top-layer
@@ -18,9 +19,9 @@ export function Popover({
   const id = useId().replace(/:/g, "");
   const ref = useRef<HTMLDivElement>(null);
 
-  const place = (e: React.ToggleEvent<HTMLDivElement>) => {
-    if (e.newState !== "open") return;
-    const el = e.currentTarget;
+  const place = () => {
+    const el = ref.current;
+    if (!el) return;
     const btn = document.querySelector<HTMLElement>(`[popovertarget="${id}"]`);
     if (!btn) return;
     const r = btn.getBoundingClientRect();
@@ -28,6 +29,7 @@ export function Popover({
     const left = Math.min(Math.max(8, r.right - w), window.innerWidth - w - 8);
     el.style.top = `${r.bottom + 8}px`;
     el.style.left = `${left}px`;
+    el.dataset.placed = "";
   };
 
   return (
@@ -37,13 +39,13 @@ export function Popover({
         ref={ref}
         id={id}
         popover="auto"
-        onToggle={place}
+        onBeforeToggle={(e) => placeBeforePaint(e, place)}
         // Picking an item (link or option) closes the popover.
         onClick={(e) => {
           if ((e.target as HTMLElement).closest("a,button,[role=radio] input")) ref.current?.hidePopover();
         }}
         className={cn(
-          "popover-panel fixed inset-auto m-0 min-w-52 rounded-panel border border-line bg-surface p-1.5 text-ink shadow-pop",
+          "popover-panel fixed inset-auto m-0 min-w-52 rounded-panel border border-line glass-float p-1.5 text-ink",
           className,
         )}
       >

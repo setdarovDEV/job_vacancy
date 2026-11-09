@@ -17,7 +17,7 @@ export default function ToastViewport({ items, closeLabel }: { items: ToastItem[
           exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
           transition={{ type: "spring", stiffness: 420, damping: 34 }}
           role={t.tone === "error" ? "alert" : "status"}
-          className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-panel border border-line bg-surface p-4 shadow-pop"
+          className="pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-panel border border-line glass-float p-4"
         >
           {t.tone === "error" ? (
             <CircleAlert className="mt-0.5 size-5 shrink-0 text-anor" />

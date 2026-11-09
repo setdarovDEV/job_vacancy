@@ -5,7 +5,7 @@ import { useLocale } from "../i18n/hooks";
 import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
 import { monthLabel, monthNames } from "../lib/format";
-import { placeUnder } from "./anchor";
+import { placeBeforePaint, placeUnder } from "./anchor";
 
 type Props = {
   /** "month": value "YYYY-MM" (work experience). "year": value "YYYY" (studies, founding year). */
@@ -160,8 +160,9 @@ export function MonthPicker({
         popover="auto"
         role="dialog"
         aria-label={aria["aria-label"] ?? (mode === "year" ? t("picker.chooseYear") : t("picker.chooseMonth"))}
+        onBeforeToggle={(e) => placeBeforePaint(e, place)}
         onToggle={onToggle}
-        className="popover-panel select-panel fixed inset-auto m-0 overflow-y-auto rounded-panel border border-line bg-surface p-3 text-ink shadow-pop"
+        className="popover-panel select-panel fixed inset-auto m-0 overflow-y-auto rounded-panel border border-line glass-float p-3 text-ink"
       >
         <div className="mb-2 flex items-center justify-between gap-2">
           <button type="button" onClick={() => step(-1)} disabled={!canStep(-1)} aria-label={view === "months" ? t("picker.prevYear") : t("picker.prevYears")}

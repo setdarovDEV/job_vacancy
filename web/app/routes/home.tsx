@@ -4,7 +4,7 @@ import { Form } from "react-router";
 
 import type { Route } from "./+types/home";
 import { api, soft } from "~/shared/api/client";
-import { GirihPattern } from "~/shared/brand/GirihPattern";
+import { DotPattern } from "~/shared/brand/DotPattern";
 import { nameOf, useCatalog } from "~/shared/catalog/catalog";
 import { localizedPath, type Locale } from "~/shared/i18n/config";
 import { LocalizedLink, useLocale } from "~/shared/i18n/hooks";
@@ -54,7 +54,7 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 
   return (
     <section className="relative isolate overflow-hidden">
-      <GirihPattern className="-z-10" focus="ellipse 55% 75% at 85% 30%" />
+      <DotPattern className="-z-10" focus="ellipse 55% 75% at 85% 30%" />
       <div className="container-page pb-20 pt-14 md:pb-28 md:pt-24">
         <h1 className="max-w-[16ch] text-balance font-display text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.035em] text-ink sm:text-4xl md:text-5xl">
           {t("hero.title")}

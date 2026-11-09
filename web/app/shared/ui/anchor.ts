@@ -16,4 +16,18 @@ export function placeUnder(el: HTMLElement, anchor: HTMLElement, opts: { minWidt
   el.style.top = up ? "auto" : `${r.bottom + 6}px`;
   el.style.bottom = up ? `${window.innerHeight - r.top + 6}px` : "auto";
   el.dataset.side = up ? "top" : "bottom";
+  el.dataset.placed = "";
+}
+
+/**
+ * `toggle` fires after the browser has already painted the popover, so placing it there
+ * makes it flash at its default spot and jump. `beforetoggle` runs inside showPopover();
+ * a frame callback queued from it runs after the popover is laid out but before the next
+ * paint, so the panel's first visible frame is already in place. Until then CSS keeps an
+ * unplaced panel invisible (see `.popover-panel` in app.css).
+ */
+export function placeBeforePaint(e: React.ToggleEvent<HTMLElement>, place: () => void) {
+  if (e.newState !== "open") return;
+  delete e.currentTarget.dataset.placed;
+  requestAnimationFrame(place);
 }

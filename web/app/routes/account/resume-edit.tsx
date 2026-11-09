@@ -244,7 +244,7 @@ function ResumeForm({ id, initial, title }: { id?: string; initial: Input_; titl
         </Panel>
       </div>
 
-      <div className="sticky bottom-0 z-20 -mx-4 mt-6 flex justify-end gap-2 border-t border-line bg-paper/90 px-4 py-4 backdrop-blur md:mx-0 md:rounded-panel md:border md:px-5">
+      <div className="sticky bottom-0 z-20 -mx-4 mt-6 flex justify-end gap-2 border-t border-line glass-bar px-4 py-4 md:mx-0 md:rounded-panel md:border md:px-5">
         <Button type="button" variant="ghost" onClick={() => navigate(-1)}>{t("common.cancel")}</Button>
         <Button type="submit" loading={pending}>{t("common.save")}</Button>
       </div>

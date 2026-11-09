@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Outlet, useNavigate, useSearchParams } from "react-router";
 
 import { useSession } from "~/shared/auth/session";
-import { GirihPattern } from "~/shared/brand/GirihPattern";
+import { DotPattern } from "~/shared/brand/DotPattern";
 import { localizedPath } from "~/shared/i18n/config";
 import { useLocale } from "~/shared/i18n/hooks";
 
@@ -27,7 +27,7 @@ export default function AuthLayout() {
 
   return (
     <div className="relative isolate flex min-h-[calc(100dvh-4rem)] justify-center px-4 py-12 md:py-20">
-      <GirihPattern className="-z-10" reveal={false} focus="ellipse 45% 55% at 50% 0%" />
+      <DotPattern className="-z-10" reveal={false} focus="ellipse 45% 55% at 50% 0%" />
       <div className="w-full max-w-md">
         <Outlet />
       </div>

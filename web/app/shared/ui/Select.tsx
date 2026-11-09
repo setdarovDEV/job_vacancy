@@ -3,7 +3,7 @@ import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState, t
 
 import { useTranslation } from "../i18n/i18n";
 import { cn } from "../lib/cn";
-import { placeUnder } from "./anchor";
+import { placeBeforePaint, placeUnder } from "./anchor";
 
 export type SelectOption = { value: string; label: string };
 export type SelectGroup = { label: string; options: SelectOption[] };
@@ -222,9 +222,10 @@ export const Select = forwardRef<HTMLButtonElement, Props>(function Select(
         ref={pop}
         id={popId}
         popover="auto"
+        onBeforeToggle={(e) => placeBeforePaint(e, place)}
         onToggle={onToggle}
         onKeyDown={onListKey}
-        className="popover-panel select-panel fixed inset-auto m-0 flex-col overflow-hidden [&:popover-open]:flex rounded-panel border border-line bg-surface p-1.5 text-ink shadow-pop"
+        className="popover-panel select-panel fixed inset-auto m-0 flex-col overflow-hidden [&:popover-open]:flex rounded-panel border border-line glass-float p-1.5 text-ink"
       >
         {searchable && (
           <label className="mb-1 flex h-10 shrink-0 items-center gap-2 rounded-control bg-sunken px-3">

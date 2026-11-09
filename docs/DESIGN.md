@@ -8,15 +8,16 @@ Token'lar: [`web/app/styles/app.css`](../web/app/styles/app.css). Komponentlar: 
 Platforma O'zbekiston bo'ylab hamma kasb egalari uchun: kassirdan dasturchigacha. Dizayn tinch va ishonchli, lekin
 shablon emas. Identitet Samarqand koshinlaridan olingan, bezak sifatida emas, tizim sifatida.
 
-**Bitta jasur element:** bosh sahifadagi girih (8 qirrali yulduz) naqshi. U sahifa ochilganda bir marta diagonal
+**Bitta jasur element:** bosh sahifadagi nuqtali to'r naqshi. U sahifa ochilganda bir marta diagonal
 bo'ylab paydo bo'ladi (bitta CSS mask animatsiyasi). Qolgan hamma joy sokin.
 
 ## Ranglar
 
 | Token | Yorug' | Qorong'i | Ma'nosi |
 |---|---|---|---|
-| `paper` | #F5F7FB | #0D1226 | sahifa foni (sovuq oq, krem emas) |
-| `surface` | #FFFFFF | #141A33 | panel, input |
+| `paper` | #EEF2FA | #0A0F22 | sahifa foni, ustida yumshoq rangli dog'lar (`--blob-*`) |
+| `surface` | oq 62% | #1E264A 50% | shisha panel, input (yarim shaffof) |
+| `glass-float` / `glass-bar` | oq 74% / 68% + blur | 76% / 62% + blur | suzuvchi qatlamlar / header va sticky panellar |
 | `ink` / `ink-2` / `ink-3` | #151A33 / #4B5272 / #6B7191 | #EDF0FA / #AAB1CE / #8A91B2 | matn darajalari |
 | `lapis` (lojuvard) | #1B3A8C | #8EA7FF | brend, asosiy tugma, havola |
 | `firuza` | #0E9F96 | #2BC4B8 | maosh, "tasdiqlangan", muvaffaqiyat |
@@ -41,13 +42,20 @@ Qoidalar:
 ## Shakl va joy
 
 - Radiuslar ierarxiyasi: control 12px → panel 18px → sheet 24px, chiplar to'liq yumaloq.
-- Kartochkalar soyasiz, chegara (`line`) bilan. Soya faqat suzuvchi elementlarda (`shadow-pop`: dialog, popover).
+- **Glassmorphism.** Fon: `body::before` dagi qotirilgan rangli dog'lar (bir marta chiziladi, scroll'da qayta chizilmaydi).
+  - Kartochkalar: yarim shaffof `surface`, ingichka chegara, yuqori qirrada yorug' chiziq va yumshoq soya. Kartochkalarda
+    `backdrop-filter` yo'q: uzun ro'yxatlarda o'nlab blur scroll'ni sekinlashtiradi.
+  - Blur faqat suzuvchi qatlamlarda (`glass-float`: menyu, select, popover, dialog, toast) va scroll ostida
+    qoladigan panellarda (`glass-bar`: header, sticky tugmalar paneli).
 - Ro'yxatlar "SaaS card kit" emas, bitta panel ichidagi qatorlar (hairline bilan ajratilgan).
 
 ## Harakat
 
 - Foydalanuvchi harakatiga javob beradi: ochilish, tanlash, tasdiqlash. Har bir bo'limda fade-up bo'lmaydi.
 - Radix va popover holatlari CSS animatsiyalari bilan (`anim-*`, `@starting-style`), main thread'ni band qilmaydi.
+- Native popover joylashuvi `beforetoggle` + `requestAnimationFrame` da, birinchi chizishdan oldin hisoblanadi
+  (`placeBeforePaint`). Joyiga qo'yilmagan panel ko'rinmaydi, shuning uchun ochilishda sakrash bo'lmaydi.
+- Dropdown menyular modal emas: scroll qulflanmaydi, sahifa yonga siljimaydi.
 - Motion faqat layout animatsiyalari uchun (tab ko'rsatkichi, toast) va o'sha komponentlar ichida lazy yuklanadi.
 - `prefers-reduced-motion`: hamma animatsiya bir zumda.
 

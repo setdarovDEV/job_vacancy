@@ -41,7 +41,7 @@ export function SiteHeader() {
       isActive ? "text-ink" : "text-ink-2 hover:text-ink");
 
   return (
-    <header className={cn("sticky top-0 z-40 border-b bg-paper transition-colors duration-200", scrolled ? "border-line" : "border-transparent")}>
+    <header className={cn("sticky top-0 z-40 border-b glass-bar transition-colors duration-200", scrolled ? "border-line" : "border-transparent")}>
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-50 focus:rounded-control focus:bg-surface focus:px-3 focus:py-2">
         {t("nav.skipToContent")}
       </a>

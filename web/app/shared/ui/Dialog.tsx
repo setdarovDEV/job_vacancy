@@ -21,11 +21,11 @@ type ContentProps = {
 export function DialogContent({ title, description, closeLabel, children, footer, className }: ContentProps) {
   return (
     <D.Portal>
-      <D.Overlay className="anim-overlay fixed inset-0 z-50 bg-overlay" />
+      <D.Overlay className="anim-overlay fixed inset-0 z-50 bg-overlay backdrop-blur-[3px]" />
       <D.Content
         className={cn(
           "anim-dialog fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2",
-          "rounded-sheet border border-line bg-surface p-6 shadow-pop outline-none",
+          "rounded-sheet border border-line glass-float p-6 outline-none",
           className,
         )}
       >
@@ -49,10 +49,10 @@ export function DialogContent({ title, description, closeLabel, children, footer
 export function SheetContent({ title, description, closeLabel, children, footer, className }: ContentProps) {
   return (
     <D.Portal>
-      <D.Overlay className="anim-overlay fixed inset-0 z-50 bg-overlay" />
+      <D.Overlay className="anim-overlay fixed inset-0 z-50 bg-overlay backdrop-blur-[3px]" />
       <D.Content
         className={cn(
-          "fixed z-50 flex flex-col bg-surface shadow-pop outline-none",
+          "fixed z-50 flex flex-col glass-float outline-none",
           "inset-x-0 bottom-0 max-h-[88dvh] rounded-t-sheet anim-sheet-up",
           "md:inset-y-0 md:left-auto md:right-0 md:max-h-none md:w-[26rem] md:rounded-none md:rounded-l-sheet md:anim-sheet-right",
           className,

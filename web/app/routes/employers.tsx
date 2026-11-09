@@ -2,7 +2,7 @@ import { Check, Languages, MessagesSquare, Sparkles, SquareKanban, UsersRound } 
 
 import type { Route } from "./+types/employers";
 import { useSession } from "~/shared/auth/session";
-import { GirihPattern } from "~/shared/brand/GirihPattern";
+import { DotPattern } from "~/shared/brand/DotPattern";
 import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { metaT } from "~/shared/seo/meta";
@@ -29,7 +29,7 @@ export default function Employers() {
   return (
     <>
       <section className="relative isolate overflow-hidden">
-        <GirihPattern className="-z-10" focus="ellipse 50% 80% at 90% 20%" />
+        <DotPattern className="-z-10" focus="ellipse 50% 80% at 90% 20%" />
         <div className="container-page pb-16 pt-14 md:pb-24 md:pt-24">
           <h1 className="max-w-[18ch] text-balance font-display text-[2.1rem] font-semibold leading-[1.08] tracking-[-0.035em] text-ink sm:text-4xl md:text-5xl">
             {t("employers.title")}

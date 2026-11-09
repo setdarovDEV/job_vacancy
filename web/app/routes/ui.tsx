@@ -2,7 +2,7 @@ import { Bell, BriefcaseBusiness, Building2, Clock, Eye, Heart, MapPin, Plus, Se
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "~/shared/i18n/i18n";
 
-import { GirihPattern } from "~/shared/brand/GirihPattern";
+import { DotPattern } from "~/shared/brand/DotPattern";
 import { Logo, LogoMark } from "~/shared/brand/Logo";
 import { useLocale } from "~/shared/i18n/hooks";
 import { relativeTime, salary } from "~/shared/lib/format";
@@ -83,7 +83,7 @@ export default function UI() {
   return (
     <div className="container-page py-12">
       <div className="relative isolate mb-4 overflow-hidden rounded-sheet border border-line bg-surface px-6 py-12 md:px-10">
-        <GirihPattern className="-z-10" focus="ellipse 50% 80% at 90% 40%" />
+        <DotPattern className="-z-10" focus="ellipse 50% 80% at 90% 40%" />
         <Logo />
         <h1 className="mt-6 max-w-[18ch] font-display text-3xl font-semibold tracking-[-0.035em] md:text-4xl">Job Vacancy dizayn tizimi</h1>
         <p className="mt-3 max-w-xl text-ink-2">Ranglar Samarqand koshinlaridan: lojuvard, firuza, za'faron va anor. Sarlavhalar Unbounded, matn Onest.</p>

@@ -97,7 +97,7 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] UI kit: Button, Field/Input/Textarea, Select, Chip, Badge, Avatar, Switch/Checkbox/Radio, Dialog/Sheet,
         Menu, Popover, Tooltip, Tabs, Toast, Skeleton, EmptyState; header/footer, til va mavzu almashtirgichlar
   - [x] 4 til URL prefiks bilan, o'z tarjimon (plural), pul/maosh/nisbiy vaqt formatlash
-  - [x] Bosh sahifa hero'si (girih naqshi, qidiruv), `/ui` ko'rgazma sahifasi
+  - [x] Bosh sahifa hero'si (nuqtali to'r naqshi, qidiruv), `/ui` ko'rgazma sahifasi
   - [x] Bosh sahifa JS+CSS 145 KB gzip; 19 ta brauzer testi (Playwright), hydration xatosiz
 - [x] **7. Web: sahifalar**
   - [x] Vakansiyalar: SSR qidiruv, filtrlar (desktop yon panel, mobil sheet), URL'da holat, "yana ko'rsatish", saqlash (yurakcha), qidiruvni saqlash
