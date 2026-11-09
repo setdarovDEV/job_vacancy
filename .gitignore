@@ -37,3 +37,7 @@ mobile/android/.gradle/
 nginx/ssl/live/
 nginx/ssl/archive/
 nginx/backups/
+
+# Local agent tooling (claude-flow / ruvector state)
+.claude-flow/
+ruvector.db
