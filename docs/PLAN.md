@@ -125,7 +125,13 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] D: statistika: 7/30/90 kunlik grafiklar (yangi ish izlovchi/beruvchi, e'lon qilingan vakansiyalar, arizalar,
         shikoyatlar; oldingi davrga nisbatan %), eng faol sohalar va hududlar, arizalar voronkasi; Toshkent kuni bo'yicha,
         Redis'da 5 daqiqa kesh; grafik kutubxonasisiz SVG (tooltip, klaviatura, ekran o'quvchi uchun jadval); `stats.sh`, `shots-j.mjs`
-- [ ] **9. Mobile (Flutter)**
+- [ ] **9. Mobile (Flutter)** — birinchi versiya ish izlovchilar uchun, Android + iOS ([mobile/README.md](../mobile/README.md))
+  - [x] 9A Poydevor: Riverpod + go_router + dio, envelope/ApiException, mobil refresh rotation (single-flight, secure storage),
+        web token'laridagi dizayn tizimi (yorug'/qorong'i), 4 til (web matnlaridan generatsiya), kirish/ro'yxatdan o'tish/email
+        va telefon tasdiqlash/parolni tiklash, pastki navigatsiya, profil; 31 ta unit/widget test, emulatorda e2e (`integration_test/`)
+  - [ ] 9B Vakansiyalar: qidiruv, filtrlar, vakansiya sahifasi, saqlash
+  - [ ] 9C Ariza va rezyume: rezyume konstruktori, ariza yuborish, arizalarim
+  - [ ] 9D Chat va bildirishnomalar: WebSocket chat, FCM push
 - [ ] **10. AI moduli + kreditlar** (to'lov "Tez kunda")
 - [ ] **11. Deploy:** nginx conf, SSL, prod compose, CI/CD, monitoring, backup
   - Postgres: `random_page_cost=1.1` (SSD) majburiy, aks holda keng qidiruvlar GIN indeksni chetlab o'tadi

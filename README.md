@@ -7,7 +7,7 @@ arizalar, real-time chat, AI yordamchilar.
 |---|---|---|
 | Backend | Go 1.27, chi, pgx + sqlc, River, Redis | [`backend/`](backend) |
 | Web | React 19 + Vite + TypeScript (SSR) | [`web/`](web) |
-| Mobile | Flutter | [`mobile/`](mobile) |
+| Mobile | Flutter 3.35 (ish izlovchilar uchun, Android + iOS) | [`mobile/`](mobile) |
 | Database | PostgreSQL 18 | [`backend/db/`](backend/db) |
 | Deploy | Nginx, Docker Compose, SSL, monitoring | [`nginx/`](nginx) |
 
@@ -22,6 +22,7 @@ make setup     # Postgres, Redis, MinIO, Mailpit + .env + migratsiyalar
 make api       # API  → http://localhost:8090
 make worker    # fon vazifalar (email yuborish va h.k.) — alohida terminalda
 make web       # sayt → http://localhost:5180
+cd mobile && flutter run   # mobil ilova (Android emulator), batafsil: mobile/README.md
 ```
 
 | Servis | Manzil |

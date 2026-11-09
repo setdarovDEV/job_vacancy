@@ -1,0 +1,201 @@
+{
+  "@@locale": "uz",
+  "accountCandidates": "Nomzodlar qidirish",
+  "accountDashboard": "Kabinet",
+  "accountMenu": "Hisob menyusi",
+  "accountMyResumes": "Rezyumelarim",
+  "accountMyVacancies": "Vakansiyalarim",
+  "accountNotifications": "Bildirishnomalar",
+  "accountSearches": "Saqlangan qidiruvlar",
+  "accountSettings": "Sozlamalar",
+  "appCheckFields": "Belgilangan maydonlarni tekshiring.",
+  "appComingSoonBody": "Bu bo'lim ilovaning keyingi yangilanishida chiqadi.",
+  "appComingSoonTitle": "Tez kunda",
+  "appEmployerBody": "Ilovaning birinchi versiyasi ish izlovchilar uchun. Vakansiya joylash va arizalarni ko'rish uchun jobvacancy.uz saytidan foydalaning.",
+  "appEmployerTitle": "Ish beruvchi vositalari saytda",
+  "appGetStarted": "Boshlash",
+  "appPhoneTitle": "Telefonni tasdiqlash",
+  "appSignOutAll": "Hamma qurilmalardan chiqish",
+  "appSkip": "O'tkazib yuborish",
+  "appUnverified": "Tasdiqlanmagan",
+  "appWelcomeBody": "Toshkentdan Nukusgacha, kassirdan dasturchigacha. Vakansiyalar har kuni yangilanadi.",
+  "appWelcomeTitle": "Ish va xodimlar bir joyda",
+  "authAgree": "Hisob ochib, foydalanish shartlari va maxfiylik siyosatiga rozilik bildirasiz.",
+  "authCode": "Tasdiqlash kodi",
+  "authCodeSent": "Yangi kod yuborildi",
+  "authForgot": "Parolni unutdingizmi?",
+  "authForgotBody": "Emailingizni kiriting, tiklash kodini yuboramiz.",
+  "authForgotTitle": "Parolni tiklash",
+  "authFullName": "Ism va familiya",
+  "authGoogle": "Google orqali davom etish",
+  "authHaveAccount": "Hisobingiz bormi?",
+  "authLater": "Keyinroq",
+  "authLoginSubtitle": "Arizalar, xabarlar va saqlangan vakansiyalar shu yerda.",
+  "authLoginTitle": "Tizimga kirish",
+  "authNewPassword": "Yangi parol",
+  "authNoAccount": "Hisobingiz yo'qmi?",
+  "authOr": "yoki",
+  "authPasswordHint": "Kamida 8 belgi, harf va raqam bilan",
+  "authRegisterSubtitle": "Hisob ochish bir daqiqa oladi.",
+  "authRegisterTitle": "Ro'yxatdan o'tish",
+  "authResend": "Kodni qayta yuborish",
+  "authResendIn": "Qayta yuborish: {s} s",
+  "@authResendIn": {
+    "placeholders": {
+      "s": {
+        "type": "String"
+      }
+    }
+  },
+  "authResetBody": "{email} manziliga yuborilgan kodni va yangi parolni kiriting.",
+  "@authResetBody": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "authResetDone": "Parol yangilandi. Yangi parol bilan kiring.",
+  "authResetSubmit": "Parolni saqlash",
+  "authResetTitle": "Yangi parol o'rnating",
+  "authRoleEmployer": "Xodim qidiryapman",
+  "authRoleEmployerHint": "Vakansiya joylang, nomzod toping",
+  "authRoleQuestion": "Nima uchun kerak?",
+  "authRoleSeeker": "Ish qidiryapman",
+  "authRoleSeekerHint": "Rezyume yarating, ariza yuboring",
+  "authSendCode": "Kod yuborish",
+  "authSignedOut": "Tizimdan chiqdingiz",
+  "authSubmitLogin": "Kirish",
+  "authSubmitRegister": "Hisob ochish",
+  "authVerified": "Email tasdiqlandi",
+  "authVerifyBody": "{email} manziliga 6 xonali kod yubordik. Kod 15 daqiqa amal qiladi.",
+  "@authVerifyBody": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "authVerifySubmit": "Tasdiqlash",
+  "authVerifyTitle": "Emailingizni tasdiqlang",
+  "authWelcome": "Xush kelibsiz, {name}!",
+  "@authWelcome": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "brandName": "Job Vacancy",
+  "brandTagline": "O'zbekistondagi ishlar va xodimlar",
+  "commonApply": "Ariza yuborish",
+  "commonBack": "Orqaga",
+  "commonCancel": "Bekor qilish",
+  "commonClear": "Tozalash",
+  "commonClose": "Yopish",
+  "commonDelete": "O'chirish",
+  "commonDone": "Tayyor",
+  "commonEdit": "Tahrirlash",
+  "commonFeatured": "TOP",
+  "commonFilters": "Filtrlar",
+  "commonLoading": "Yuklanmoqda",
+  "commonMore": "Yana",
+  "commonNoResults": "Hech narsa topilmadi",
+  "commonOpen": "Ochish",
+  "commonOptional": "ixtiyoriy",
+  "commonRetry": "Qayta urinish",
+  "commonSave": "Saqlash",
+  "commonSaved": "Saqlandi",
+  "commonSearch": "Qidirish",
+  "commonShowAll": "Hammasini ko'rish",
+  "commonSoon": "Tez kunda",
+  "commonVerified": "Tasdiqlangan",
+  "errorsInternalError": "Serverda xatolik yuz berdi. Birozdan keyin qayta urinib ko'ring.",
+  "errorsNetwork": "Server bilan aloqa yo'q. Internetni tekshirib, qayta urinib ko'ring.",
+  "errorsNotFound": "Sahifa topilmadi",
+  "errorsNotFoundBody": "Havola eskirgan yoki manzilda xato bor.",
+  "errorsRateLimited": "So'rovlar juda ko'p. {seconds} soniyadan keyin qayta urinib ko'ring.",
+  "@errorsRateLimited": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "errorsToHome": "Bosh sahifaga",
+  "errorsUnauthorized": "Davom etish uchun tizimga kiring.",
+  "formEmail": "Email",
+  "formHidePassword": "Parolni yashirish",
+  "formPassword": "Parol",
+  "formShowPassword": "Parolni ko'rsatish",
+  "languageLabel": "Til",
+  "navApplications": "Arizalarim",
+  "navCandidates": "Nomzodlar",
+  "navCompanies": "Kompaniyalar",
+  "navForEmployers": "Ish beruvchilarga",
+  "navMenu": "Menyu",
+  "navMessages": "Xabarlar",
+  "navPostVacancy": "Vakansiya joylash",
+  "navProfile": "Profil",
+  "navSaved": "Saqlanganlar",
+  "navSignIn": "Kirish",
+  "navSignOut": "Chiqish",
+  "navSignUp": "Ro'yxatdan o'tish",
+  "navSkipToContent": "Asosiy qismga o'tish",
+  "navVacancies": "Vakansiyalar",
+  "settingsByEmail": "Email",
+  "settingsByEmailHint": "Arizalar holati, takliflar va yangi vakansiyalar",
+  "settingsByTelegram": "Telegram",
+  "settingsChangePassword": "Parolni o'zgartirish",
+  "settingsChangePhoto": "Rasmni almashtirish",
+  "settingsContacts": "Aloqa",
+  "settingsContactsHint": "Tasdiqlangan email yoki telefon ariza yuborish uchun kerak.",
+  "settingsCurrentPassword": "Joriy parol",
+  "settingsDevCode": "Test rejimi: Telegram ulanmagan, kod shu yerda ko'rsatiladi va avtomatik yozildi:",
+  "settingsLanguage": "Xabarlar tili",
+  "settingsLanguageHint": "Email va Telegram xabarlari shu tilda keladi.",
+  "settingsNotifyHint": "Yangi arizalar, taklif va xabarlar qayerga kelsin.",
+  "settingsPassword": "Parol",
+  "settingsPasswordChanged": "Parol o'zgartirildi",
+  "settingsPasswordHint": "Parol o'zgarsa, boshqa qurilmalardagi seanslar yopiladi.",
+  "settingsPasswordNone": "Siz Google orqali kirasiz. Email bilan ham kirish uchun parol o'rnating.",
+  "settingsPhone": "Telefon raqami",
+  "settingsPhoneCodeSent": "{phone} raqamiga Telegram orqali kod yubordik.",
+  "@settingsPhoneCodeSent": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPhoneHint": "Kod SMS emas, Telegram'dagi «Verification Codes» chatiga keladi.",
+  "settingsPhoneVerified": "Telefon raqami tasdiqlandi",
+  "settingsProfile": "Profil",
+  "settingsProfileHint": "Ish beruvchilar ismingiz va rasmingizni ko'radi.",
+  "settingsSendTelegramCode": "Telegram orqali kod olish",
+  "settingsSessions": "Qurilmalar",
+  "settingsSessionsHint": "Hisobingizga kirilgan qurilmalar. Tanimaganingizni o'chiring.",
+  "settingsSignOutDevice": "Shu qurilmadan chiqish",
+  "settingsSignOutOthers": "Boshqa barcha qurilmalardan chiqish",
+  "settingsTelegramLink": "Telegram'ni ulash",
+  "settingsTelegramLinked": "Telegram ulandi",
+  "settingsTelegramOff": "Avval Telegram'ni ulang",
+  "settingsTelegramOn": "{bot} boti orqali",
+  "@settingsTelegramOn": {
+    "placeholders": {
+      "bot": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsTelegramUnlink": "Telegram'ni uzish",
+  "settingsTelegramWaiting": "Telegram'da «Start» ni bosing…",
+  "settingsThisDevice": "Shu qurilma",
+  "settingsUploadFailed": "Rasmni yuklab bo'lmadi. Qayta urinib ko'ring.",
+  "settingsUploadPhoto": "Rasm yuklash",
+  "settingsVerify": "Tasdiqlash",
+  "themeDark": "Qorong'i",
+  "themeLabel": "Mavzu",
+  "themeLight": "Yorug'",
+  "themeSystem": "Avtomatik"
+}
