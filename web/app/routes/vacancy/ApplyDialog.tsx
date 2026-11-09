@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { api, dataOf, type Schemas } from "~/shared/api/client";
 import { useSession, withAuth } from "~/shared/auth/session";
+import { useNeedsVerification, VerifyContactCard } from "~/shared/account/ContactVerification";
 import { FormError } from "~/shared/forms/FormError";
 import { useSubmit } from "~/shared/forms/useSubmit";
 import { LocalizedLink } from "~/shared/i18n/hooks";
@@ -26,6 +27,7 @@ export default function ApplyDialog({
   const [letter, setLetter] = useState("");
   const [done, setDone] = useState<"sent" | "already" | null>(null);
   const { pending, error, fields, run } = useSubmit();
+  const needsVerification = useNeedsVerification();
 
   useEffect(() => {
     if (status !== "authed" || user?.role !== "seeker") return;
@@ -74,6 +76,7 @@ export default function ApplyDialog({
         <Button asChild variant="secondary" className="mt-6"><LocalizedLink to="/me/applications">{t("apply.openApplications")}</LocalizedLink></Button>
       </div>
     );
+  else if (needsVerification) body = <VerifyContactCard reason={t("verifyGate.apply")} />;
   else if (!resumes) body = <Loading />;
   else if (resumes.length === 0)
     body = (

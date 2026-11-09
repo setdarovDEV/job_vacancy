@@ -54,6 +54,9 @@ type Service struct {
 	Limiter    *ratelimit.Limiter
 	RefreshTTL time.Duration
 	Log        *slog.Logger
+	// ExposeDevCodes returns phone codes in the API response (test mode: no Telegram
+	// gateway token). Config refuses to start production without a token.
+	ExposeDevCodes bool
 }
 
 // ClientMeta describes the device a session is created from.
@@ -475,34 +478,40 @@ func (s *Service) sendEmailCode(ctx context.Context, p otp.Purpose, subject, to,
 
 // ---- phone verification via Telegram -------------------------------------------------------
 
-func (s *Service) SendPhoneCode(ctx context.Context, userID uuid.UUID, rawPhone string) (string, error) {
-	num, err := phone.Normalize(rawPhone)
+// SendPhoneCode issues a code for rawPhone and sends it through Telegram. It returns the
+// normalized number and, only when ExposeDevCodes is set (no gateway token outside
+// production), the code itself so the UI can show it.
+func (s *Service) SendPhoneCode(ctx context.Context, userID uuid.UUID, rawPhone string) (num, devCode string, err error) {
+	num, err = phone.Normalize(rawPhone)
 	if err != nil {
-		return "", ErrPhoneInvalid
+		return "", "", ErrPhoneInvalid
 	}
 	taken, err := s.Q.IsPhoneTaken(ctx, gen.IsPhoneTakenParams{Phone: &num, ID: userID})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if taken {
-		return "", ErrPhoneTaken
+		return "", "", ErrPhoneTaken
 	}
 	code, err := s.OTP.Issue(ctx, otp.PhoneVerify, userID.String(),
 		otp.IssueOptions{TTL: phoneCodeTTL, Cooldown: codeCooldown, Payload: num})
 	if err != nil {
-		return "", otpError(err)
+		return "", "", otpError(err)
 	}
 	// Sent synchronously so the user learns immediately if the number has no Telegram.
 	sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if err := s.Phone.SendCode(sendCtx, num, code, phoneCodeTTL); err != nil {
 		if errors.Is(err, telegram.ErrCannotSend) {
-			return "", ErrPhoneNoTelegram
+			return "", "", ErrPhoneNoTelegram
 		}
 		s.Log.ErrorContext(ctx, "telegram gateway failed", "err", err)
-		return "", ErrDeliveryFailed
+		return "", "", ErrDeliveryFailed
 	}
-	return num, nil
+	if s.ExposeDevCodes {
+		devCode = code
+	}
+	return num, devCode, nil
 }
 
 func (s *Service) VerifyPhone(ctx context.Context, userID uuid.UUID, code string) (gen.User, error) {

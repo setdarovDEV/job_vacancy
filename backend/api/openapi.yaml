@@ -540,6 +540,7 @@ paths:
                       phone: { type: string, description: normalized E.164 }
                       channel: { type: string, const: telegram }
                       expires_in: { type: integer, description: seconds }
+                      dev_code: { type: string, description: "Test mode only (no Telegram gateway token, never in production): the code itself." }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }

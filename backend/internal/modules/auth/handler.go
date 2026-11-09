@@ -254,14 +254,16 @@ func (h *Handler) sendPhoneCode(w http.ResponseWriter, r *http.Request) {
 	if !response.DecodeValid(w, r, &req) {
 		return
 	}
-	num, err := h.Svc.SendPhoneCode(r.Context(), p.UserID, req.Phone)
+	num, devCode, err := h.Svc.SendPhoneCode(r.Context(), p.UserID, req.Phone)
 	if err != nil {
 		response.Error(w, r, err)
 		return
 	}
-	response.JSON(w, http.StatusAccepted, map[string]any{
-		"phone": num, "channel": "telegram", "expires_in": int(phoneCodeTTL.Seconds()),
-	})
+	body := map[string]any{"phone": num, "channel": "telegram", "expires_in": int(phoneCodeTTL.Seconds())}
+	if devCode != "" {
+		body["dev_code"] = devCode
+	}
+	response.JSON(w, http.StatusAccepted, body)
 }
 
 func (h *Handler) verifyPhone(w http.ResponseWriter, r *http.Request) {

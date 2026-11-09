@@ -220,7 +220,7 @@ const en: Messages = {
     language: "Notification language", languageHint: "Emails and Telegram messages arrive in this language.",
     verify: "Verify", phone: "Phone number",
     phoneHint: "The code comes to the \"Verification Codes\" chat in Telegram, not by SMS.",
-    phoneCodeSent: "We sent a code to {{phone}} via Telegram.", phoneVerified: "Phone number verified",
+    phoneCodeSent: "We sent a code to {{phone}} via Telegram.", devCode: "Test mode: Telegram isn't connected, so the code is shown here and filled in:", phoneVerified: "Phone number verified",
     sendTelegramCode: "Get a code in Telegram",
     byEmail: "Email", byEmailHint: "Application updates, invitations and new jobs",
     byTelegram: "Telegram", telegramOn: "via the {{bot}} bot", telegramOff: "Connect Telegram first",
@@ -287,6 +287,12 @@ const en: Messages = {
     searchAlert: "{{count}} new jobs for \"{{search}}\"",
     markAll: "Mark all as read", unread: "Unread",
     emptyTitle: "No notifications", emptyBody: "Application updates and invitations will show up here.",
+  },
+  verifyGate: {
+    title: "Confirm your email or phone first",
+    company: "Creating a company needs a confirmed email or phone number. You can confirm it right here; it takes a minute.",
+    publish: "Publishing a job needs a confirmed email or phone number. You can still save it as a draft.",
+    apply: "Applying needs a confirmed email or phone number.",
   },
   employer: {
     noCompany: "Create your company profile first.", createCompany: "Create company",

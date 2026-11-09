@@ -220,7 +220,7 @@ const uzCyrl: Messages = {
     language: "Хабарлар тили", languageHint: "Email ва Telegram хабарлари шу тилда келади.",
     verify: "Тасдиқлаш", phone: "Телефон рақами",
     phoneHint: "Код SMS эмас, Telegram'даги «Verification Codes» чатига келади.",
-    phoneCodeSent: "{{phone}} рақамига Telegram орқали код юбордик.", phoneVerified: "Телефон рақами тасдиқланди",
+    phoneCodeSent: "{{phone}} рақамига Telegram орқали код юбордик.", devCode: "Тест режими: Telegram уланмаган, код шу ерда кўрсатилади ва автоматик ёзилди:", phoneVerified: "Телефон рақами тасдиқланди",
     sendTelegramCode: "Telegram орқали код олиш",
     byEmail: "Email", byEmailHint: "Аризалар ҳолати, таклифлар ва янги вакансиялар",
     byTelegram: "Telegram", telegramOn: "{{bot}} боти орқали", telegramOff: "Аввал Telegram'ни уланг",
@@ -287,6 +287,12 @@ const uzCyrl: Messages = {
     searchAlert: "«{{search}}» бўйича {{count}} та янги вакансия",
     markAll: "Ҳаммасини ўқилган қилиш", unread: "Ўқилмаган",
     emptyTitle: "Билдиришнома йўқ", emptyBody: "Аризаларингиз ҳолати ўзгарса ёки таклиф келса, шу ерда кўрасиз.",
+  },
+  verifyGate: {
+    title: "Аввал email ёки телефонингизни тасдиқланг",
+    company: "Компания яратиш учун тасдиқланган email ёки телефон рақами керак. Шу ернинг ўзида тасдиқлашингиз мумкин, бу бир дақиқа олади.",
+    publish: "Вакансияни эълон қилиш учун тасдиқланган email ёки телефон рақами керак. Қоралама сифатида сақлаш мумкин.",
+    apply: "Ариза юбориш учун тасдиқланган email ёки телефон рақами керак.",
   },
   employer: {
     noCompany: "Аввал компания профилини яратинг.", createCompany: "Компания яратиш",

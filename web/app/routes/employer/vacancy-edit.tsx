@@ -10,6 +10,7 @@ import { withAuth } from "~/shared/auth/session";
 import { nameOf, useCatalog } from "~/shared/catalog/catalog";
 import { FormError } from "~/shared/forms/FormError";
 import { TagInput } from "~/shared/forms/TagInput";
+import { VerifyContactCard } from "~/shared/account/ContactVerification";
 import { useSubmit } from "~/shared/forms/useSubmit";
 import { localizedPath } from "~/shared/i18n/config";
 import { LocalizedLink, useLocale } from "~/shared/i18n/hooks";
@@ -104,6 +105,7 @@ function VacancyForm({ companyId, verified, existing }: { companyId: string; ver
   return (
     <form onSubmit={(e) => { e.preventDefault(); save(true); }}>
       <PageHeader title={existing ? t("employer.editVacancy") : t("nav.postVacancy")} description={t("employer.formHint")} />
+      <VerifyContactCard reason={t("verifyGate.publish")} className="mb-4" />
       <FormError>{error}</FormError>
       <div className="mt-4 flex flex-col gap-4">
         <Panel title={t("employer.what")}>
@@ -168,7 +170,7 @@ function VacancyForm({ companyId, verified, existing }: { companyId: string; ver
         </Panel>
       </div>
 
-      <div className="sticky bottom-0 z-20 -mx-4 mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-line bg-paper/90 px-4 py-4 backdrop-blur md:mx-0 md:rounded-panel md:border md:px-5">
+      <div className="sticky bottom-0 z-20 -mx-4 mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-line glass-bar px-4 py-4 md:mx-0 md:rounded-panel md:border md:px-5">
         {!live && !verified && <p className="mr-auto hidden text-xs text-ink-3 sm:block">{t("employer.moderationNote")}</p>}
         {!live && <Button type="button" variant="ghost" loading={pending && !publishing} onClick={() => save(false)}>{t("employer.saveDraft")}</Button>}
         <Button type="submit" loading={pending && publishing}>{live ? t("common.save") : t("employer.publish")}</Button>

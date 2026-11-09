@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 
 import { EmployerOnly } from "./EmployerOnly";
 import { useMyCompany, type Company } from "./company-hook";
+import { useNeedsVerification, VerifyContactCard } from "~/shared/account/ContactVerification";
 import { api, type Schemas } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
 import { useSession, withAuth } from "~/shared/auth/session";
@@ -47,6 +48,7 @@ function Page() {
           </Button>
         )}
       />
+      {!company && <VerifyContactCard reason={t("verifyGate.company")} className="mb-4" />}
       <div className="rounded-sheet border border-line bg-surface px-5 py-8 md:px-8">
         {company && (
           <Section title={t("employer.logo")} description={t("employer.logoHint")}>
@@ -81,6 +83,7 @@ function CompanyForm({ company, disabled }: { company: Company | null; disabled:
   }));
   const set = <K extends keyof CompanyInput>(k: K, v: CompanyInput[K]) => setF((s) => ({ ...s, [k]: v }));
   const { pending, error, fields, run } = useSubmit();
+  const needsVerification = useNeedsVerification();
   const blank = (v?: string) => (v?.trim() ? v.trim() : undefined);
 
   const submit = (e: React.FormEvent) => {
@@ -135,7 +138,7 @@ function CompanyForm({ company, disabled }: { company: Company | null; disabled:
           <Textarea rows={5} maxLength={5000} value={f.about ?? ""} onChange={(e) => set("about", e.target.value)} />
         </Field>
         <div>
-          <Button type="submit" loading={pending}>{company ? t("common.save") : t("employer.createCompany")}</Button>
+          <Button type="submit" loading={pending} disabled={!company && needsVerification}>{company ? t("common.save") : t("employer.createCompany")}</Button>
         </div>
       </fieldset>
     </form>

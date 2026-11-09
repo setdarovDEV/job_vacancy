@@ -409,6 +409,8 @@ export interface paths {
                                 channel?: "telegram";
                                 /** @description seconds */
                                 expires_in?: number;
+                                /** @description Test mode only (no Telegram gateway token, never in production): the code itself. */
+                                dev_code?: string;
                             };
                         };
                     };

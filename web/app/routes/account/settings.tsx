@@ -1,16 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, Camera, Laptop, Send, Smartphone, Trash2 } from "lucide-react";
+import { Camera, Laptop, Send, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { ContactVerification } from "~/shared/account/ContactVerification";
 import { api, type Schemas } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
 import { updateUser, useSession, withAuth } from "~/shared/auth/session";
-import { CodeInput } from "~/shared/forms/CodeInput";
 import { FormError } from "~/shared/forms/FormError";
 import { PasswordInput } from "~/shared/forms/PasswordInput";
 import { useSubmit } from "~/shared/forms/useSubmit";
 import { localeNames, locales, type Locale } from "~/shared/i18n/config";
-import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { relativeTime } from "~/shared/lib/format";
 import { ApiFailure, authed } from "~/shared/query/query";
@@ -39,7 +38,7 @@ export default function Settings() {
           <ProfileForm user={user} />
         </Section>
         <Section title={t("settings.contacts")} description={t("settings.contactsHint")}>
-          <Contacts user={user} />
+          <ContactVerification user={user} />
         </Section>
         <Section id="notifications" title={t("account.notifications")} description={t("settings.notifyHint")}>
           <NotificationSettings />
@@ -125,97 +124,6 @@ function ProfileForm({ user }: { user: User }) {
       </Field>
       <div>
         <Button type="submit" loading={pending}>{t("common.save")}</Button>
-      </div>
-    </form>
-  );
-}
-
-function Contacts({ user }: { user: User }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex max-w-md flex-col gap-6">
-      <div>
-        <p className="text-sm font-medium text-ink">{t("form.email")}</p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <span className="text-ink-2">{user.email ?? "—"}</span>
-          {user.email && (user.email_verified
-            ? <Badge tone="firuza"><BadgeCheck className="size-3.5" />{t("common.verified")}</Badge>
-            : <LocalizedLink to={`/verify-email?email=${encodeURIComponent(user.email)}&next=/me`} className="text-sm font-medium text-lapis-ink hover:underline">{t("settings.verify")}</LocalizedLink>)}
-        </div>
-      </div>
-      <PhoneVerify user={user} />
-    </div>
-  );
-}
-
-/** Phone confirmation: the code arrives in Telegram's "Verification Codes" chat. */
-function PhoneVerify({ user }: { user: User }) {
-  const { t } = useTranslation();
-  const [editing, setEditing] = useState(!user.phone_verified);
-  const [phone, setPhone] = useState(user.phone ?? "+998 ");
-  const [sentTo, setSentTo] = useState<string | null>(null);
-  const [code, setCode] = useState("");
-  const send = useSubmit();
-  const verify = useSubmit();
-
-  if (!editing) {
-    return (
-      <div>
-        <p className="text-sm font-medium text-ink">{t("settings.phone")}</p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <span className="num text-ink-2">{user.phone}</span>
-          <Badge tone="firuza"><BadgeCheck className="size-3.5" />{t("common.verified")}</Badge>
-          <button type="button" className="text-sm font-medium text-lapis-ink hover:underline" onClick={() => setEditing(true)}>{t("common.edit")}</button>
-        </div>
-      </div>
-    );
-  }
-
-  if (sentTo) {
-    return (
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void verify.run(
-            () => withAuth(() => api.POST("/auth/phone/verify", { body: { code } })),
-            (res) => {
-              if (res.data?.data) updateUser(res.data.data);
-              setEditing(false);
-              setSentTo(null);
-              toast({ tone: "success", title: t("settings.phoneVerified") });
-            },
-          );
-        }}
-      >
-        <p className="text-sm text-ink-2">{t("settings.phoneCodeSent", { phone: sentTo })}</p>
-        <FormError>{verify.error}</FormError>
-        <CodeInput value={code} onChange={setCode} label={t("auth.code")} />
-        <div className="flex gap-2">
-          <Button type="submit" loading={verify.pending} disabled={code.length !== 6}>{t("auth.verifySubmit")}</Button>
-          <Button type="button" variant="ghost" onClick={() => { setSentTo(null); setCode(""); }}>{t("common.back")}</Button>
-        </div>
-      </form>
-    );
-  }
-
-  return (
-    <form
-      className="flex flex-col gap-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void send.run(
-          () => withAuth(() => api.POST("/auth/phone/send-code", { body: { phone } })),
-          (res) => setSentTo((res.data?.data?.phone as string | undefined) ?? phone),
-        );
-      }}
-    >
-      <Field label={t("settings.phone")} hint={t("settings.phoneHint")} error={send.fields.phone ?? send.error ?? undefined}>
-        <Input type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="num" />
-      </Field>
-      <div className="flex gap-2">
-        <Button type="submit" variant="secondary" icon={<Send className="size-4" />} loading={send.pending}>{t("settings.sendTelegramCode")}</Button>
-        {user.phone_verified && <Button type="button" variant="ghost" onClick={() => setEditing(false)}>{t("common.cancel")}</Button>}
       </div>
     </form>
   );

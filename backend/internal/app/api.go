@@ -83,16 +83,17 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	limiter := ratelimit.New(rdb)
 
 	authSvc := &auth.Service{
-		Q:          q,
-		Tokens:     tokens,
-		OTP:        otp.NewStore(rdb, cfg.Auth.JWTSecret),
-		Revoked:    revoked,
-		Emails:     enq,
-		Phone:      phoneSender,
-		Google:     google,
-		Limiter:    limiter,
-		RefreshTTL: cfg.Auth.RefreshTokenTTL,
-		Log:        log,
+		Q:              q,
+		Tokens:         tokens,
+		OTP:            otp.NewStore(rdb, cfg.Auth.JWTSecret),
+		Revoked:        revoked,
+		Emails:         enq,
+		Phone:          phoneSender,
+		Google:         google,
+		Limiter:        limiter,
+		RefreshTTL:     cfg.Auth.RefreshTokenTTL,
+		Log:            log,
+		ExposeDevCodes: cfg.Telegram.GatewayToken == "" && !cfg.IsProduction(),
 	}
 
 	var bot telegram.Bot = telegram.LogBot{Log: log}

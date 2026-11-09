@@ -222,7 +222,7 @@ const ru: Messages = {
     language: "Язык уведомлений", languageHint: "На этом языке будут приходить письма и сообщения в Telegram.",
     verify: "Подтвердить", phone: "Номер телефона",
     phoneHint: "Код придёт не по SMS, а в чат «Verification Codes» в Telegram.",
-    phoneCodeSent: "Отправили код на {{phone}} через Telegram.", phoneVerified: "Номер телефона подтверждён",
+    phoneCodeSent: "Отправили код на {{phone}} через Telegram.", devCode: "Тестовый режим: Telegram не подключён, код показан здесь и подставлен автоматически:", phoneVerified: "Номер телефона подтверждён",
     sendTelegramCode: "Получить код в Telegram",
     byEmail: "Email", byEmailHint: "Статусы откликов, приглашения и новые вакансии",
     byTelegram: "Telegram", telegramOn: "через бота {{bot}}", telegramOff: "Сначала подключите Telegram",
@@ -289,6 +289,12 @@ const ru: Messages = {
     searchAlert: "{{count}} новых вакансий по поиску «{{search}}»",
     markAll: "Отметить все прочитанными", unread: "Не прочитано",
     emptyTitle: "Уведомлений нет", emptyBody: "Здесь появятся изменения статусов откликов и приглашения.",
+  },
+  verifyGate: {
+    title: "Сначала подтвердите email или телефон",
+    company: "Чтобы создать компанию, нужен подтверждённый email или номер телефона. Подтвердить можно прямо здесь, это займёт минуту.",
+    publish: "Чтобы опубликовать вакансию, нужен подтверждённый email или номер телефона. Черновик сохранить можно.",
+    apply: "Чтобы откликнуться, нужен подтверждённый email или номер телефона.",
   },
   employer: {
     noCompany: "Сначала создайте профиль компании.", createCompany: "Создать компанию",

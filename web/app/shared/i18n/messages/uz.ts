@@ -270,7 +270,7 @@ const uz = {
     language: "Xabarlar tili", languageHint: "Email va Telegram xabarlari shu tilda keladi.",
     verify: "Tasdiqlash", phone: "Telefon raqami",
     phoneHint: "Kod SMS emas, Telegram'dagi «Verification Codes» chatiga keladi.",
-    phoneCodeSent: "{{phone}} raqamiga Telegram orqali kod yubordik.", phoneVerified: "Telefon raqami tasdiqlandi",
+    phoneCodeSent: "{{phone}} raqamiga Telegram orqali kod yubordik.", devCode: "Test rejimi: Telegram ulanmagan, kod shu yerda ko'rsatiladi va avtomatik yozildi:", phoneVerified: "Telefon raqami tasdiqlandi",
     sendTelegramCode: "Telegram orqali kod olish",
     byEmail: "Email", byEmailHint: "Arizalar holati, takliflar va yangi vakansiyalar",
     byTelegram: "Telegram", telegramOn: "{{bot}} boti orqali", telegramOff: "Avval Telegram'ni ulang",
@@ -337,6 +337,12 @@ const uz = {
     searchAlert: "«{{search}}» bo'yicha {{count}} ta yangi vakansiya",
     markAll: "Hammasini o'qilgan qilish", unread: "O'qilmagan",
     emptyTitle: "Bildirishnoma yo'q", emptyBody: "Arizalaringiz holati o'zgarsa yoki taklif kelsa, shu yerda ko'rasiz.",
+  },
+  verifyGate: {
+    title: "Avval email yoki telefoningizni tasdiqlang",
+    company: "Kompaniya yaratish uchun tasdiqlangan email yoki telefon raqami kerak. Shu yerning o'zida tasdiqlashingiz mumkin, bu bir daqiqa oladi.",
+    publish: "Vakansiyani e'lon qilish uchun tasdiqlangan email yoki telefon raqami kerak. Qoralama sifatida saqlash mumkin.",
+    apply: "Ariza yuborish uchun tasdiqlangan email yoki telefon raqami kerak.",
   },
   employer: {
     noCompany: "Avval kompaniya profilini yarating.", createCompany: "Kompaniya yaratish",
