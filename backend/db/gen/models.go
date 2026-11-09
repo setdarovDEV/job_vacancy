@@ -1799,6 +1799,25 @@ type Skill struct {
 	CreatedAt  time.Time
 }
 
+type SkillAlias struct {
+	Slug      string
+	SkillID   int32
+	CreatedAt time.Time
+}
+
+type SkillDirectory struct {
+	ID           int32
+	Name         string
+	Slug         string
+	IsVerified   bool
+	Popularity   int32
+	CreatedAt    time.Time
+	VacancyCount int32
+	ResumeCount  int32
+	InUse        int32
+	Aliases      []string
+}
+
 type User struct {
 	ID              uuid.UUID
 	Email           *string

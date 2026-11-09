@@ -475,6 +475,21 @@ func (q *Queries) ResumeHasApplications(ctx context.Context, resumeID uuid.UUID)
 	return exists, err
 }
 
+const setResumeSearchTags = `-- name: SetResumeSearchTags :exec
+UPDATE resume_search SET tags = $2 WHERE resume_id = $1
+`
+
+type SetResumeSearchTagsParams struct {
+	ResumeID uuid.UUID
+	Tags     string
+}
+
+// Skill names in the index change when an admin renames, merges or deletes a skill.
+func (q *Queries) SetResumeSearchTags(ctx context.Context, arg SetResumeSearchTagsParams) error {
+	_, err := q.db.Exec(ctx, setResumeSearchTags, arg.ResumeID, arg.Tags)
+	return err
+}
+
 const setResumeSearchVisibility = `-- name: SetResumeSearchVisibility :exec
 UPDATE resume_search SET is_public = $2 WHERE resume_id = $1
 `

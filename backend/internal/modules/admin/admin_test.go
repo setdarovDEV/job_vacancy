@@ -3,6 +3,8 @@ package admin
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"jobvacancy.uz/backend/db/gen"
+	"jobvacancy.uz/backend/internal/modules/catalog"
+	"jobvacancy.uz/backend/internal/pkg/cursor"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 )
 
@@ -20,6 +24,12 @@ type fakeStore struct {
 	users                    map[uuid.UUID]gen.User
 	roleWrites, statusWrites int
 	companyReads             int
+	lastSkillLimit           int32
+}
+
+func (f *fakeStore) AdminListSkillsNewest(_ context.Context, p gen.AdminListSkillsNewestParams) ([]gen.SkillDirectory, error) {
+	f.lastSkillLimit = p.MaxResults
+	return nil, nil
 }
 
 func (f *fakeStore) GetUserByID(_ context.Context, id uuid.UUID) (gen.User, error) {
@@ -196,5 +206,56 @@ func TestRoleChangeOnDeletedUserIsNotFound(t *testing.T) {
 	}
 	if st.roleWrites != 0 || len(rv.revoked) != 0 {
 		t.Fatalf("writes=%d revokes=%d", st.roleWrites, len(rv.revoked))
+	}
+}
+
+// A cursor from one skill ordering can't be used with the other.
+func TestSkillCursorMustMatchSort(t *testing.T) {
+	s, _, _, _, _, _ := setup()
+	_, _, err := s.ListSkills(context.Background(), SkillFilter{Sort: SkillSortPopularity, Limit: 10,
+		After: &SkillCursor{Sort: SkillSortNewest, N: 1, ID: 1}})
+	if !errors.Is(err, cursor.ErrBadCursor) {
+		t.Fatalf("got %v", err)
+	}
+}
+
+// The rename request's validate tag can't reference catalog.MaxSkillNameLen; keep them equal.
+func TestRenameLimitMatchesCatalog(t *testing.T) {
+	f, _ := reflect.TypeOf(renameSkillRequest{}).FieldByName("Name")
+	want := fmt.Sprintf("required,max=%d", catalog.MaxSkillNameLen)
+	if got := f.Tag.Get("validate"); got != want {
+		t.Fatalf("validate tag %q, want %q", got, want)
+	}
+}
+
+// The verify-many cap is the admin page size, like every other admin batch.
+func TestVerifyManyCapMatchesAdminLimit(t *testing.T) {
+	f, _ := reflect.TypeOf(verifySkillsRequest{}).FieldByName("IDs")
+	if !strings.Contains(f.Tag.Get("validate"), fmt.Sprintf("max=%d,", cursor.AdminMaxLimit)) {
+		t.Fatalf("tag %q", f.Tag.Get("validate"))
+	}
+}
+
+// Zero values select the default ordering and page size instead of failing.
+func TestListSkillsDefaults(t *testing.T) {
+	s, st, _, _, _, _ := setup()
+	if _, _, err := s.ListSkills(context.Background(), SkillFilter{}); err != nil {
+		t.Fatal(err)
+	}
+	if st.lastSkillLimit != int32(cursor.AdminDefaultLimit+1) {
+		t.Fatalf("limit %d", st.lastSkillLimit)
+	}
+}
+
+// OO-032: every advertised sort has an ordering, so the handler's check and the
+// service's lookup can't drift apart.
+func TestEverySkillSortHasAnOrdering(t *testing.T) {
+	for _, s := range SkillSorts {
+		if _, ok := skillOrders[s]; !ok {
+			t.Fatalf("sort %q has no ordering", s)
+		}
+	}
+	if len(skillOrders) != len(SkillSorts) {
+		t.Fatalf("%d orderings for %d sorts", len(skillOrders), len(SkillSorts))
 	}
 }

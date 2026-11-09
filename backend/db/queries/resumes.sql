@@ -93,6 +93,10 @@ SET is_public = EXCLUDED.is_public, updated_at = EXCLUDED.updated_at,
     languages = EXCLUDED.languages, title = EXCLUDED.title, tags = EXCLUDED.tags,
     meta = EXCLUDED.meta, body = EXCLUDED.body;
 
+-- Skill names in the index change when an admin renames, merges or deletes a skill.
+-- name: SetResumeSearchTags :exec
+UPDATE resume_search SET tags = $2 WHERE resume_id = $1;
+
 -- name: SetResumeSearchVisibility :exec
 UPDATE resume_search SET is_public = $2 WHERE resume_id = $1;
 

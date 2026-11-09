@@ -8,21 +8,29 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/slug"
+	"jobvacancy.uz/backend/internal/pkg/translit"
+	"jobvacancy.uz/backend/internal/platform/postgres"
 )
 
 const (
-	refreshEvery    = 5 * time.Minute
-	MaxSkillsPerAd  = 20
-	maxSkillNameLen = 50
+	refreshEvery       = 5 * time.Minute
+	MaxSkillsPerAd     = 20 // vacancies
+	MaxSkillsPerResume = 30
+	// MaxSkillNameLen is the longest skill name accepted anywhere (vacancies, resumes,
+	// admin renames); validation errors say "max=50".
+	MaxSkillNameLen = 50
 )
 
 type Names struct {
@@ -247,16 +255,19 @@ func (s *Service) SearchSkills(ctx context.Context, q string, limit int32) ([]Sk
 // ResolveSkills maps free-text skill names to skill rows, creating unknown ones.
 // Names are matched by slug, so "postgresql", "PostgreSQL " and "Postgre SQL" differ only
 // where their slugs differ.
-func (s *Service) ResolveSkills(ctx context.Context, names []string) ([]Skill, error) {
+// Merged or renamed-away names resolve to the surviving skill through skill_aliases.
+// maxItems is the caller's limit (MaxSkillsPerAd, MaxSkillsPerResume). Errors use the
+// request validator's shape: "skills" for the count, "skills[i]" for one name (API-032).
+func (s *Service) ResolveSkills(ctx context.Context, names []string, maxItems int) ([]Skill, error) {
 	bySlug := map[string]string{}
 	var slugs []string
-	for _, n := range names {
+	for i, n := range names {
 		n = strings.Join(strings.Fields(n), " ")
 		if n == "" {
 			continue
 		}
-		if len([]rune(n)) > maxSkillNameLen {
-			return nil, apperr.Validation(map[string]string{"skills": "max_len=50"})
+		if len([]rune(n)) > MaxSkillNameLen {
+			return nil, apperr.Validation(map[string]string{fmt.Sprintf("skills[%d]", i): fmt.Sprintf("max=%d", MaxSkillNameLen)})
 		}
 		sl := slug.Make(n)
 		if sl == "" {
@@ -267,8 +278,8 @@ func (s *Service) ResolveSkills(ctx context.Context, names []string) ([]Skill, e
 			slugs = append(slugs, sl)
 		}
 	}
-	if len(slugs) > MaxSkillsPerAd {
-		return nil, apperr.Validation(map[string]string{"skills": "max=20"})
+	if len(slugs) > maxItems {
+		return nil, apperr.Validation(map[string]string{"skills": fmt.Sprintf("max=%d", maxItems)})
 	}
 	if len(slugs) == 0 {
 		return nil, nil
@@ -286,13 +297,38 @@ func (s *Service) ResolveSkills(ctx context.Context, names []string) ([]Skill, e
 	for _, sl := range slugs {
 		sk, ok := found[sl]
 		if !ok {
-			row, err := s.Q.UpsertSkill(ctx, gen.UpsertSkillParams{Name: bySlug[sl], Slug: sl})
-			if err != nil {
+			if sk, err = s.createSkill(ctx, bySlug[sl], sl); err != nil {
 				return nil, err
 			}
-			sk = Skill{ID: row.ID, Name: row.Name}
 		}
 		out = append(out, sk)
 	}
 	return out, nil
+}
+
+// createSkill adds a skill nobody has used yet. If the slug turned into an alias in the
+// meantime (an admin merged or renamed concurrently), UpsertSkill inserts nothing or the
+// slug trigger refuses it; either way the alias now resolves, so look it up again.
+func (s *Service) createSkill(ctx context.Context, name, sl string) (Skill, error) {
+	row, err := s.Q.UpsertSkill(ctx, gen.UpsertSkillParams{Name: name, Slug: sl})
+	if err == nil {
+		return Skill{ID: row.ID, Name: row.Name}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) && !postgres.IsUniqueViolation(err) {
+		return Skill{}, err
+	}
+	again, err := s.Q.GetSkillsBySlugs(ctx, []string{sl})
+	if err != nil {
+		return Skill{}, err
+	}
+	if len(again) == 0 {
+		return Skill{}, fmt.Errorf("catalog: skill %q neither created nor found", sl)
+	}
+	return Skill{ID: again[0].ID, Name: again[0].Name}, nil
+}
+
+// SearchTags is the folded text the vacancy and resume search indexes store for a list of
+// skill names (one definition, so admin reindexing writes exactly what saving does).
+func SearchTags(names []string) string {
+	return translit.Fold(strings.Join(names, " "))
 }

@@ -32,6 +32,10 @@ type StatsDTO struct {
 		// Vacancies and companies with at least one open report (the admin queue's length).
 		OpenTargets int32 `json:"open_targets"`
 	} `json:"reports"`
+	Skills struct {
+		// User-added skills nobody has reviewed yet (not offered in autocomplete).
+		Unverified int32 `json:"unverified"`
+	} `json:"skills"`
 }
 
 func statsDTO(r gen.AdminStatsRow) StatsDTO {
@@ -41,6 +45,7 @@ func statsDTO(r gen.AdminStatsRow) StatsDTO {
 	d.Vacancies.Published, d.Vacancies.PendingModeration = r.VacanciesPublished, r.VacanciesPendingModeration
 	d.Applications.SentLast7d = r.ApplicationsSentLast7d
 	d.Reports.OpenTargets = r.ReportsOpenTargets
+	d.Skills.Unverified = r.SkillsUnverified
 	return d
 }
 
@@ -69,6 +74,33 @@ type UserDTO struct {
 
 func userDTO(u gen.User) UserDTO {
 	return UserDTO{DTO: user.ToDTO(u), Status: string(u.Status), LastSeenAt: u.LastSeenAt}
+}
+
+// SkillDTO is a skill as admins see it. Lists and mutation responses have the same shape.
+type SkillDTO struct {
+	ID       int32  `json:"id"`
+	Name     string `json:"name"`
+	Slug     string `json:"slug"`
+	Verified bool   `json:"verified"`
+	// Autocomplete ranking: grows each time a vacancy listing the skill is published and
+	// never shrinks. Not the same as how many items list it now (in_use).
+	Popularity   int32 `json:"popularity"`
+	VacancyCount int32 `json:"vacancy_count"`
+	ResumeCount  int32 `json:"resume_count"`
+	InUse        int32 `json:"in_use"` // vacancy_count + resume_count
+	// Slugs of names merged or renamed into this skill; typing them resolves here.
+	Aliases   []string  `json:"aliases"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func skillDTO(r Skill) SkillDTO {
+	aliases := r.Aliases
+	if aliases == nil {
+		aliases = []string{}
+	}
+	return SkillDTO{ID: r.ID, Name: r.Name, Slug: r.Slug, Verified: r.IsVerified, Popularity: r.Popularity,
+		VacancyCount: r.VacancyCount, ResumeCount: r.ResumeCount, InUse: r.InUse,
+		Aliases: aliases, CreatedAt: r.CreatedAt}
 }
 
 func mapSlice[T, R any](in []T, f func(T) R) []R {

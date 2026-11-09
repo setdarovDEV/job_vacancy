@@ -108,6 +108,8 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	notifySvc := &notification.Service{Q: q, Publisher: publisher, Jobs: enq, Log: log}
 
 	catalogSvc := &catalog.Service{Q: q, Log: log}
+	// Skill renames/merges/deletes enqueue their search refresh in the same transaction.
+	skillAdmin := &catalog.SkillAdmin{Tx: catalog.PgSkillTx{Pool: pool, Jobs: enq}}
 	if err := catalogSvc.Start(ctx); err != nil {
 		return err
 	}
@@ -158,7 +160,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		VacancyHandler: &vacancy.Handler{Svc: vacancySvc},
 		ResumeHandler:  &resume.Handler{Svc: resumeSvc},
 		AppHandler:     &application.Handler{Svc: appSvc},
-		AdminHandler:   &admin.Handler{Svc: &admin.Service{Store: q, Companies: companySvc, Sessions: authSvc}},
+		AdminHandler:   &admin.Handler{Svc: &admin.Service{Store: q, Companies: companySvc, Sessions: authSvc, Skills: skillAdmin}},
 		ReportHandler:  &report.Handler{Svc: reportSvc},
 	})
 

@@ -1,9 +1,9 @@
-import { BadgeCheck, Building2, ShieldCheck, ShieldOff } from "lucide-react";
+import { BadgeCheck, Building2 } from "lucide-react";
 
 import { AdminOnly, SearchForm, useUrlFilters } from "./admin-ui";
 import { adminKeys } from "./keys";
 import { AdminList, useCursorList } from "./list";
-import { BlockToggle, useToggleResource } from "./toggle";
+import { BlockToggle, useToggleResource, VerifyToggle } from "./toggle";
 import { api, type Schemas } from "~/shared/api/client";
 import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
@@ -11,7 +11,6 @@ import { relativeTime } from "~/shared/lib/format";
 import { authed, authedPage } from "~/shared/query/query";
 import { Avatar } from "~/shared/ui/Avatar";
 import { Badge } from "~/shared/ui/Badge";
-import { Button } from "~/shared/ui/Button";
 import { Chip } from "~/shared/ui/Chip";
 import { PageHeader } from "~/shared/ui/Section";
 
@@ -99,9 +98,10 @@ function Row({ c }: { c: Company }) {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
-        {!blocked && (c.verified
-          ? <Button variant="ghost" size="sm" icon={<ShieldOff className="size-4" />} loading={verify.isPending} onClick={() => verify.mutate(false)}>{t("admin.unverify")}</Button>
-          : <Button variant="soft" size="sm" icon={<ShieldCheck className="size-4" />} loading={verify.isPending} onClick={() => verify.mutate(true)}>{t("admin.verify")}</Button>)}
+        {!blocked && (
+          <VerifyToggle verified={c.verified} pending={verify.isPending} onToggle={(on) => verify.mutate(on)}
+            labels={{ verify: t("admin.verify"), unverify: t("admin.unverify") }} />
+        )}
         <BlockToggle
           blocked={blocked}
           pending={block.isPending}

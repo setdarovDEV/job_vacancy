@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient, type QueryKey } from "@tanstack/react-query";
-import { Ban, Undo2 } from "lucide-react";
+import { Ban, ShieldCheck, ShieldOff, Undo2 } from "lucide-react";
 import { useState } from "react";
 
 import { ConfirmDialog, useFailToast } from "./admin-ui";
@@ -80,4 +80,16 @@ export function BlockToggle({ blocked, disabled, pending, onToggle, confirmTitle
       />
     </>
   );
+}
+
+/** Verify / take verification back, for anything with a verified flag (companies, skills). */
+export function VerifyToggle({ verified, pending, onToggle, labels }: {
+  verified: boolean;
+  pending: boolean;
+  onToggle: (verify: boolean) => void;
+  labels: { verify: string; unverify: string };
+}) {
+  return verified
+    ? <Button variant="ghost" size="sm" icon={<ShieldOff className="size-4" />} loading={pending} onClick={() => onToggle(false)}>{labels.unverify}</Button>
+    : <Button variant="soft" size="sm" icon={<ShieldCheck className="size-4" />} loading={pending} onClick={() => onToggle(true)}>{labels.verify}</Button>;
 }

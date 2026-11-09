@@ -33,6 +33,11 @@ type Store interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (gen.User, error)
 	SetUserRoleByID(ctx context.Context, arg gen.SetUserRoleByIDParams) (gen.User, error)
 	SetUserStatus(ctx context.Context, arg gen.SetUserStatusParams) (gen.User, error)
+	AdminListSkillsNewest(ctx context.Context, arg gen.AdminListSkillsNewestParams) ([]gen.SkillDirectory, error)
+	AdminListSkillsByPopularity(ctx context.Context, arg gen.AdminListSkillsByPopularityParams) ([]gen.SkillDirectory, error)
+	AdminListSkillsInUse(ctx context.Context, arg gen.AdminListSkillsInUseParams) ([]gen.SkillDirectory, error)
+	AdminGetSkill(ctx context.Context, id int32) (gen.SkillDirectory, error)
+	AdminGetSkills(ctx context.Context, ids []int32) ([]gen.SkillDirectory, error)
 }
 
 // CompanyModerator applies the company module's admin-only rules (company.Service).
@@ -52,6 +57,7 @@ type Service struct {
 	Store     Store
 	Companies CompanyModerator
 	Sessions  SessionRevoker
+	Skills    SkillCurator
 }
 
 // CompanyFilter selects a company directory page; nil fields don't filter.

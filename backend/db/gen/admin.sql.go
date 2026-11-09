@@ -59,6 +59,65 @@ func (q *Queries) AdminGetCompany(ctx context.Context, id uuid.UUID) (AdminGetCo
 	return i, err
 }
 
+const adminGetSkill = `-- name: AdminGetSkill :one
+SELECT id, name, slug, is_verified, popularity, created_at, vacancy_count, resume_count, in_use, aliases FROM skill_directory WHERE id = $1
+`
+
+// Skill directory (view skill_directory, migration 00015). Lists and mutation responses
+// return the same rows.
+func (q *Queries) AdminGetSkill(ctx context.Context, id int32) (SkillDirectory, error) {
+	row := q.db.QueryRow(ctx, adminGetSkill, id)
+	var i SkillDirectory
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.IsVerified,
+		&i.Popularity,
+		&i.CreatedAt,
+		&i.VacancyCount,
+		&i.ResumeCount,
+		&i.InUse,
+		&i.Aliases,
+	)
+	return i, err
+}
+
+const adminGetSkills = `-- name: AdminGetSkills :many
+SELECT id, name, slug, is_verified, popularity, created_at, vacancy_count, resume_count, in_use, aliases FROM skill_directory WHERE id = ANY($1::int[]) ORDER BY name, id
+`
+
+func (q *Queries) AdminGetSkills(ctx context.Context, ids []int32) ([]SkillDirectory, error) {
+	rows, err := q.db.Query(ctx, adminGetSkills, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SkillDirectory{}
+	for rows.Next() {
+		var i SkillDirectory
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.IsVerified,
+			&i.Popularity,
+			&i.CreatedAt,
+			&i.VacancyCount,
+			&i.ResumeCount,
+			&i.InUse,
+			&i.Aliases,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminListCompanies = `-- name: AdminListCompanies :many
 SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at,
        u.full_name AS owner_name, u.email AS owner_email,
@@ -131,6 +190,177 @@ func (q *Queries) AdminListCompanies(ctx context.Context, arg AdminListCompanies
 			&i.OwnerName,
 			&i.OwnerEmail,
 			&i.OpenVacancies,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListSkillsByPopularity = `-- name: AdminListSkillsByPopularity :many
+SELECT id, name, slug, is_verified, popularity, created_at, vacancy_count, resume_count, in_use, aliases FROM skill_directory d
+WHERE ($1::text IS NULL OR lower(d.name) LIKE '%' || lower($1::text) || '%'
+       OR d.slug LIKE '%' || lower($1::text) || '%')
+  AND ($2::boolean IS NULL OR d.is_verified = $2::boolean)
+  AND ($3::int IS NULL
+       OR (d.popularity, d.id) < ($3::int, $4::int))
+ORDER BY d.popularity DESC, d.id DESC
+LIMIT $5
+`
+
+type AdminListSkillsByPopularityParams struct {
+	Q          *string
+	Verified   *bool
+	AfterN     *int32
+	AfterID    *int32
+	MaxResults int32
+}
+
+// Most popular first (autocomplete ranking), keyset on (popularity, id).
+func (q *Queries) AdminListSkillsByPopularity(ctx context.Context, arg AdminListSkillsByPopularityParams) ([]SkillDirectory, error) {
+	rows, err := q.db.Query(ctx, adminListSkillsByPopularity,
+		arg.Q,
+		arg.Verified,
+		arg.AfterN,
+		arg.AfterID,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SkillDirectory{}
+	for rows.Next() {
+		var i SkillDirectory
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.IsVerified,
+			&i.Popularity,
+			&i.CreatedAt,
+			&i.VacancyCount,
+			&i.ResumeCount,
+			&i.InUse,
+			&i.Aliases,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListSkillsInUse = `-- name: AdminListSkillsInUse :many
+SELECT id, name, slug, is_verified, popularity, created_at, vacancy_count, resume_count, in_use, aliases FROM skill_directory d
+WHERE ($1::text IS NULL OR lower(d.name) LIKE '%' || lower($1::text) || '%'
+       OR d.slug LIKE '%' || lower($1::text) || '%')
+  AND ($2::boolean IS NULL OR d.is_verified = $2::boolean)
+  AND ($3::int IS NULL
+       OR (d.in_use, d.id) < ($3::int, $4::int))
+ORDER BY d.in_use DESC, d.id DESC
+LIMIT $5
+`
+
+type AdminListSkillsInUseParams struct {
+	Q          *string
+	Verified   *bool
+	AfterN     *int32
+	AfterID    *int32
+	MaxResults int32
+}
+
+// Most listed right now first (vacancies + resumes), keyset on (in_use, id).
+func (q *Queries) AdminListSkillsInUse(ctx context.Context, arg AdminListSkillsInUseParams) ([]SkillDirectory, error) {
+	rows, err := q.db.Query(ctx, adminListSkillsInUse,
+		arg.Q,
+		arg.Verified,
+		arg.AfterN,
+		arg.AfterID,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SkillDirectory{}
+	for rows.Next() {
+		var i SkillDirectory
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.IsVerified,
+			&i.Popularity,
+			&i.CreatedAt,
+			&i.VacancyCount,
+			&i.ResumeCount,
+			&i.InUse,
+			&i.Aliases,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListSkillsNewest = `-- name: AdminListSkillsNewest :many
+SELECT id, name, slug, is_verified, popularity, created_at, vacancy_count, resume_count, in_use, aliases FROM skill_directory d
+WHERE ($1::text IS NULL OR lower(d.name) LIKE '%' || lower($1::text) || '%'
+       OR d.slug LIKE '%' || lower($1::text) || '%')
+  AND ($2::boolean IS NULL OR d.is_verified = $2::boolean)
+  AND ($3::timestamptz IS NULL
+       OR (d.created_at, d.id) < ($3::timestamptz, $4::int))
+ORDER BY d.created_at DESC, d.id DESC
+LIMIT $5
+`
+
+type AdminListSkillsNewestParams struct {
+	Q          *string
+	Verified   *bool
+	AfterT     *time.Time
+	AfterID    *int32
+	MaxResults int32
+}
+
+// Newest first, keyset on (created_at, id).
+func (q *Queries) AdminListSkillsNewest(ctx context.Context, arg AdminListSkillsNewestParams) ([]SkillDirectory, error) {
+	rows, err := q.db.Query(ctx, adminListSkillsNewest,
+		arg.Q,
+		arg.Verified,
+		arg.AfterT,
+		arg.AfterID,
+		arg.MaxResults,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SkillDirectory{}
+	for rows.Next() {
+		var i SkillDirectory
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Slug,
+			&i.IsVerified,
+			&i.Popularity,
+			&i.CreatedAt,
+			&i.VacancyCount,
+			&i.ResumeCount,
+			&i.InUse,
+			&i.Aliases,
 		); err != nil {
 			return nil, err
 		}
@@ -225,7 +455,8 @@ SELECT
     (SELECT count(*) FROM vacancies WHERE status = 'published')::int                                            AS vacancies_published,
     (SELECT count(*) FROM vacancies WHERE status = 'moderation')::int                                           AS vacancies_pending_moderation,
     (SELECT count(*) FROM applications WHERE created_at >= now() - interval '7 days')::int                     AS applications_sent_last_7d,
-    (SELECT count(DISTINCT target_id) FROM reports WHERE status = 'open')::int                                  AS reports_open_targets
+    (SELECT count(DISTINCT target_id) FROM reports WHERE status = 'open')::int                                  AS reports_open_targets,
+    (SELECT count(*) FROM skills WHERE NOT is_verified)::int                                                    AS skills_unverified
 `
 
 type AdminStatsRow struct {
@@ -239,6 +470,7 @@ type AdminStatsRow struct {
 	VacanciesPendingModeration int32
 	ApplicationsSentLast7d     int32
 	ReportsOpenTargets         int32
+	SkillsUnverified           int32
 }
 
 // Platform administration (mounted under /admin, admins only).
@@ -257,6 +489,7 @@ func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 		&i.VacanciesPendingModeration,
 		&i.ApplicationsSentLast7d,
 		&i.ReportsOpenTargets,
+		&i.SkillsUnverified,
 	)
 	return i, err
 }

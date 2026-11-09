@@ -18,7 +18,11 @@ info:
     **Envelope.** Success: `{"data": ...}` (lists add `"meta"`). Failure:
     `{"error": {"code", "message", "fields"?, "retry_after"?}}`. `code` is stable; clients
     translate it into uz / uz-Cyrl / ru / en. `fields` maps a JSON field to the failing
-    rule (`required`, `email`, `min=8`, `password`, `oneof=...`).
+    rule (`required`, `email`, `min=8`, `max=50`, `password`, `oneof=...`, `boolean`,
+    `integer`, `unique`). Rules that aren't about the value's form: `invalid` (nothing
+    usable is left after normalising, e.g. a skill name of only punctuation), `not_found`
+    (an id given in the body doesn't exist, e.g. a merge target; ids in the path answer
+    404 instead) and `not_self` (an action can't target the resource itself).
 
     **Tokens.** The access token (JWT, 15 min) goes in `Authorization: Bearer`.
     Web: the refresh token lives in the HttpOnly cookie `jv_refresh` (path `/api/v1/auth`).
@@ -26,10 +30,12 @@ info:
     from the JSON body. Refresh tokens rotate on every use.
 
     **Verbs for state.** A flag that can be set and cleared idempotently is a sub-resource:
-    `PUT` sets it, `DELETE` clears it (company verification and block, user block, saved
-    vacancies). A one-way step in a workflow is a `POST` action that may answer 409
-    `invalid_status_transition` (vacancy submit / approve / reject / takedown / archive,
-    resolving or dismissing reports).
+    `PUT` sets it, `DELETE` clears it (company verification and block, user block, skill
+    verification, saved vacancies); setting it on many at once is a `POST` to the
+    collection's flag (`/admin/skills/verification`). Editing a resource's fields is
+    `PATCH` (skill rename). A one-way step in a workflow is a `POST` action that may answer
+    409 `invalid_status_transition` (vacancy submit / approve / reject / takedown / archive,
+    resolving or dismissing reports, merging skills).
 servers:
   - url: https://jobvacancy.uz/api/v1
   - url: http://localhost:8090/api/v1
@@ -46,6 +52,7 @@ components:
     CompanyRef: { name: company, in: path, required: true, schema: { type: string }, description: uuid or slug }
     UserRef: { name: user, in: path, required: true, schema: { type: string, format: uuid }, description: "user id; a malformed id answers 404 user_not_found like an unknown one" }
     AdminLimit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 }, description: page size for every admin list }
+    SkillRef: { name: skill, in: path, required: true, schema: { type: integer, minimum: 1 }, description: "skill id; a malformed id answers 404 skill_not_found like an unknown one" }
     ReportTargetType: { name: target_type, in: path, required: true, schema: { type: string, enum: [vacancy, company] } }
     ReportTargetId: { name: target_id, in: path, required: true, schema: { type: string, format: uuid }, description: "vacancy or company id; anything malformed answers 404 reported_target_not_found" }
     ClientType:
@@ -169,7 +176,7 @@ components:
     AdminStats:
       type: object
       description: Overview counters. Deleted accounts are excluded from every user counter.
-      required: [users, companies, vacancies, applications, reports]
+      required: [users, companies, vacancies, applications, reports, skills]
       properties:
         users:
           type: object
@@ -201,6 +208,11 @@ components:
           required: [open_targets]
           properties:
             open_targets: { type: integer, description: vacancies and companies with at least one open report }
+        skills:
+          type: object
+          required: [unverified]
+          properties:
+            unverified: { type: integer, description: user-added skills nobody has reviewed yet (not offered in autocomplete) }
     Notification:
       type: object
       description: >
@@ -343,6 +355,24 @@ components:
           properties:
             status: { type: string, enum: [active, blocked] }
             last_seen_at: { type: [string, "null"], format: date-time }
+    AdminSkill:
+      type: object
+      description: A skill as admins see it. The same complete shape in lists and in mutation responses.
+      required: [id, name, slug, verified, popularity, vacancy_count, resume_count, in_use, aliases, created_at]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        slug: { type: string }
+        verified: { type: boolean, description: reviewed by an admin; only verified skills are suggested in autocomplete }
+        popularity: { type: integer, description: "autocomplete ranking: grows each time a vacancy listing the skill is published and never shrinks (not the same as in_use)" }
+        vacancy_count: { type: integer, description: vacancies that list this skill now }
+        resume_count: { type: integer, description: resumes that list this skill now }
+        in_use: { type: integer, description: vacancy_count + resume_count }
+        aliases:
+          type: array
+          items: { type: string }
+          description: slugs of names merged or renamed into this skill; typing those names resolves to it
+        created_at: { type: string, format: date-time }
     PageMeta:
       type: object
       required: [next_cursor]
@@ -374,7 +404,7 @@ components:
         work_format: { $ref: "#/components/schemas/WorkFormat" }
         experience: { $ref: "#/components/schemas/Experience" }
         schedule: { $ref: "#/components/schemas/Schedule" }
-        skills: { type: array, maxItems: 20, items: { type: string, maxLength: 50 }, description: free-text names; unknown ones are created }
+        skills: { type: array, maxItems: 20, items: { type: string, maxLength: 50 }, description: "free-text names; unknown ones are created; a too-long one fails as fields.skills[i]" }
     EmploymentType: { type: string, enum: [full_time, part_time, project, internship, volunteer] }
     WorkFormat: { type: string, enum: [office, remote, hybrid] }
     Experience: { type: string, enum: [none, 1_3, 3_6, 6_plus] }
@@ -451,7 +481,7 @@ components:
         visibility: { $ref: "#/components/schemas/ResumeVisibility" }
         experiences: { type: array, maxItems: 20, description: most recent first, items: { $ref: "#/components/schemas/ResumeExperience" } }
         educations: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/ResumeEducation" } }
-        skills: { type: array, maxItems: 30, items: { type: string } }
+        skills: { type: array, maxItems: 30, items: { type: string, maxLength: 50 }, description: "free-text names; a too-long one fails as fields.skills[i]" }
         languages: { type: array, maxItems: 10, items: { $ref: "#/components/schemas/ResumeLanguage" } }
     ResumeExperience:
       type: object
@@ -587,6 +617,9 @@ components:
     UserNotFound:
       description: No such user, or a malformed id (user_not_found)
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    SkillNotFound:
+      description: No such skill, or a malformed id (skill_not_found)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     ReportTargetNotFound:
       description: Not a public vacancy or company, or no reports for it (report_target_not_found)
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
@@ -603,6 +636,11 @@ components:
       content:
         application/json:
           schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminCompany" } } }
+    AdminSkill:
+      description: Skill with usage and aliases
+      content:
+        application/json:
+          schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminSkill" } } }
     AdminUser:
       description: User with account state
       content:
@@ -1169,6 +1207,127 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/AdminOnly" }
         "404": { $ref: "#/components/responses/CompanyNotFound" }
+  /admin/skills:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Skill directory (user-added skills to review, rename, merge or delete)
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: name or slug substring }
+        - { name: verified, in: query, schema: { type: boolean } }
+        - { name: sort, in: query, schema: { type: string, enum: [newest, popularity, in_use], default: newest }, description: "newest: review queue order; popularity: autocomplete ranking; in_use: most vacancies + resumes listing it now. A cursor only works with the sort that issued it." }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/AdminLimit" }
+      responses:
+        "200":
+          description: Page of skills
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/AdminSkill" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "400": { $ref: "#/components/responses/InvalidCursor" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/skills/verification:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: >-
+        Verify several skills at once (the review queue's bulk action). All or nothing: if
+        any id is unknown nothing changes (422 ids = not_found). Idempotent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: { type: array, items: { type: integer, minimum: 1 }, minItems: 1, maxItems: 100, uniqueItems: true, description: "at most the admin page size (AdminLimit max)" }
+      responses:
+        "200":
+          description: The verified skills, by name
+          content:
+            application/json:
+              schema: { type: object, required: [data], properties: { data: { type: array, items: { $ref: "#/components/schemas/AdminSkill" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/skills/{skill}:
+    parameters: [{ $ref: "#/components/parameters/SkillRef" }]
+    patch:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: >-
+        Rename (fix spelling). The old name stays as an alias. Vacancy and resume search
+        picks up the new name in the background, usually within seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 50 } } }
+      responses:
+        "200": { $ref: "#/components/responses/AdminSkill" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/SkillNotFound" }
+        "409": { description: "skill_exists: another skill already has this name or alias; merge into it instead", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Delete the skill and remove it from every vacancy and resume (search is refreshed in the background)
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/SkillNotFound" }
+  /admin/skills/{skill}/verification:
+    parameters: [{ $ref: "#/components/parameters/SkillRef" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Mark reviewed; verified skills are suggested in autocomplete. Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminSkill" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/SkillNotFound" }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Take verification back. Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminSkill" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/SkillNotFound" }
+  /admin/skills/{skill}/merge:
+    parameters: [{ $ref: "#/components/parameters/SkillRef" }]
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: >-
+        Merge this skill into another (duplicates such as "React.js" → "React"). Every
+        vacancy and resume moves to the target, this skill's names become the target's
+        aliases, and this skill is deleted. Answers with the target. Search is refreshed in
+        the background.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [into], properties: { into: { type: integer, minimum: 1, description: id of the skill that survives } } }
+      responses:
+        "200": { $ref: "#/components/responses/AdminSkill" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { description: "skill_not_found: the skill in the path (the one being merged away) doesn't exist", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { description: "validation_failed; fields.into = not_found (no such target) or not_self (merging a skill into itself)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
   /admin/users:
     get:
       tags: [admin]

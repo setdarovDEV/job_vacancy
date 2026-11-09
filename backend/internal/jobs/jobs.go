@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -16,6 +17,7 @@ import (
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
 	"jobvacancy.uz/backend/db/gen"
+	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
@@ -181,6 +183,37 @@ func (w *SavedSearchAlertsWorker) Work(ctx context.Context, _ *river.Job[SavedSe
 	return err
 }
 
+// ---- search refresh after skill administration --------------------------------------------
+
+// VacancyReindexer rebuilds vacancies' search documents (vacancy.Service).
+type VacancyReindexer interface {
+	ReindexIDs(ctx context.Context, ids []uuid.UUID) error
+}
+
+// ResumeTagRefresher rewrites resumes' indexed skill names (resume.Service).
+type ResumeTagRefresher interface {
+	RefreshSkillTags(ctx context.Context, ids []uuid.UUID) error
+}
+
+// SkillReindexWorker applies a skill rename, merge or delete to the search indexes. It
+// reads current rows, so retries and duplicate jobs converge on the same result.
+type SkillReindexWorker struct {
+	river.WorkerDefaults[catalog.ReindexArgs]
+	Vacancies VacancyReindexer
+	Resumes   ResumeTagRefresher
+}
+
+func (w *SkillReindexWorker) Timeout(*river.Job[catalog.ReindexArgs]) time.Duration {
+	return 5 * time.Minute
+}
+
+func (w *SkillReindexWorker) Work(ctx context.Context, job *river.Job[catalog.ReindexArgs]) error {
+	if err := w.Vacancies.ReindexIDs(ctx, job.Args.VacancyIDs); err != nil {
+		return err
+	}
+	return w.Resumes.RefreshSkillTags(ctx, job.Args.ResumeIDs)
+}
+
 // ---- wiring ----------------------------------------------------------------------------
 
 type Deps struct {
@@ -192,7 +225,10 @@ type Deps struct {
 	Push    notification.PushSender
 	WebURL  string
 	Saved   *savedsearch.Service
-	Log     *slog.Logger
+	// Search refresh after skill administration.
+	Vacancies VacancyReindexer
+	Resumes   ResumeTagRefresher
+	Log       *slog.Logger
 }
 
 func periodic(every time.Duration, args river.JobArgs) *river.PeriodicJob {
@@ -213,6 +249,7 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 		Q: q, Mailer: d.Mailer, Bot: d.Bot, Push: d.Push, WebURL: d.WebURL, Log: d.Log,
 	}})
 	river.AddWorker(workers, &SavedSearchAlertsWorker{Svc: d.Saved, Log: d.Log})
+	river.AddWorker(workers, &SkillReindexWorker{Vacancies: d.Vacancies, Resumes: d.Resumes})
 	river.AddWorker(workers, &CleanupUploadsWorker{Files: &file.Service{Q: q, Storage: d.Storage, Log: d.Log}, Log: d.Log})
 
 	return river.NewClient(riverpgxv5.New(d.Pool), &river.Config{
@@ -260,5 +297,19 @@ func (e *Enqueuer) InsertMany(ctx context.Context, args []river.JobArgs) error {
 		params[i] = river.InsertManyParams{Args: a}
 	}
 	_, err := e.client.InsertMany(ctx, params)
+	return err
+}
+
+// InsertManyTx enqueues jobs inside the caller's transaction: they become visible to the
+// worker only if that transaction commits.
+func (e *Enqueuer) InsertManyTx(ctx context.Context, tx pgx.Tx, args []river.JobArgs) error {
+	if len(args) == 0 {
+		return nil
+	}
+	params := make([]river.InsertManyParams, len(args))
+	for i, a := range args {
+		params[i] = river.InsertManyParams{Args: a}
+	}
+	_, err := e.client.InsertManyTx(ctx, tx, params)
 	return err
 }

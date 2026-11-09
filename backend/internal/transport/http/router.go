@@ -146,6 +146,7 @@ func NewRouter(d Deps) http.Handler {
 				d.AdminHandler.Routes(r)
 				r.Route("/companies", d.AdminHandler.CompanyRoutes)
 				r.Route("/users", d.AdminHandler.UserRoutes)
+				r.Route("/skills", d.AdminHandler.SkillRoutes)
 				r.Route("/vacancies", d.VacancyHandler.AdminRoutes)
 				r.Route("/reports", d.ReportHandler.AdminRoutes)
 			})

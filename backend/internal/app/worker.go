@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/catalog"
+	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/realtime"
@@ -52,13 +53,14 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 	if cfg.Telegram.BotToken != "" {
 		bot = telegram.NewBot(cfg.Telegram.BotToken, cfg.Telegram.BotUsername)
 	}
-	saved, err := SavedSearches(ctx, pool, rdb, log)
+	svc, err := newWorkerServices(ctx, pool, rdb, log)
 	if err != nil {
 		return err
 	}
 	client, err := jobs.NewWorkerClient(jobs.Deps{
 		Pool: pool, Redis: rdb, Mailer: m, Storage: st, Bot: bot,
-		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: saved, Log: log,
+		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: svc.saved,
+		Vacancies: svc.vacancies, Resumes: svc.resumes, Log: log,
 	})
 	if err != nil {
 		return fmt.Errorf("river: %w", err)
@@ -76,9 +78,15 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 	return client.Stop(stopCtx)
 }
 
-// SavedSearches builds the alert service outside the API: it needs vacancy listing (with
-// the catalog snapshot) and notifications, whose jobs go through an insert-only client.
-func SavedSearches(ctx context.Context, pool *pgxpool.Pool, rdb *goredis.Client, log *slog.Logger) (*savedsearch.Service, error) {
+// workerServices are the module services background jobs run: saved-search alerts and
+// the search refresh after skill administration. Built once, fully configured, and shared.
+type workerServices struct {
+	vacancies *vacancy.Service
+	resumes   *resume.Service
+	saved     *savedsearch.Service
+}
+
+func newWorkerServices(ctx context.Context, pool *pgxpool.Pool, rdb *goredis.Client, log *slog.Logger) (*workerServices, error) {
 	q := gen.New(pool)
 	cat := &catalog.Service{Q: q, Log: log}
 	if err := cat.Start(ctx); err != nil {
@@ -89,6 +97,21 @@ func SavedSearches(ctx context.Context, pool *pgxpool.Pool, rdb *goredis.Client,
 		return nil, err
 	}
 	notify := &notification.Service{Q: q, Publisher: &realtime.Publisher{RDB: rdb}, Jobs: enq, Log: log}
-	return &savedsearch.Service{Q: q, Vacancies: &vacancy.Service{Pool: pool, Q: q, Catalog: cat, Log: log},
-		Notify: notify, Log: log}, nil
+	// The list cache uses the API's Redis keys, so a reindex can drop its cached results.
+	vacancies := &vacancy.Service{Pool: pool, Q: q, Catalog: cat, Notify: notify, Log: log,
+		Cache: &vacancy.ListCache{RDB: rdb, TTL: 30 * time.Second, Log: log}}
+	return &workerServices{
+		vacancies: vacancies,
+		resumes:   &resume.Service{Pool: pool, Q: q, Catalog: cat},
+		saved:     &savedsearch.Service{Q: q, Vacancies: vacancies, Notify: notify, Log: log},
+	}, nil
+}
+
+// SavedSearches builds the alert service outside the API (cmd/ctl run-alerts).
+func SavedSearches(ctx context.Context, pool *pgxpool.Pool, rdb *goredis.Client, log *slog.Logger) (*savedsearch.Service, error) {
+	svc, err := newWorkerServices(ctx, pool, rdb, log)
+	if err != nil {
+		return nil, err
+	}
+	return svc.saved, nil
 }

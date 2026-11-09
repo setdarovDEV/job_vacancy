@@ -2,6 +2,7 @@ package admin
 
 import (
 	"net/http"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"jobvacancy.uz/backend/db/gen"
+	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/cursor"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
@@ -71,14 +73,7 @@ func (h *Handler) companies(w http.ResponseWriter, r *http.Request) {
 			bad["status"] = apperr.OneOf(gen.AllCompanyStatusValues())
 		}
 	}
-	if s := q.Get("verified"); s != "" {
-		v, err := strconv.ParseBool(s)
-		if err == nil {
-			f.Verified = &v
-		} else {
-			bad["verified"] = "boolean"
-		}
-	}
+	f.Verified = boolParam(q, "verified", bad)
 	if len(bad) > 0 {
 		response.Error(w, r, apperr.Validation(bad))
 		return
@@ -186,7 +181,151 @@ func (h *Handler) setUserBlocked(blocked bool) http.HandlerFunc {
 	}
 }
 
+// SkillRoutes are mounted under /admin/skills. The verification flag uses PUT / DELETE;
+// a rename edits the resource (PATCH); a merge is a one-way action with a payload (POST).
+func (h *Handler) SkillRoutes(r chi.Router) {
+	r.Get("/", h.skills)
+	r.Post("/verification", h.verifySkills) // bulk: verify many in one transaction
+	r.Put("/{skill}/verification", h.setSkillVerified(true))
+	r.Delete("/{skill}/verification", h.setSkillVerified(false))
+	r.Patch("/{skill}", h.renameSkill)
+	r.Post("/{skill}/merge", h.mergeSkill)
+	r.Delete("/{skill}", h.deleteSkill)
+}
+
+func (h *Handler) skills(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	bad := map[string]string{}
+	f := SkillFilter{Query: searchText(q.Get("q")), Sort: SkillSorts[0]}
+	if s := q.Get("sort"); s != "" {
+		if slices.Contains(SkillSorts, SkillSort(s)) {
+			f.Sort = SkillSort(s)
+		} else {
+			bad["sort"] = apperr.OneOf(SkillSorts)
+		}
+	}
+	f.Verified = boolParam(q, "verified", bad)
+	limit, err := cursor.ParseLimit(q.Get("limit"), cursor.AdminDefaultLimit, cursor.AdminMaxLimit)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	if len(bad) > 0 {
+		response.Error(w, r, apperr.Validation(bad))
+		return
+	}
+	if f.After, err = cursor.ParseAfter[SkillCursor](q.Get("cursor")); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	f.Limit = limit
+	rows, meta, err := h.Svc.ListSkills(r.Context(), f)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.List(w, mapSlice(rows, skillDTO), meta)
+}
+
+func (h *Handler) setSkillVerified(verified bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, ok := skillID(w, r)
+		if !ok {
+			return
+		}
+		sk, err := h.Svc.SetSkillVerified(r.Context(), id, verified)
+		if err != nil {
+			response.Error(w, r, err)
+			return
+		}
+		response.JSON(w, http.StatusOK, skillDTO(sk))
+	}
+}
+
+// The max must equal catalog.MaxSkillNameLen (tags can't reference constants; a test
+// keeps them in sync).
+type renameSkillRequest struct {
+	Name string `json:"name" validate:"required,max=50"`
+}
+
+type verifySkillsRequest struct {
+	IDs []int32 `json:"ids" validate:"required,min=1,max=100,unique,dive,min=1"`
+}
+
+func (h *Handler) verifySkills(w http.ResponseWriter, r *http.Request) {
+	var req verifySkillsRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	rows, err := h.Svc.VerifySkills(r.Context(), req.IDs)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, mapSlice(rows, skillDTO))
+}
+
+func (h *Handler) renameSkill(w http.ResponseWriter, r *http.Request) {
+	id, ok := skillID(w, r)
+	if !ok {
+		return
+	}
+	var req renameSkillRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	sk, err := h.Svc.RenameSkill(r.Context(), id, req.Name)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, skillDTO(sk))
+}
+
+type mergeSkillRequest struct {
+	Into int32 `json:"into" validate:"required,min=1"`
+}
+
+func (h *Handler) mergeSkill(w http.ResponseWriter, r *http.Request) {
+	id, ok := skillID(w, r)
+	if !ok {
+		return
+	}
+	var req mergeSkillRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	sk, err := h.Svc.MergeSkill(r.Context(), id, req.Into)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, skillDTO(sk))
+}
+
+func (h *Handler) deleteSkill(w http.ResponseWriter, r *http.Request) {
+	id, ok := skillID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.Svc.DeleteSkill(r.Context(), id); err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.NoContent(w)
+}
+
 // ---- parsing -----------------------------------------------------------------------------
+
+// skillID parses {skill}; a malformed id is reported like an unknown one (404 skill_not_found).
+func skillID(w http.ResponseWriter, r *http.Request) (int32, bool) {
+	n, err := strconv.ParseInt(chi.URLParam(r, "skill"), 10, 32)
+	if err != nil || n < 1 {
+		response.Error(w, r, catalog.ErrSkillNotFound)
+		return 0, false
+	}
+	return int32(n), true
+}
 
 // userID parses {user}; a malformed id is reported like an unknown one (404 user_not_found).
 func userID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
@@ -196,6 +335,20 @@ func userID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 		return id, false
 	}
 	return id, true
+}
+
+// boolParam reads an optional true/false query parameter; a bad value is recorded in bad.
+func boolParam(q url.Values, name string, bad map[string]string) *bool {
+	s := q.Get(name)
+	if s == "" {
+		return nil
+	}
+	v, err := strconv.ParseBool(s)
+	if err != nil {
+		bad[name] = "boolean"
+		return nil
+	}
+	return &v
 }
 
 func searchText(s string) string {

@@ -12,7 +12,8 @@ SELECT
     (SELECT count(*) FROM vacancies WHERE status = 'published')::int                                            AS vacancies_published,
     (SELECT count(*) FROM vacancies WHERE status = 'moderation')::int                                           AS vacancies_pending_moderation,
     (SELECT count(*) FROM applications WHERE created_at >= now() - interval '7 days')::int                     AS applications_sent_last_7d,
-    (SELECT count(DISTINCT target_id) FROM reports WHERE status = 'open')::int                                  AS reports_open_targets;
+    (SELECT count(DISTINCT target_id) FROM reports WHERE status = 'open')::int                                  AS reports_open_targets,
+    (SELECT count(*) FROM skills WHERE NOT is_verified)::int                                                    AS skills_unverified;
 
 -- Newest first, keyset on (created_at, id). status / verified are independent filters.
 -- name: AdminListCompanies :many
@@ -59,3 +60,44 @@ UPDATE users SET status = $2 WHERE id = $1 AND status <> 'deleted' RETURNING *;
 
 -- name: SetUserRoleByID :one
 UPDATE users SET role = $2 WHERE id = $1 AND status <> 'deleted' RETURNING *;
+
+-- Skill directory (view skill_directory, migration 00015). Lists and mutation responses
+-- return the same rows.
+-- name: AdminGetSkill :one
+SELECT * FROM skill_directory WHERE id = $1;
+
+-- name: AdminGetSkills :many
+SELECT * FROM skill_directory WHERE id = ANY(sqlc.arg(ids)::int[]) ORDER BY name, id;
+
+-- Newest first, keyset on (created_at, id).
+-- name: AdminListSkillsNewest :many
+SELECT * FROM skill_directory d
+WHERE (sqlc.narg(q)::text IS NULL OR lower(d.name) LIKE '%' || lower(sqlc.narg(q)::text) || '%'
+       OR d.slug LIKE '%' || lower(sqlc.narg(q)::text) || '%')
+  AND (sqlc.narg(verified)::boolean IS NULL OR d.is_verified = sqlc.narg(verified)::boolean)
+  AND (sqlc.narg(after_t)::timestamptz IS NULL
+       OR (d.created_at, d.id) < (sqlc.narg(after_t)::timestamptz, sqlc.narg(after_id)::int))
+ORDER BY d.created_at DESC, d.id DESC
+LIMIT sqlc.arg(max_results);
+
+-- Most popular first (autocomplete ranking), keyset on (popularity, id).
+-- name: AdminListSkillsByPopularity :many
+SELECT * FROM skill_directory d
+WHERE (sqlc.narg(q)::text IS NULL OR lower(d.name) LIKE '%' || lower(sqlc.narg(q)::text) || '%'
+       OR d.slug LIKE '%' || lower(sqlc.narg(q)::text) || '%')
+  AND (sqlc.narg(verified)::boolean IS NULL OR d.is_verified = sqlc.narg(verified)::boolean)
+  AND (sqlc.narg(after_n)::int IS NULL
+       OR (d.popularity, d.id) < (sqlc.narg(after_n)::int, sqlc.narg(after_id)::int))
+ORDER BY d.popularity DESC, d.id DESC
+LIMIT sqlc.arg(max_results);
+
+-- Most listed right now first (vacancies + resumes), keyset on (in_use, id).
+-- name: AdminListSkillsInUse :many
+SELECT * FROM skill_directory d
+WHERE (sqlc.narg(q)::text IS NULL OR lower(d.name) LIKE '%' || lower(sqlc.narg(q)::text) || '%'
+       OR d.slug LIKE '%' || lower(sqlc.narg(q)::text) || '%')
+  AND (sqlc.narg(verified)::boolean IS NULL OR d.is_verified = sqlc.narg(verified)::boolean)
+  AND (sqlc.narg(after_n)::int IS NULL
+       OR (d.in_use, d.id) < (sqlc.narg(after_n)::int, sqlc.narg(after_id)::int))
+ORDER BY d.in_use DESC, d.id DESC
+LIMIT sqlc.arg(max_results);

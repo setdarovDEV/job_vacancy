@@ -118,7 +118,10 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] B: shikoyatlar: tizimga kirgan foydalanuvchi vakansiya yoki kompaniyaga sabab bilan shikoyat qiladi (soatiga 10 ta,
         o'z kompaniyasiga emas, bitta ochiq shikoyat); adminda obyekt bo'yicha guruhlangan navbat, "choralar ko'rildi" / "asossiz"
         (shikoyatchilarga bildirishnoma), vakansiyani olib tashlash, kompaniyani bloklash; `test/e2e/reports.sh`, `shots-h.mjs`
-  - [ ] C: kataloglar (yangi ko'nikmalarni tasdiqlash/birlashtirish)
+  - [x] C: kataloglar: foydalanuvchilar qo'shgan ko'nikmalar navbati (yangi / tasdiqlangan / hammasi, ko'p ishlatilgan bo'yicha),
+        tasdiqlash (shu jumladan bir nechtasini birdan), qayta nomlash, birlashtirish va o'chirish; eski va birlashtirilgan nomlar
+        `skill_aliases` orqali yangi ko'nikmaga bog'lanadi; vakansiya va rezyume qidiruvi fon vazifasida (River, o'zgarish bilan
+        bitta tranzaksiyada navbatga qo'yiladi) yangilanadi; `test/e2e/skills.sh`, `shots-i.mjs`
   - [ ] D: statistika grafiklari
 - [ ] **9. Mobile (Flutter)**
 - [ ] **10. AI moduli + kreditlar** (to'lov "Tez kunda")

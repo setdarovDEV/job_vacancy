@@ -103,7 +103,7 @@ func (s *Service) parse(ctx context.Context, in Input) (parsed, error) {
 			return parsed{}, apperr.Validation(map[string]string{"educations": "date_range"})
 		}
 	}
-	skills, err := s.Catalog.ResolveSkills(ctx, in.Skills)
+	skills, err := s.Catalog.ResolveSkills(ctx, in.Skills, catalog.MaxSkillsPerResume)
 	if err != nil {
 		return parsed{}, err
 	}
@@ -403,6 +403,32 @@ func (s *Service) OwnedBy(ctx context.Context, id, userID uuid.UUID) (gen.Resume
 
 // ---- search index ------------------------------------------------------------------------
 
+// RefreshSkillTags rewrites the skill part of the given resumes' search rows from their
+// current skills (a skill was renamed, merged or deleted). Same folding as searchDoc;
+// safe to repeat, and resumes without skills left get empty tags.
+func (s *Service) RefreshSkillTags(ctx context.Context, ids []uuid.UUID) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := s.Q.ListResumeSkills(ctx, ids)
+	if err != nil {
+		return err
+	}
+	names := make(map[uuid.UUID][]string, len(ids))
+	for _, r := range rows {
+		names[r.ResumeID] = append(names[r.ResumeID], r.Name)
+	}
+	return postgres.WithTx(ctx, s.Pool, func(q *gen.Queries) error {
+		for _, id := range ids {
+			tags := catalog.SearchTags(names[id])
+			if err := q.SetResumeSearchTags(ctx, gen.SetResumeSearchTagsParams{ResumeID: id, Tags: tags}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *Service) searchDoc(r gen.Resume, p parsed) gen.UpsertResumeSearchParams {
 	var tags, body, meta, langs []string
 	for _, sk := range p.skills {
@@ -433,7 +459,7 @@ func (s *Service) searchDoc(r gen.Resume, p parsed) gen.UpsertResumeSearchParams
 		ID:        r.ID,
 		Languages: append([]string{}, langs...),
 		Title:     translit.Fold(r.Title),
-		Tags:      translit.Fold(strings.Join(tags, " ")),
+		Tags:      catalog.SearchTags(tags),
 		Meta:      dedupe(translit.Fold(strings.Join(meta, " "))),
 		Body:      translit.Fold(strings.Join(body, " ")),
 	}

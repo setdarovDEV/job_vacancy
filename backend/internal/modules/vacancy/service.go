@@ -92,7 +92,7 @@ func (s *Service) Create(ctx context.Context, p reqctx.Principal, companyRef str
 	if err := s.normalize(&in); err != nil {
 		return Detail{}, err
 	}
-	skills, err := s.Catalog.ResolveSkills(ctx, in.Skills)
+	skills, err := s.Catalog.ResolveSkills(ctx, in.Skills, catalog.MaxSkillsPerAd)
 	if err != nil {
 		return Detail{}, err
 	}
@@ -135,7 +135,7 @@ func (s *Service) Update(ctx context.Context, p reqctx.Principal, id uuid.UUID, 
 	if err := s.normalize(&in); err != nil {
 		return Detail{}, err
 	}
-	skills, err := s.Catalog.ResolveSkills(ctx, in.Skills)
+	skills, err := s.Catalog.ResolveSkills(ctx, in.Skills, catalog.MaxSkillsPerAd)
 	if err != nil {
 		return Detail{}, err
 	}

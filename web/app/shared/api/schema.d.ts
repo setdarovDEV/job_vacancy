@@ -1530,6 +1530,299 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Skill directory (user-added skills to review, rename, merge or delete) */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description name or slug substring */
+                    q?: string;
+                    verified?: boolean;
+                    /** @description newest: review queue order; popularity: autocomplete ranking; in_use: most vacancies + resumes listing it now. A cursor only works with the sort that issued it. */
+                    sort?: "newest" | "popularity" | "in_use";
+                    cursor?: components["parameters"]["Cursor"];
+                    /** @description page size for every admin list */
+                    limit?: components["parameters"]["AdminLimit"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page of skills */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["AdminSkill"][];
+                            meta: components["schemas"]["PageMeta"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidCursor"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/skills/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify several skills at once (the review queue's bulk action). All or nothing: if any id is unknown nothing changes (422 ids = not_found). Idempotent. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description at most the admin page size (AdminLimit max) */
+                        ids: number[];
+                    };
+                };
+            };
+            responses: {
+                /** @description The verified skills, by name */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["AdminSkill"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/skills/{skill}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                skill: components["parameters"]["SkillRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete the skill and remove it from every vacancy and resume (search is refreshed in the background) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                    skill: components["parameters"]["SkillRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Deleted */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["SkillNotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        /** Rename (fix spelling). The old name stays as an alias. Vacancy and resume search picks up the new name in the background, usually within seconds. */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                    skill: components["parameters"]["SkillRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        name: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["AdminSkill"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["SkillNotFound"];
+                /** @description skill_exists: another skill already has this name or alias; merge into it instead */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        trace?: never;
+    };
+    "/admin/skills/{skill}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                skill: components["parameters"]["SkillRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark reviewed; verified skills are suggested in autocomplete. Idempotent. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                    skill: components["parameters"]["SkillRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminSkill"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["SkillNotFound"];
+            };
+        };
+        post?: never;
+        /** Take verification back. Idempotent. */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                    skill: components["parameters"]["SkillRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminSkill"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["SkillNotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/skills/{skill}/merge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                skill: components["parameters"]["SkillRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Merge this skill into another (duplicates such as "React.js" → "React"). Every vacancy and resume moves to the target, this skill's names become the target's aliases, and this skill is deleted. Answers with the target. Search is refreshed in the background. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+                    skill: components["parameters"]["SkillRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @description id of the skill that survives */
+                        into: number;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["AdminSkill"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                /** @description skill_not_found: the skill in the path (the one being merged away) doesn't exist */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description validation_failed; fields.into = not_found (no such target) or not_self (merging a skill into itself) */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -3965,6 +4258,10 @@ export interface components {
                 /** @description vacancies and companies with at least one open report */
                 open_targets: number;
             };
+            skills: {
+                /** @description user-added skills nobody has reviewed yet (not offered in autocomplete) */
+                unverified: number;
+            };
         };
         /** @description In-app notification. `payload` carries what the type needs: application.new (application_id, vacancy_title, candidate_name); application.status (application_id, vacancy_title, company_name, status); application.invited (application_id, vacancy_title, company_name); vacancy.approved (vacancy_id, vacancy_title); vacancy.rejected and vacancy.taken_down (vacancy_id, vacancy_title, reason); search.alert (search_id, search_name, count, preview); report.resolved and report.dismissed (target_type, target_name). */
         Notification: {
@@ -4100,6 +4397,26 @@ export interface components {
             /** Format: date-time */
             last_seen_at: string | null;
         };
+        /** @description A skill as admins see it. The same complete shape in lists and in mutation responses. */
+        AdminSkill: {
+            id: number;
+            name: string;
+            slug: string;
+            /** @description reviewed by an admin; only verified skills are suggested in autocomplete */
+            verified: boolean;
+            /** @description autocomplete ranking: grows each time a vacancy listing the skill is published and never shrinks (not the same as in_use) */
+            popularity: number;
+            /** @description vacancies that list this skill now */
+            vacancy_count: number;
+            /** @description resumes that list this skill now */
+            resume_count: number;
+            /** @description vacancy_count + resume_count */
+            in_use: number;
+            /** @description slugs of names merged or renamed into this skill; typing those names resolves to it */
+            aliases: string[];
+            /** Format: date-time */
+            created_at: string;
+        };
         PageMeta: {
             /** @description pass as ?cursor= for the next page; null on the last page */
             next_cursor: string | null;
@@ -4135,7 +4452,7 @@ export interface components {
             work_format: components["schemas"]["WorkFormat"];
             experience: components["schemas"]["Experience"];
             schedule: components["schemas"]["Schedule"];
-            /** @description free-text names; unknown ones are created */
+            /** @description free-text names; unknown ones are created; a too-long one fails as fields.skills[i] */
             skills?: string[];
         };
         /** @enum {string} */
@@ -4227,6 +4544,7 @@ export interface components {
             /** @description most recent first */
             experiences?: components["schemas"]["ResumeExperience"][];
             educations?: components["schemas"]["ResumeEducation"][];
+            /** @description free-text names; a too-long one fails as fields.skills[i] */
             skills?: string[];
             languages?: components["schemas"]["ResumeLanguage"][];
         };
@@ -4468,6 +4786,15 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description No such skill, or a malformed id (skill_not_found) */
+        SkillNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Not a public vacancy or company, or no reports for it (report_target_not_found) */
         ReportTargetNotFound: {
             headers: {
@@ -4508,6 +4835,17 @@ export interface components {
                 };
             };
         };
+        /** @description Skill with usage and aliases */
+        AdminSkill: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    data: components["schemas"]["AdminSkill"];
+                };
+            };
+        };
         /** @description User with account state */
         AdminUser: {
             headers: {
@@ -4533,6 +4871,8 @@ export interface components {
         UserRef: string;
         /** @description page size for every admin list */
         AdminLimit: number;
+        /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */
+        SkillRef: number;
         ReportTargetType: "vacancy" | "company";
         /** @description vacancy or company id; anything malformed answers 404 reported_target_not_found */
         ReportTargetId: string;

@@ -7,10 +7,150 @@ package gen
 
 import (
 	"context"
+
+	"github.com/google/uuid"
 )
 
+const addSkillAlias = `-- name: AddSkillAlias :exec
+INSERT INTO skill_aliases (slug, skill_id) VALUES ($1, $2)
+ON CONFLICT (slug) DO UPDATE SET skill_id = EXCLUDED.skill_id
+`
+
+type AddSkillAliasParams struct {
+	Slug    string
+	SkillID int32
+}
+
+func (q *Queries) AddSkillAlias(ctx context.Context, arg AddSkillAliasParams) error {
+	_, err := q.db.Exec(ctx, addSkillAlias, arg.Slug, arg.SkillID)
+	return err
+}
+
+const addSkillUsage = `-- name: AddSkillUsage :exec
+UPDATE skills SET usage_count = usage_count + $1 WHERE id = $2
+`
+
+type AddSkillUsageParams struct {
+	N  int32
+	ID int32
+}
+
+func (q *Queries) AddSkillUsage(ctx context.Context, arg AddSkillUsageParams) error {
+	_, err := q.db.Exec(ctx, addSkillUsage, arg.N, arg.ID)
+	return err
+}
+
+const copyResumeSkillLinks = `-- name: CopyResumeSkillLinks :exec
+INSERT INTO resume_skills (resume_id, skill_id)
+SELECT l.resume_id, $1::int FROM resume_skills l WHERE l.skill_id = $2::int
+ON CONFLICT DO NOTHING
+`
+
+type CopyResumeSkillLinksParams struct {
+	TargetID int32
+	SourceID int32
+}
+
+func (q *Queries) CopyResumeSkillLinks(ctx context.Context, arg CopyResumeSkillLinksParams) error {
+	_, err := q.db.Exec(ctx, copyResumeSkillLinks, arg.TargetID, arg.SourceID)
+	return err
+}
+
+const copyVacancySkillLinks = `-- name: CopyVacancySkillLinks :execrows
+INSERT INTO vacancy_skills (vacancy_id, skill_id)
+SELECT l.vacancy_id, $1::int FROM vacancy_skills l WHERE l.skill_id = $2::int
+ON CONFLICT DO NOTHING
+`
+
+type CopyVacancySkillLinksParams struct {
+	TargetID int32
+	SourceID int32
+}
+
+// Copies the source's links to the target; items that already have both keep one link.
+// The source's own rows go away with the skill (ON DELETE CASCADE).
+func (q *Queries) CopyVacancySkillLinks(ctx context.Context, arg CopyVacancySkillLinksParams) (int64, error) {
+	result, err := q.db.Exec(ctx, copyVacancySkillLinks, arg.TargetID, arg.SourceID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countSkillVacancyLinks = `-- name: CountSkillVacancyLinks :one
+SELECT count(*)::int FROM vacancy_skills WHERE skill_id = $1
+`
+
+func (q *Queries) CountSkillVacancyLinks(ctx context.Context, skillID int32) (int32, error) {
+	row := q.db.QueryRow(ctx, countSkillVacancyLinks, skillID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const deleteSkill = `-- name: DeleteSkill :execrows
+DELETE FROM skills WHERE id = $1
+`
+
+func (q *Queries) DeleteSkill(ctx context.Context, id int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSkill, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteSkillAlias = `-- name: DeleteSkillAlias :exec
+DELETE FROM skill_aliases WHERE slug = $1
+`
+
+func (q *Queries) DeleteSkillAlias(ctx context.Context, slug string) error {
+	_, err := q.db.Exec(ctx, deleteSkillAlias, slug)
+	return err
+}
+
+const findSkillBySlug = `-- name: FindSkillBySlug :one
+SELECT id FROM skills WHERE skills.slug = $1::text
+UNION ALL
+SELECT skill_id FROM skill_aliases WHERE skill_aliases.slug = $1::text
+LIMIT 1
+`
+
+// Which skill a slug belongs to, as its own slug or as an alias.
+func (q *Queries) FindSkillBySlug(ctx context.Context, slug string) (int32, error) {
+	row := q.db.QueryRow(ctx, findSkillBySlug, slug)
+	var id int32
+	err := row.Scan(&id)
+	return id, err
+}
+
+const getSkillForUpdate = `-- name: GetSkillForUpdate :one
+
+SELECT id, name, slug, is_verified, usage_count, created_at FROM skills WHERE id = $1 FOR UPDATE
+`
+
+// ---- skill administration (catalog.Service, admins only) ----------------------------------
+// Locks the row so concurrent renames/merges of the same skill run one after another.
+func (q *Queries) GetSkillForUpdate(ctx context.Context, id int32) (Skill, error) {
+	row := q.db.QueryRow(ctx, getSkillForUpdate, id)
+	var i Skill
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.IsVerified,
+		&i.UsageCount,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getSkillsBySlugs = `-- name: GetSkillsBySlugs :many
-SELECT id, name, slug FROM skills WHERE slug = ANY($1::text[])
+SELECT s.id, s.name, s.slug AS slug FROM skills s WHERE s.slug = ANY($1::text[])
+UNION ALL
+SELECT s.id, s.name, a.slug AS slug
+FROM skill_aliases a JOIN skills s ON s.id = a.skill_id
+WHERE a.slug = ANY($1::text[])
 `
 
 type GetSkillsBySlugsRow struct {
@@ -19,6 +159,8 @@ type GetSkillsBySlugsRow struct {
 	Slug string
 }
 
+// Matches a skill's own slug or one of its aliases (names merged or renamed away);
+// "slug" is always the slug that was asked for.
 func (q *Queries) GetSkillsBySlugs(ctx context.Context, slugs []string) ([]GetSkillsBySlugsRow, error) {
 	rows, err := q.db.Query(ctx, getSkillsBySlugs, slugs)
 	if err != nil {
@@ -117,6 +259,54 @@ func (q *Queries) ListRegions(ctx context.Context) ([]Region, error) {
 	return items, nil
 }
 
+const listSkillResumeIDs = `-- name: ListSkillResumeIDs :many
+SELECT resume_id FROM resume_skills WHERE skill_id = $1
+`
+
+func (q *Queries) ListSkillResumeIDs(ctx context.Context, skillID int32) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listSkillResumeIDs, skillID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var resume_id uuid.UUID
+		if err := rows.Scan(&resume_id); err != nil {
+			return nil, err
+		}
+		items = append(items, resume_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSkillVacancyIDs = `-- name: ListSkillVacancyIDs :many
+SELECT vacancy_id FROM vacancy_skills WHERE skill_id = $1
+`
+
+func (q *Queries) ListSkillVacancyIDs(ctx context.Context, skillID int32) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listSkillVacancyIDs, skillID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var vacancy_id uuid.UUID
+		if err := rows.Scan(&vacancy_id); err != nil {
+			return nil, err
+		}
+		items = append(items, vacancy_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const popularSkills = `-- name: PopularSkills :many
 SELECT id, name FROM skills WHERE is_verified
 ORDER BY usage_count DESC, name
@@ -146,6 +336,44 @@ func (q *Queries) PopularSkills(ctx context.Context, maxResults int32) ([]Popula
 		return nil, err
 	}
 	return items, nil
+}
+
+const renameSkill = `-- name: RenameSkill :one
+UPDATE skills SET name = $2, slug = $3 WHERE id = $1 RETURNING id, name, slug, is_verified, usage_count, created_at
+`
+
+type RenameSkillParams struct {
+	ID   int32
+	Name string
+	Slug string
+}
+
+func (q *Queries) RenameSkill(ctx context.Context, arg RenameSkillParams) (Skill, error) {
+	row := q.db.QueryRow(ctx, renameSkill, arg.ID, arg.Name, arg.Slug)
+	var i Skill
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.IsVerified,
+		&i.UsageCount,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const repointSkillAliases = `-- name: RepointSkillAliases :exec
+UPDATE skill_aliases SET skill_id = $1::int WHERE skill_id = $2::int
+`
+
+type RepointSkillAliasesParams struct {
+	TargetID int32
+	SourceID int32
+}
+
+func (q *Queries) RepointSkillAliases(ctx context.Context, arg RepointSkillAliasesParams) error {
+	_, err := q.db.Exec(ctx, repointSkillAliases, arg.TargetID, arg.SourceID)
+	return err
 }
 
 const searchSkills = `-- name: SearchSkills :many
@@ -187,8 +415,58 @@ func (q *Queries) SearchSkills(ctx context.Context, arg SearchSkillsParams) ([]S
 	return items, nil
 }
 
+const setSkillVerified = `-- name: SetSkillVerified :one
+UPDATE skills SET is_verified = $2 WHERE id = $1 RETURNING id, name, slug, is_verified, usage_count, created_at
+`
+
+type SetSkillVerifiedParams struct {
+	ID         int32
+	IsVerified bool
+}
+
+func (q *Queries) SetSkillVerified(ctx context.Context, arg SetSkillVerifiedParams) (Skill, error) {
+	row := q.db.QueryRow(ctx, setSkillVerified, arg.ID, arg.IsVerified)
+	var i Skill
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Slug,
+		&i.IsVerified,
+		&i.UsageCount,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const setSkillsVerified = `-- name: SetSkillsVerified :many
+UPDATE skills SET is_verified = true WHERE id = ANY($1::int[]) RETURNING id
+`
+
+// Bulk review; the caller compares the returned ids with the requested ones.
+func (q *Queries) SetSkillsVerified(ctx context.Context, ids []int32) ([]int32, error) {
+	rows, err := q.db.Query(ctx, setSkillsVerified, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int32{}
+	for rows.Next() {
+		var id int32
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const upsertSkill = `-- name: UpsertSkill :one
-INSERT INTO skills (name, slug) VALUES ($1, $2)
+INSERT INTO skills (name, slug)
+SELECT $1::text, $2::text
+WHERE NOT EXISTS (SELECT 1 FROM skill_aliases a WHERE a.slug = $2::text)
 ON CONFLICT (slug) DO UPDATE SET slug = EXCLUDED.slug
 RETURNING id, name, slug
 `
@@ -204,7 +482,9 @@ type UpsertSkillRow struct {
 	Slug string
 }
 
-// The no-op DO UPDATE makes RETURNING yield the existing row on conflict.
+// The no-op DO UPDATE makes RETURNING yield the existing row on conflict. A slug that is
+// an alias is never inserted as a new skill: no row comes back, and the caller resolves
+// the alias instead (the trigger from 00015 backs this up under concurrency).
 func (q *Queries) UpsertSkill(ctx context.Context, arg UpsertSkillParams) (UpsertSkillRow, error) {
 	row := q.db.QueryRow(ctx, upsertSkill, arg.Name, arg.Slug)
 	var i UpsertSkillRow
