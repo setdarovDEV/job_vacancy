@@ -57,7 +57,23 @@ check "login 200" $(req -X POST $API/auth/login -H 'X-Client-Type: android' -H '
 MAT=$(jq -r .data.access_token $SP/body.json); MRT=$(jq -r .data.refresh_token $SP/body.json)
 check "refresh token in mobile body" "${#MRT}" 43
 check "mobile refresh 200" $(req -X POST $API/auth/refresh -H 'X-Client-Type: android' -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$MRT\"}") 200
+check "expires_in seconds" "$(jq -r '.data.access_token_expires_in > 0 and .data.access_token_expires_in <= 900' $SP/body.json)" true
+LOST=$(jq -r .data.refresh_token $SP/body.json) # pretend this response never reached the app
+check "same token again within window -> 200 (lost response recovered)" $(req -X POST $API/auth/refresh -H 'X-Client-Type: android' -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$MRT\"}") 200
+MRT2=$(jq -r .data.refresh_token $SP/body.json)
+check "fresh pair differs from the lost one" "$([ "$MRT2" != "$LOST" ] && echo yes)" yes
+check "lost token no longer works" $(req -X POST $API/auth/refresh -H 'X-Client-Type: android' -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$LOST\"}") 401
+check "new token works" $(req -X POST $API/auth/refresh -H 'X-Client-Type: android' -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$MRT2\"}") 200
+MRT3=$(jq -r .data.refresh_token $SP/body.json)
 MAT=$(jq -r .data.access_token $SP/body.json)
+if [ "${SKIP_SLOW:-}" = "" ]; then
+  echo "  … waiting 31 s for the grace window to pass (SKIP_SLOW=1 skips)"
+  sleep 31
+  check "previous token after the window -> 401 (reuse)" $(req -X POST $API/auth/refresh -H 'X-Client-Type: android' -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$MRT2\"}") 401
+  check "reuse revoked the session" $(req -X POST $API/auth/refresh -H 'X-Client-Type: android' -H 'Content-Type: application/json' -d "{\"refresh_token\":\"$MRT3\"}") 401
+  check "access token of the revoked session refused" $(req $API/me -H "Authorization: Bearer $MAT") 401
+  MAT=$(curl -s -X POST $API/auth/login -H 'X-Client-Type: android' -H 'Content-Type: application/json' -d "{\"email\":\"$EMAIL\",\"password\":\"Secret123\"}" | jq -r .data.access_token)
+fi
 
 echo "== phone via Telegram (dev: code in api log)"
 check "invalid phone 422" $(req -X POST $API/auth/phone/send-code -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -d '{"phone":"123"}') 422

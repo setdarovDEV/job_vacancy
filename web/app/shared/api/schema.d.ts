@@ -144,8 +144,21 @@ export interface paths {
         put?: never;
         /**
          * Rotate the refresh token and get a new access token
-         * @description `refresh_race` (401) means a parallel request already rotated the token: retry once.
-         *     Reusing an old refresh token later revokes the whole session.
+         * @description Refresh tokens rotate on every use. Web clients send the `jv_refresh` cookie; mobile
+         *     clients (`X-Client-Type: android|ios`) send `refresh_token` in the body and get the new
+         *     one back in the body.
+         *
+         *     For 30 seconds after a rotation the previous token is still recognised:
+         *     - web: `refresh_race` (401). A parallel tab already rotated the cookie; retry once with
+         *       the cookie it set.
+         *     - mobile: the previous token gets a fresh pair (a lost response is recoverable) and the
+         *       token from the lost response stops working. Clients must not refresh in parallel.
+         *
+         *     Errors and what clients should do:
+         *     - `invalid_refresh_token` (401): unknown, expired or revoked. Sign out locally.
+         *       Presenting a token older than the grace window revokes the whole session.
+         *     - `refresh_race` (401): retry once (web).
+         *     - `account_blocked` (403): the account was blocked; the session is revoked. Sign out.
          */
         post: {
             parameters: {
@@ -167,6 +180,7 @@ export interface paths {
             responses: {
                 200: components["responses"]["Auth"];
                 401: components["responses"]["Error"];
+                403: components["responses"]["Error"];
             };
         };
         delete?: never;
@@ -184,7 +198,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Revoke the session that owns the given refresh token */
+        /**
+         * Revoke the session that owns the given refresh token
+         * @description Works without a valid access token. Web sends the cookie; mobile sends `refresh_token` in the body. Unknown tokens are ignored (204).
+         */
         post: {
             parameters: {
                 query?: never;
@@ -194,7 +211,14 @@ export interface paths {
                 path?: never;
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description mobile only */
+                        refresh_token?: string;
+                    };
+                };
+            };
             responses: {
                 204: components["responses"]["NoContent"];
             };
@@ -4231,6 +4255,8 @@ export interface components {
                 access_token?: string;
                 /** Format: date-time */
                 access_token_expires_at?: string;
+                /** @description Seconds until the access token expires. Clients should schedule refreshes from this and their own clock (device clocks can be wrong); a 401 still triggers a refresh. */
+                access_token_expires_in?: number;
                 /** @description mobile clients only */
                 refresh_token?: string;
                 /**

@@ -98,6 +98,9 @@ components:
             user: { $ref: "#/components/schemas/User" }
             access_token: { type: string }
             access_token_expires_at: { type: string, format: date-time }
+            access_token_expires_in:
+              type: integer
+              description: Seconds until the access token expires. Clients should schedule refreshes from this and their own clock (device clocks can be wrong); a 401 still triggers a refresh.
             refresh_token: { type: string, description: mobile clients only }
             refresh_token_expires_at: { type: string, format: date-time, description: mobile clients only }
             is_new_user: { type: boolean }
@@ -798,8 +801,27 @@ paths:
       tags: [auth]
       summary: Rotate the refresh token and get a new access token
       description: |
-        `refresh_race` (401) means a parallel request already rotated the token: retry once.
-        Reusing an old refresh token later revokes the whole session.
+        Refresh tokens rotate on every use. Web clients send the `jv_refresh` cookie; mobile
+        clients (`X-Client-Type: android|ios`) send `refresh_token` in the body and get the new
+        one back in the body.
+
+        For 30 seconds after a rotation the previous token is still recognised:
+        - web: `refresh_race` (401). A parallel tab already rotated the cookie; retry once with
+          the cookie it set.
+        - mobile: the previous token gets a fresh pair (a lost response is recoverable) and the
+          token from the lost response stops working. Clients must not refresh in parallel;
+          `refresh_race` can still reach a mobile client in the rare case of two retries
+          colliding, and the client should retry once.
+
+        Trade-off: for those 30 seconds a copied previous token is honoured instead of
+        revoking the session (re-rotations are logged with the session id for auditing);
+        outside the window, reuse revokes the session as before.
+
+        Errors and what clients should do:
+        - `invalid_refresh_token` (401): unknown, expired or revoked. Sign out locally.
+          Presenting a token older than the grace window revokes the whole session.
+        - `refresh_race` (401): retry once (web).
+        - `account_blocked` (403): the account was blocked; the session is revoked. Sign out.
       parameters: [{ $ref: "#/components/parameters/ClientType" }]
       requestBody:
         content:
@@ -810,11 +832,19 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/Auth" }
         "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /auth/logout:
     post:
       tags: [auth]
       summary: Revoke the session that owns the given refresh token
+      description: Works without a valid access token. Web sends the cookie; mobile sends `refresh_token` in the body. Unknown tokens are ignored (204).
       parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: { refresh_token: { type: string, description: mobile only } }
       responses: { "204": { $ref: "#/components/responses/NoContent" } }
   /auth/logout-all:
     post:

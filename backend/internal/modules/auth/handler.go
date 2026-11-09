@@ -63,9 +63,11 @@ func (h *Handler) MeRoutes(r chi.Router) {
 // ---- DTOs ------------------------------------------------------------------------------
 
 type authResponse struct {
-	User                  user.DTO   `json:"user"`
-	AccessToken           string     `json:"access_token"`
-	AccessTokenExpiresAt  time.Time  `json:"access_token_expires_at"`
+	User                 user.DTO  `json:"user"`
+	AccessToken          string    `json:"access_token"`
+	AccessTokenExpiresAt time.Time `json:"access_token_expires_at"`
+	// Seconds from now; clients with a wrong clock should use this, not the timestamp.
+	AccessTokenExpiresIn  int        `json:"access_token_expires_in"`
 	RefreshToken          string     `json:"refresh_token,omitempty"`
 	RefreshTokenExpiresAt *time.Time `json:"refresh_token_expires_at,omitempty"`
 	IsNewUser             bool       `json:"is_new_user"`
@@ -340,6 +342,7 @@ func (h *Handler) writeAuth(w http.ResponseWriter, r *http.Request, res *Result,
 		User:                 user.ToDTO(res.User),
 		AccessToken:          res.AccessToken,
 		AccessTokenExpiresAt: res.AccessExpiresAt,
+		AccessTokenExpiresIn: max(0, int(time.Until(res.AccessExpiresAt).Seconds())),
 		IsNewUser:            res.IsNewUser,
 	}
 	if isMobile(r) {

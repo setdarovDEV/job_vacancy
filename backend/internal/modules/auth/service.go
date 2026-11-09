@@ -255,8 +255,16 @@ func (s *Service) startSession(ctx context.Context, u gen.User, meta ClientMeta)
 	}, nil
 }
 
-// Refresh rotates the refresh token. Presenting an already-rotated token means it was
-// copied by someone else, so the whole session is revoked.
+// Refresh rotates the refresh token. Presenting an already-rotated token later means it
+// was copied by someone else, so the whole session is revoked.
+//
+// Within refreshRaceWin of a rotation the previous token is still recognised:
+//   - web (cookie) clients get refresh_race and retry with the cookie the winning request
+//     set; tabs share one cookie jar, so issuing another token here could leave the jar
+//     holding the loser's (now invalid) token;
+//   - mobile clients (token in the body, one refresh at a time per device) only present
+//     it again when the response was lost, so they get a fresh pair and the lost token
+//     stops working.
 func (s *Service) Refresh(ctx context.Context, refresh string, meta ClientMeta) (*Result, error) {
 	if refresh == "" {
 		return nil, ErrInvalidRefresh
@@ -264,7 +272,7 @@ func (s *Service) Refresh(ctx context.Context, refresh string, meta ClientMeta) 
 	h := sha(refresh)
 	sess, err := s.Q.GetSessionByRefreshHash(ctx, h)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, s.handleUnknownRefresh(ctx, h)
+		return s.refreshPrevious(ctx, h, meta)
 	}
 	if err != nil {
 		return nil, err
@@ -292,7 +300,7 @@ func (s *Service) Refresh(ctx context.Context, refresh string, meta ClientMeta) 
 		return nil, err
 	}
 	if n == 0 { // a parallel request rotated it between our read and write
-		return nil, ErrRefreshRace
+		return s.refreshPrevious(ctx, h, meta)
 	}
 	access, accessExp, err := s.Tokens.Issue(u.ID, sess.ID, string(u.Role), now)
 	if err != nil {
@@ -305,27 +313,63 @@ func (s *Service) Refresh(ctx context.Context, refresh string, meta ClientMeta) 
 	}, nil
 }
 
-func (s *Service) handleUnknownRefresh(ctx context.Context, h []byte) error {
+// refreshPrevious handles a token that isn't the session's current one: the previous
+// token within the grace window (see Refresh), reuse of an old token (revokes), or junk.
+func (s *Service) refreshPrevious(ctx context.Context, h []byte, meta ClientMeta) (*Result, error) {
 	sess, err := s.Q.GetSessionByPrevRefreshHash(ctx, h)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return ErrInvalidRefresh
+		return nil, ErrInvalidRefresh
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if sess.RevokedAt != nil {
-		return ErrInvalidRefresh
+	now := time.Now()
+	if sess.RevokedAt != nil || now.After(sess.ExpiresAt) {
+		return nil, ErrInvalidRefresh
 	}
-	// Two tabs refreshing at once is normal: the loser just retries with the new cookie.
-	if time.Since(sess.LastUsedAt) < refreshRaceWin {
-		return ErrRefreshRace
+	since := now.Add(-refreshRaceWin)
+	if sess.LastUsedAt.Before(since) {
+		s.Log.WarnContext(ctx, "refresh token reuse detected; revoking session",
+			"user_id", sess.UserID, "session_id", sess.ID)
+		if err := s.revoke(ctx, sess.ID); err != nil {
+			return nil, err
+		}
+		return nil, ErrInvalidRefresh
 	}
-	s.Log.WarnContext(ctx, "refresh token reuse detected; revoking session",
-		"user_id", sess.UserID, "session_id", sess.ID)
-	if err := s.revoke(ctx, sess.ID); err != nil {
-		return err
+	if meta.Platform == "web" {
+		return nil, ErrRefreshRace
 	}
-	return ErrInvalidRefresh
+	u, err := s.Q.GetUserByID(ctx, sess.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(u); err != nil {
+		_ = s.revoke(ctx, sess.ID)
+		return nil, err
+	}
+	next := random.Token(32)
+	n, err := s.Q.RerotateFromPrevious(ctx, gen.RerotateFromPreviousParams{
+		ID: sess.ID, PrevHash: h, NewHash: sha(next), Since: since,
+		ExpiresAt: now.Add(s.RefreshTTL), Ip: addrPtr(meta.IP), UserAgent: truncate(meta.UserAgent, 512),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 { // revoked or rotated again meanwhile
+		return nil, ErrRefreshRace
+	}
+	// Audit trail: a re-rotation means a lost response, or (rarely) a copied token used
+	// within the grace window.
+	s.Log.InfoContext(ctx, "refresh token re-rotated within grace window",
+		"user_id", sess.UserID, "session_id", sess.ID, "platform", meta.Platform)
+	access, accessExp, err := s.Tokens.Issue(u.ID, sess.ID, string(u.Role), now)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		User: u, AccessToken: access, AccessExpiresAt: accessExp,
+		RefreshToken: next, RefreshExpiresAt: now.Add(s.RefreshTTL),
+	}, nil
 }
 
 func (s *Service) Logout(ctx context.Context, sessionID uuid.UUID) error {

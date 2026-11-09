@@ -22,6 +22,20 @@ WHERE id = sqlc.arg(id)
   AND refresh_hash = sqlc.arg(old_hash)
   AND revoked_at IS NULL;
 
+-- A mobile client whose refresh response was lost presents the previous token again
+-- within the grace window: issue another token in place of the lost one. last_used_at
+-- stays, so retries can't stretch the window.
+-- name: RerotateFromPrevious :execrows
+UPDATE user_sessions
+SET refresh_hash = sqlc.arg(new_hash),
+    expires_at   = sqlc.arg(expires_at),
+    ip           = sqlc.arg(ip),
+    user_agent   = sqlc.arg(user_agent)
+WHERE id = sqlc.arg(id)
+  AND prev_refresh_hash = sqlc.arg(prev_hash)
+  AND revoked_at IS NULL
+  AND last_used_at > sqlc.arg(since);
+
 -- name: RevokeSession :exec
 UPDATE user_sessions SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL;
 

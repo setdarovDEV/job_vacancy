@@ -152,6 +152,47 @@ func (q *Queries) ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]U
 	return items, nil
 }
 
+const rerotateFromPrevious = `-- name: RerotateFromPrevious :execrows
+UPDATE user_sessions
+SET refresh_hash = $1,
+    expires_at   = $2,
+    ip           = $3,
+    user_agent   = $4
+WHERE id = $5
+  AND prev_refresh_hash = $6
+  AND revoked_at IS NULL
+  AND last_used_at > $7
+`
+
+type RerotateFromPreviousParams struct {
+	NewHash   []byte
+	ExpiresAt time.Time
+	Ip        *netip.Addr
+	UserAgent string
+	ID        uuid.UUID
+	PrevHash  []byte
+	Since     time.Time
+}
+
+// A mobile client whose refresh response was lost presents the previous token again
+// within the grace window: issue another token in place of the lost one. last_used_at
+// stays, so retries can't stretch the window.
+func (q *Queries) RerotateFromPrevious(ctx context.Context, arg RerotateFromPreviousParams) (int64, error) {
+	result, err := q.db.Exec(ctx, rerotateFromPrevious,
+		arg.NewHash,
+		arg.ExpiresAt,
+		arg.Ip,
+		arg.UserAgent,
+		arg.ID,
+		arg.PrevHash,
+		arg.Since,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const revokeAllUserSessions = `-- name: RevokeAllUserSessions :many
 UPDATE user_sessions SET revoked_at = now()
 WHERE user_id = $1 AND revoked_at IS NULL
