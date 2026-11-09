@@ -35,6 +35,8 @@ var (
 
 // Statuses the employer can move a card to, and from which ones. Withdrawn is final:
 // the candidate left. "viewed" is set automatically when the employer opens it.
+// The admin funnel (AdminApplicationFunnel in db/queries/admin.sql) maps these statuses
+// to stages; update it when a status is added.
 var (
 	employerTargets = []gen.ApplicationStatus{
 		gen.ApplicationStatusViewed, gen.ApplicationStatusInvited, gen.ApplicationStatusInterview,

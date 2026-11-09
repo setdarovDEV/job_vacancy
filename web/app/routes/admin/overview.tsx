@@ -4,10 +4,12 @@ import type { ReactNode } from "react";
 
 import { AdminOnly } from "./admin-ui";
 import { adminKeys } from "./keys";
+import { StatsSection } from "./stats-section";
 import { api, type Schemas } from "~/shared/api/client";
 import { LocalizedLink } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { cn } from "~/shared/lib/cn";
+import { groupDigits } from "~/shared/lib/format";
 import { authed } from "~/shared/query/query";
 import { PageHeader } from "~/shared/ui/Section";
 import { Skeleton } from "~/shared/ui/Skeleton";
@@ -49,11 +51,12 @@ function Page() {
             <StatCard to="/admin/users" icon={<Users />} label={t("admin.stats.users")} value={s.users.total}
               note={t("admin.stats.newWeek", { n: s.users.signed_up_last_7d })} />
             <StatCard to="/admin/companies" icon={<Building2 />} label={t("admin.stats.companies")} value={s.companies.total} />
-            <StatCard to="/vacancies" icon={<FileText />} label={t("admin.stats.published")} value={s.vacancies.published} />
+            <StatCard to="/vacancies" icon={<FileText />} label={t("admin.stats.live")} value={s.vacancies.live} />
             <StatCard icon={<Send />} label={t("admin.stats.applicationsWeek")} value={s.applications.sent_last_7d} />
           </div>
         </>
       )}
+      <StatsSection />
     </>
   );
 }
@@ -68,7 +71,7 @@ function StatCard({ to, icon, label, value, note, urgent }: {
       <span className={cn("grid size-10 place-items-center rounded-xl [&>svg]:size-5", hot ? "bg-zafaron-soft text-zafaron-ink" : "bg-lapis-soft text-lapis-ink")} aria-hidden="true">
         {icon}
       </span>
-      <p className="num mt-4 font-display text-3xl font-semibold tracking-[-0.03em] text-ink">{value.toLocaleString("ru-RU")}</p>
+      <p className="num mt-4 font-display text-3xl font-semibold tracking-[-0.03em] text-ink">{groupDigits(value)}</p>
       <p className="mt-1 text-sm text-ink-2">{label}</p>
       {note && <p className="num mt-1 text-xs text-ink-3">{note}</p>}
     </>

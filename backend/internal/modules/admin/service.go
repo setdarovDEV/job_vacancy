@@ -7,6 +7,7 @@ package admin
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,11 @@ type Store interface {
 	AdminListSkillsInUse(ctx context.Context, arg gen.AdminListSkillsInUseParams) ([]gen.SkillDirectory, error)
 	AdminGetSkill(ctx context.Context, id int32) (gen.SkillDirectory, error)
 	AdminGetSkills(ctx context.Context, ids []int32) ([]gen.SkillDirectory, error)
+	AdminStatsToday(ctx context.Context) (time.Time, error)
+	AdminDailyActivity(ctx context.Context, days int32) ([]gen.AdminDailyActivityRow, error)
+	AdminTopCategories(ctx context.Context, arg gen.AdminTopCategoriesParams) ([]gen.AdminTopCategoriesRow, error)
+	AdminTopRegions(ctx context.Context, arg gen.AdminTopRegionsParams) ([]gen.AdminTopRegionsRow, error)
+	AdminApplicationFunnel(ctx context.Context, days int32) (gen.AdminApplicationFunnelRow, error)
 }
 
 // CompanyModerator applies the company module's admin-only rules (company.Service).
@@ -58,6 +64,7 @@ type Service struct {
 	Companies CompanyModerator
 	Sessions  SessionRevoker
 	Skills    SkillCurator
+	Cache     StatsCache // required for Activity/Breakdown; NoStatsCache to skip caching
 }
 
 // CompanyFilter selects a company directory page; nil fields don't filter.

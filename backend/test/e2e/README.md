@@ -19,6 +19,7 @@ test/e2e/saved_searches.sh                       # 14 checks (uses psql)
 test/e2e/admin.sh                                # 64 checks (needs bin/ctl): admin stats, companies, users, blocking
 test/e2e/reports.sh                              # 49 checks (needs bin/ctl): reports, admin queue, takedown, resolve/dismiss
 test/e2e/skills.sh                               # 50 checks (needs bin/ctl and the worker): skill review, rename, merge, aliases, delete, search refresh
+test/e2e/stats.sh                                # 31 checks (needs bin/ctl; run alone: exact +1 deltas): daily activity, breakdown, funnel, cache
 ```
 
 The auth endpoints are rate-limited per IP (30/min), so leave about a minute between

@@ -28,6 +28,8 @@ type Handler struct{ Svc *Service }
 // Routes are mounted inside /admin (admins only).
 func (h *Handler) Routes(r chi.Router) {
 	r.Get("/stats", h.stats)
+	r.Get("/stats/activity", h.activity)
+	r.Get("/stats/breakdown", h.breakdown)
 }
 
 // CompanyRoutes are mounted under /admin/companies. Flags use PUT (set) / DELETE (clear).
@@ -45,6 +47,46 @@ func (h *Handler) UserRoutes(r chi.Router) {
 	r.Put("/{user}/role", h.setRole)
 	r.Put("/{user}/block", h.setUserBlocked(true))
 	r.Delete("/{user}/block", h.setUserBlocked(false))
+}
+
+func (h *Handler) activity(w http.ResponseWriter, r *http.Request) {
+	p, ok := statsPeriod(w, r)
+	if !ok {
+		return
+	}
+	a, err := h.Svc.Activity(r.Context(), p)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, a)
+}
+
+func (h *Handler) breakdown(w http.ResponseWriter, r *http.Request) {
+	p, ok := statsPeriod(w, r)
+	if !ok {
+		return
+	}
+	b, err := h.Svc.Breakdown(r.Context(), p)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, b)
+}
+
+// statsPeriod reads ?days= (default DefaultStatsPeriod).
+func statsPeriod(w http.ResponseWriter, r *http.Request) (StatsPeriod, bool) {
+	s := r.URL.Query().Get("days")
+	if s == "" {
+		return DefaultStatsPeriod, true
+	}
+	n, err := strconv.Atoi(s)
+	if p := StatsPeriod(n); err == nil && p.Valid() {
+		return p, true
+	}
+	response.Error(w, r, errStatsPeriod)
+	return 0, false
 }
 
 func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {

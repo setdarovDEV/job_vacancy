@@ -112,7 +112,7 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] Header'dagi badge'lar real vaqtda yangilanadi
   - [x] Tekshiruv: 42 ta brauzer tekshiruvi (`web/test/*.mjs`), production'da 11 sahifa sekin 4G'da LCP < 0,9 s, CLS < 0,1, hydration xatosiz;
         bosh sahifa JS 145 KB + CSS 15 KB gzip; `test/i18n-keys.mjs` 4 tildagi kalitlarni tekshiradi
-- [ ] **8. Admin panel**
+- [x] **8. Admin panel**
   - [x] A: umumiy ko'rinish, moderatsiya (ko'rib chiqish, qabul/rad), kompaniyalar (tasdiqlash, bloklash: vakansiyalar
         yashiriladi va blokdan keyin qaytadi), foydalanuvchilar (rol, bloklash + sessiyalarni yopish); `test/e2e/admin.sh`, `shots-g.mjs`
   - [x] B: shikoyatlar: tizimga kirgan foydalanuvchi vakansiya yoki kompaniyaga sabab bilan shikoyat qiladi (soatiga 10 ta,
@@ -122,7 +122,9 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
         tasdiqlash (shu jumladan bir nechtasini birdan), qayta nomlash, birlashtirish va o'chirish; eski va birlashtirilgan nomlar
         `skill_aliases` orqali yangi ko'nikmaga bog'lanadi; vakansiya va rezyume qidiruvi fon vazifasida (River, o'zgarish bilan
         bitta tranzaksiyada navbatga qo'yiladi) yangilanadi; `test/e2e/skills.sh`, `shots-i.mjs`
-  - [ ] D: statistika grafiklari
+  - [x] D: statistika: 7/30/90 kunlik grafiklar (yangi ish izlovchi/beruvchi, e'lon qilingan vakansiyalar, arizalar,
+        shikoyatlar; oldingi davrga nisbatan %), eng faol sohalar va hududlar, arizalar voronkasi; Toshkent kuni bo'yicha,
+        Redis'da 5 daqiqa kesh; grafik kutubxonasisiz SVG (tooltip, klaviatura, ekran o'quvchi uchun jadval); `stats.sh`, `shots-j.mjs`
 - [ ] **9. Mobile (Flutter)**
 - [ ] **10. AI moduli + kreditlar** (to'lov "Tez kunda")
 - [ ] **11. Deploy:** nginx conf, SSL, prod compose, CI/CD, monitoring, backup

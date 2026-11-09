@@ -160,7 +160,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		VacancyHandler: &vacancy.Handler{Svc: vacancySvc},
 		ResumeHandler:  &resume.Handler{Svc: resumeSvc},
 		AppHandler:     &application.Handler{Svc: appSvc},
-		AdminHandler:   &admin.Handler{Svc: &admin.Service{Store: q, Companies: companySvc, Sessions: authSvc, Skills: skillAdmin}},
+		AdminHandler:   &admin.Handler{Svc: &admin.Service{Store: q, Companies: companySvc, Sessions: authSvc, Skills: skillAdmin, Cache: redis.JSONCache{RDB: rdb}}},
 		ReportHandler:  &report.Handler{Svc: reportSvc},
 	})
 

@@ -22,7 +22,7 @@ type StatsDTO struct {
 		Blocked          int32 `json:"blocked"`
 	} `json:"companies"`
 	Vacancies struct {
-		Published         int32 `json:"published"`
+		Live              int32 `json:"live"` // published right now
 		PendingModeration int32 `json:"pending_moderation"`
 	} `json:"vacancies"`
 	Applications struct {
@@ -42,7 +42,7 @@ func statsDTO(r gen.AdminStatsRow) StatsDTO {
 	var d StatsDTO
 	d.Users.Total, d.Users.SignedUpLast7d, d.Users.Blocked = r.UsersTotal, r.UsersSignedUpLast7d, r.UsersBlocked
 	d.Companies.Total, d.Companies.ActiveUnverified, d.Companies.Blocked = r.CompaniesTotal, r.CompaniesActiveUnverified, r.CompaniesBlocked
-	d.Vacancies.Published, d.Vacancies.PendingModeration = r.VacanciesPublished, r.VacanciesPendingModeration
+	d.Vacancies.Live, d.Vacancies.PendingModeration = r.VacanciesLive, r.VacanciesPendingModeration
 	d.Applications.SentLast7d = r.ApplicationsSentLast7d
 	d.Reports.OpenTargets = r.ReportsOpenTargets
 	d.Skills.Unverified = r.SkillsUnverified

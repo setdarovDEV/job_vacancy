@@ -1369,6 +1369,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/stats/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Daily activity for the period with period-over-period totals */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description period length in calendar days (Asia/Tashkent), ending today and including it; anything else answers 422 fields.days */
+                    days?: components["parameters"]["StatsDays"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Activity */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["AdminActivity"];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/stats/breakdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Top categories and regions by vacancies published, and the application funnel */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description period length in calendar days (Asia/Tashkent), ending today and including it; anything else answers 422 fields.days */
+                    days?: components["parameters"]["StatsDays"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Breakdown */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["AdminBreakdown"];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/companies": {
         parameters: {
             query?: never;
@@ -4233,11 +4321,74 @@ export interface components {
              */
             my_role?: "owner" | "admin" | "recruiter";
         };
-        /** @description Overview counters. Deleted accounts are excluded from every user counter. */
+        /** @description Count for the period and for the same number of days just before it (for ↑/↓ comparisons). */
+        PeriodTotal: {
+            current: number;
+            previous: number;
+        };
+        /** @description The period a statistics response covers. */
+        StatsWindow: {
+            /** @enum {integer} */
+            days: 7 | 30 | 90;
+            /**
+             * Format: date
+             * @description first day (Asia/Tashkent)
+             */
+            from: string;
+            /**
+             * Format: date
+             * @description today (Asia/Tashkent)
+             */
+            to: string;
+        };
+        /** @description Daily activity, one bucket per calendar day (Asia/Tashkent) of the period, oldest first, zero-filled. Signups exclude deleted accounts and admins; vacancies count by publication date whatever their status now; applications count only those sent by seekers (not employer invitations). Signups are split by the account's current role (an account that changed role counts under its role now). Cached for up to 5 minutes. */
+        AdminActivity: {
+            period: components["schemas"]["StatsWindow"];
+            daily: {
+                /** Format: date */
+                date: string;
+                signups_seeker: number;
+                signups_employer: number;
+                vacancies_published: number;
+                applications_sent: number;
+                reports_filed: number;
+            }[];
+            totals: {
+                signups_seeker: components["schemas"]["PeriodTotal"];
+                signups_employer: components["schemas"]["PeriodTotal"];
+                vacancies_published: components["schemas"]["PeriodTotal"];
+                applications_sent: components["schemas"]["PeriodTotal"];
+                reports_filed: components["schemas"]["PeriodTotal"];
+            };
+        };
+        RankedCatalogItem: {
+            id: number;
+            slug: string;
+            name: components["schemas"]["Names"];
+            /** @description vacancies published in the period */
+            vacancies_published: number;
+        };
+        /** @description Where the period's activity went. Cached for up to 5 minutes. */
+        AdminBreakdown: {
+            period: components["schemas"]["StatsWindow"];
+            /** @description Top-level categories (a vacancy's subcategory counts toward its parent), most vacancies first. */
+            top_categories: components["schemas"]["RankedCatalogItem"][];
+            /** @description Regions (viloyat / Tashkent city), most vacancies first. */
+            top_regions: components["schemas"]["RankedCatalogItem"][];
+            /** @description Applications seekers sent in the period and how many ever reached each later stage (history counts, so one later rejected still counts as invited). viewed = the employer opened it or moved it to invited/interview/hired; invited = ever invited, at interview or hired; hired = ever hired. */
+            funnel: {
+                sent: number;
+                viewed: number;
+                invited: number;
+                hired: number;
+            };
+        };
+        /** @description Overview counters. Deleted accounts are excluded from every user counter. The *_last_7d counters use the same window and rules as AdminActivity for days = 7 (7 calendar days in Asia/Tashkent ending today; signups are seekers and employers, applications are the ones seekers sent), so they match its current totals. */
         AdminStats: {
             users: {
-                /** @description active + blocked accounts */
+                /** @description active + blocked accounts (admins included) */
                 total: number;
+                /** @description seekers + employers; = AdminActivity(days=7) signups_seeker + signups_employer current */
                 signed_up_last_7d: number;
                 blocked: number;
             };
@@ -4248,10 +4399,12 @@ export interface components {
                 blocked: number;
             };
             vacancies: {
-                published: number;
+                /** @description published right now (not the same as AdminActivity vacancies_published */
+                live: number;
                 pending_moderation: number;
             };
             applications: {
+                /** @description sent by seekers (not employer invitations); = AdminActivity(days=7) applications_sent current */
                 sent_last_7d: number;
             };
             reports: {
@@ -4876,6 +5029,8 @@ export interface components {
         ReportTargetType: "vacancy" | "company";
         /** @description vacancy or company id; anything malformed answers 404 reported_target_not_found */
         ReportTargetId: string;
+        /** @description period length in calendar days (Asia/Tashkent), ending today and including it; anything else answers 422 fields.days */
+        StatsDays: 7 | 30 | 90;
         ClientType: "web" | "android" | "ios";
     };
     requestBodies: never;

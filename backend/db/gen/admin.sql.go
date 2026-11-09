@@ -12,6 +12,132 @@ import (
 	"github.com/google/uuid"
 )
 
+const adminApplicationFunnel = `-- name: AdminApplicationFunnel :one
+WITH a AS (
+    SELECT a.id, a.status, a.viewed_at,
+           a.status IN ('invited', 'interview', 'hired') OR EXISTS (
+               SELECT 1 FROM application_events e
+               WHERE e.application_id = a.id AND e.to_status IN ('invited', 'interview', 'hired')) AS invited,
+           a.status = 'hired' OR EXISTS (
+               SELECT 1 FROM application_events e
+               WHERE e.application_id = a.id AND e.to_status = 'hired') AS hired
+    FROM applications a
+    WHERE a.source = 'apply' AND a.created_at >= stats_period_start($1::int)
+)
+SELECT count(*)::int                                                 AS sent,
+       count(*) FILTER (WHERE viewed_at IS NOT NULL OR invited)::int AS viewed,
+       count(*) FILTER (WHERE invited)::int                          AS invited,
+       count(*) FILTER (WHERE hired)::int                            AS hired
+FROM a
+`
+
+type AdminApplicationFunnelRow struct {
+	Sent    int32
+	Viewed  int32
+	Invited int32
+	Hired   int32
+}
+
+// Applications sent in the period and how many reached each later stage, ever (the
+// history counts, so an application later rejected still counts as invited):
+//
+//	viewed  = the employer opened it (viewed_at) or moved it to invited/interview/hired;
+//	invited = it was ever invited, at interview or hired;
+//	hired   = it was ever hired.
+//
+// Keep in step with application_status (migration 00007) and the employer transitions in
+// application.Service.
+func (q *Queries) AdminApplicationFunnel(ctx context.Context, days int32) (AdminApplicationFunnelRow, error) {
+	row := q.db.QueryRow(ctx, adminApplicationFunnel, days)
+	var i AdminApplicationFunnelRow
+	err := row.Scan(
+		&i.Sent,
+		&i.Viewed,
+		&i.Invited,
+		&i.Hired,
+	)
+	return i, err
+}
+
+const adminDailyActivity = `-- name: AdminDailyActivity :many
+WITH days AS (
+    SELECT d::date AS day
+    FROM generate_series(stats_today() - (2 * $1::int - 1), stats_today(), interval '1 day') AS d
+), u AS (
+    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day,
+           count(*) FILTER (WHERE role = 'seeker')   AS seekers,
+           count(*) FILTER (WHERE role = 'employer') AS employers
+    FROM users
+    WHERE created_at >= stats_period_start(2 * $1::int) AND status <> 'deleted'
+    GROUP BY 1
+), v AS (
+    SELECT (published_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    FROM vacancies
+    WHERE published_at >= stats_period_start(2 * $1::int)
+    GROUP BY 1
+), a AS (
+    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    FROM applications
+    WHERE created_at >= stats_period_start(2 * $1::int) AND source = 'apply'
+    GROUP BY 1
+), r AS (
+    SELECT (created_at AT TIME ZONE 'Asia/Tashkent')::date AS day, count(*) AS n
+    FROM reports
+    WHERE created_at >= stats_period_start(2 * $1::int)
+    GROUP BY 1
+)
+SELECT days.day::date                  AS day,
+       coalesce(u.seekers, 0)::int     AS signups_seeker,
+       coalesce(u.employers, 0)::int   AS signups_employer,
+       coalesce(v.n, 0)::int           AS vacancies_published,
+       coalesce(a.n, 0)::int           AS applications_sent,
+       coalesce(r.n, 0)::int           AS reports_filed
+FROM days
+LEFT JOIN u ON u.day = days.day
+LEFT JOIN v ON v.day = days.day
+LEFT JOIN a ON a.day = days.day
+LEFT JOIN r ON r.day = days.day
+ORDER BY days.day
+`
+
+type AdminDailyActivityRow struct {
+	Day                time.Time
+	SignupsSeeker      int32
+	SignupsEmployer    int32
+	VacanciesPublished int32
+	ApplicationsSent   int32
+	ReportsFiled       int32
+}
+
+// One zero-filled row per day for the last 2 × days days, oldest first: the older half
+// is the previous period.
+func (q *Queries) AdminDailyActivity(ctx context.Context, days int32) ([]AdminDailyActivityRow, error) {
+	rows, err := q.db.Query(ctx, adminDailyActivity, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminDailyActivityRow{}
+	for rows.Next() {
+		var i AdminDailyActivityRow
+		if err := rows.Scan(
+			&i.Day,
+			&i.SignupsSeeker,
+			&i.SignupsEmployer,
+			&i.VacanciesPublished,
+			&i.ApplicationsSent,
+			&i.ReportsFiled,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminGetCompany = `-- name: AdminGetCompany :one
 SELECT c.id, c.owner_id, c.name, c.slug, c.logo_url, c.cover_url, c.industry_id, c.size, c.website, c.email, c.phone, c.region_id, c.address, c.about, c.founded_year, c.verified_at, c.status, c.created_at, c.updated_at,
        u.full_name AS owner_name, u.email AS owner_email,
@@ -447,14 +573,15 @@ const adminStats = `-- name: AdminStats :one
 
 SELECT
     (SELECT count(*) FROM users WHERE status <> 'deleted')::int                                                AS users_total,
-    (SELECT count(*) FROM users WHERE status <> 'deleted' AND created_at >= now() - interval '7 days')::int  AS users_signed_up_last_7d,
+    (SELECT count(*) FROM users WHERE status <> 'deleted' AND role <> 'admin'
+                                  AND created_at >= stats_period_start(7))::int                                 AS users_signed_up_last_7d,
     (SELECT count(*) FROM users WHERE status = 'blocked')::int                                                 AS users_blocked,
     (SELECT count(*) FROM companies)::int                                                                       AS companies_total,
     (SELECT count(*) FROM companies WHERE status = 'active' AND verified_at IS NULL)::int                      AS companies_active_unverified,
     (SELECT count(*) FROM companies WHERE status = 'blocked')::int                                              AS companies_blocked,
-    (SELECT count(*) FROM vacancies WHERE status = 'published')::int                                            AS vacancies_published,
+    (SELECT count(*) FROM vacancies WHERE status = 'published')::int                                            AS vacancies_live,
     (SELECT count(*) FROM vacancies WHERE status = 'moderation')::int                                           AS vacancies_pending_moderation,
-    (SELECT count(*) FROM applications WHERE created_at >= now() - interval '7 days')::int                     AS applications_sent_last_7d,
+    (SELECT count(*) FROM applications WHERE source = 'apply' AND created_at >= stats_period_start(7))::int    AS applications_sent_last_7d,
     (SELECT count(DISTINCT target_id) FROM reports WHERE status = 'open')::int                                  AS reports_open_targets,
     (SELECT count(*) FROM skills WHERE NOT is_verified)::int                                                    AS skills_unverified
 `
@@ -466,7 +593,7 @@ type AdminStatsRow struct {
 	CompaniesTotal             int32
 	CompaniesActiveUnverified  int32
 	CompaniesBlocked           int32
-	VacanciesPublished         int32
+	VacanciesLive              int32
 	VacanciesPendingModeration int32
 	ApplicationsSentLast7d     int32
 	ReportsOpenTargets         int32
@@ -474,7 +601,10 @@ type AdminStatsRow struct {
 }
 
 // Platform administration (mounted under /admin, admins only).
-// Deleted accounts are excluded everywhere: users_total counts active + blocked.
+// Deleted accounts are excluded everywhere: users_total counts active + blocked (admins
+// included). The *_last_7d counters use the same window and rules as the statistics
+// series for days = 7 (see below): signups are seekers and employers only, applications
+// are the ones seekers sent. vacancies_live is what is published right now.
 func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 	row := q.db.QueryRow(ctx, adminStats)
 	var i AdminStatsRow
@@ -485,13 +615,141 @@ func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 		&i.CompaniesTotal,
 		&i.CompaniesActiveUnverified,
 		&i.CompaniesBlocked,
-		&i.VacanciesPublished,
+		&i.VacanciesLive,
 		&i.VacanciesPendingModeration,
 		&i.ApplicationsSentLast7d,
 		&i.ReportsOpenTargets,
 		&i.SkillsUnverified,
 	)
 	return i, err
+}
+
+const adminStatsToday = `-- name: AdminStatsToday :one
+
+SELECT stats_today()::date AS today
+`
+
+// ---- statistics ---------------------------------------------------------------------------
+// Days are calendar days in Asia/Tashkent; a period of N days ends today and includes it
+// (stats_today / stats_period_start, migration 00016). Deleted accounts are excluded and
+// signups are split by the account's current role; applications count only those a seeker
+// sent (source = 'apply'), not employer invitations. Vacancies count by published_at,
+// whatever their status now.
+func (q *Queries) AdminStatsToday(ctx context.Context) (time.Time, error) {
+	row := q.db.QueryRow(ctx, adminStatsToday)
+	var today time.Time
+	err := row.Scan(&today)
+	return today, err
+}
+
+const adminTopCategories = `-- name: AdminTopCategories :many
+SELECT c.id, c.slug, c.name_uz, c.name_uz_cyrl, c.name_ru, c.name_en, count(*)::int AS vacancies_published
+FROM vacancies v
+JOIN categories leaf ON leaf.id = v.category_id
+JOIN categories c ON c.id = coalesce(leaf.parent_id, leaf.id)
+WHERE v.published_at >= stats_period_start($1::int)
+GROUP BY c.id
+ORDER BY count(*) DESC, c.sort_order, c.id
+LIMIT $2
+`
+
+type AdminTopCategoriesParams struct {
+	Days       int32
+	MaxResults int32
+}
+
+type AdminTopCategoriesRow struct {
+	ID                 int32
+	Slug               string
+	NameUz             string
+	NameUzCyrl         string
+	NameRu             string
+	NameEn             string
+	VacanciesPublished int32
+}
+
+// Top-level categories (a vacancy's leaf category rolls up to its parent) by vacancies
+// published in the period.
+func (q *Queries) AdminTopCategories(ctx context.Context, arg AdminTopCategoriesParams) ([]AdminTopCategoriesRow, error) {
+	rows, err := q.db.Query(ctx, adminTopCategories, arg.Days, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminTopCategoriesRow{}
+	for rows.Next() {
+		var i AdminTopCategoriesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.NameUz,
+			&i.NameUzCyrl,
+			&i.NameRu,
+			&i.NameEn,
+			&i.VacanciesPublished,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminTopRegions = `-- name: AdminTopRegions :many
+SELECT g.id, g.slug, g.name_uz, g.name_uz_cyrl, g.name_ru, g.name_en, count(*)::int AS vacancies_published
+FROM vacancies v
+JOIN regions g ON g.id = v.region_id
+WHERE v.published_at >= stats_period_start($1::int)
+GROUP BY g.id
+ORDER BY count(*) DESC, g.sort_order, g.id
+LIMIT $2
+`
+
+type AdminTopRegionsParams struct {
+	Days       int32
+	MaxResults int32
+}
+
+type AdminTopRegionsRow struct {
+	ID                 int32
+	Slug               string
+	NameUz             string
+	NameUzCyrl         string
+	NameRu             string
+	NameEn             string
+	VacanciesPublished int32
+}
+
+// Regions (vacancies always carry the top-level region) by vacancies published in the period.
+func (q *Queries) AdminTopRegions(ctx context.Context, arg AdminTopRegionsParams) ([]AdminTopRegionsRow, error) {
+	rows, err := q.db.Query(ctx, adminTopRegions, arg.Days, arg.MaxResults)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminTopRegionsRow{}
+	for rows.Next() {
+		var i AdminTopRegionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.NameUz,
+			&i.NameUzCyrl,
+			&i.NameRu,
+			&i.NameEn,
+			&i.VacanciesPublished,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setUserRoleByID = `-- name: SetUserRoleByID :one

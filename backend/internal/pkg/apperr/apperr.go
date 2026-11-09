@@ -5,6 +5,7 @@ package apperr
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -53,10 +54,10 @@ func As(err error) (*Error, bool) {
 
 // OneOf is the validation rule text for an enum field, built from its allowed values so
 // the message can't drift from the type ("oneof=active blocked").
-func OneOf[T ~string](values []T) string {
+func OneOf[T any](values []T) string {
 	s := make([]string, len(values))
 	for i, v := range values {
-		s[i] = string(v)
+		s[i] = fmt.Sprint(v)
 	}
 	return "oneof=" + strings.Join(s, " ")
 }

@@ -63,6 +63,7 @@ IMG=rasm.png node test/shots-f.mjs         # ikki foydalanuvchi o'rtasida real v
 node test/shots-g.mjs                      # admin panel: moderatsiya, kompaniyalar, foydalanuvchilar (test rejimi kerak)
 node test/shots-h.mjs                      # shikoyatlar: yuborish, admin navbati, olib tashlash, bildirishnoma (bin/ctl kerak)
 node test/shots-i.mjs                      # ko'nikmalar katalogi: tasdiqlash, qayta nomlash, birlashtirish, o'chirish (bin/ctl, worker)
+node test/shots-j.mjs                      # statistika: kunlik grafiklar, davr filtri, tooltip, klaviatura (bin/ctl)
 node --experimental-strip-types test/i18n-keys.mjs   # tarjima kalitlari
 pnpm build && PORT=5190 pnpm start &  WEB=http://localhost:5190 node test/prod-check.mjs   # SSR + Web Vitals
 ```

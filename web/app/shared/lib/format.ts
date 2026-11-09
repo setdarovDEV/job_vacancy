@@ -119,6 +119,15 @@ export function dayLabel(iso: string, t: TFunction, locale: Locale): string {
   return new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", ...(sameYear ? {} : { year: "numeric" }) }).format(d);
 }
 
+/** A calendar date "2026-11-09" (no time zone) → "9-noy" / "9 нояб." / "Nov 9". */
+export function shortDate(ymd: string, locale: Locale): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return "";
+  const own = MONTHS_OWN[locale];
+  if (own) return `${d}-${own.short[m - 1]}`;
+  return new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(new Date(y, m - 1, d));
+}
+
 /** "2,4 MB" style file sizes. */
 export function fileSize(bytes: number, locale: Locale): string {
   if (bytes < 1024) return `${bytes} B`;

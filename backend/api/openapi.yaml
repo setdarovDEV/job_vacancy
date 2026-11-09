@@ -55,6 +55,7 @@ components:
     SkillRef: { name: skill, in: path, required: true, schema: { type: integer, minimum: 1 }, description: "skill id; a malformed id answers 404 skill_not_found like an unknown one" }
     ReportTargetType: { name: target_type, in: path, required: true, schema: { type: string, enum: [vacancy, company] } }
     ReportTargetId: { name: target_id, in: path, required: true, schema: { type: string, format: uuid }, description: "vacancy or company id; anything malformed answers 404 reported_target_not_found" }
+    StatsDays: { name: days, in: query, schema: { type: integer, enum: [7, 30, 90], default: 30 }, description: "period length in calendar days (Asia/Tashkent), ending today and including it; anything else answers 422 fields.days" }
     ClientType:
       name: X-Client-Type
       in: header
@@ -173,17 +174,100 @@ components:
             created_at: { type: string, format: date-time }
             open_vacancies: { type: integer, description: public profile only }
             my_role: { type: string, enum: [owner, admin, recruiter], description: "/me/companies only" }
+    PeriodTotal:
+      type: object
+      required: [current, previous]
+      description: Count for the period and for the same number of days just before it (for ↑/↓ comparisons).
+      properties: { current: { type: integer }, previous: { type: integer } }
+    StatsWindow:
+      type: object
+      required: [days, from, to]
+      description: The period a statistics response covers.
+      properties:
+        days: { type: integer, enum: [7, 30, 90] }
+        from: { type: string, format: date, description: first day (Asia/Tashkent) }
+        to: { type: string, format: date, description: today (Asia/Tashkent) }
+    AdminActivity:
+      type: object
+      description: >
+        Daily activity, one bucket per calendar day (Asia/Tashkent) of the period, oldest
+        first, zero-filled. Signups exclude deleted accounts and admins; vacancies count by
+        publication date whatever their status now; applications count only those sent by
+        seekers (not employer invitations). Signups are split by the account's current
+        role (an account that changed role counts under its role now). Cached for up to
+        5 minutes.
+      required: [period, daily, totals]
+      properties:
+        period: { $ref: "#/components/schemas/StatsWindow" }
+        daily:
+          type: array
+          items:
+            type: object
+            required: [date, signups_seeker, signups_employer, vacancies_published, applications_sent, reports_filed]
+            properties:
+              date: { type: string, format: date }
+              signups_seeker: { type: integer }
+              signups_employer: { type: integer }
+              vacancies_published: { type: integer }
+              applications_sent: { type: integer }
+              reports_filed: { type: integer }
+        totals:
+          type: object
+          required: [signups_seeker, signups_employer, vacancies_published, applications_sent, reports_filed]
+          properties:
+            signups_seeker: { $ref: "#/components/schemas/PeriodTotal" }
+            signups_employer: { $ref: "#/components/schemas/PeriodTotal" }
+            vacancies_published: { $ref: "#/components/schemas/PeriodTotal" }
+            applications_sent: { $ref: "#/components/schemas/PeriodTotal" }
+            reports_filed: { $ref: "#/components/schemas/PeriodTotal" }
+    RankedCatalogItem:
+      type: object
+      required: [id, slug, name, vacancies_published]
+      properties:
+        id: { type: integer }
+        slug: { type: string }
+        name: { $ref: "#/components/schemas/Names" }
+        vacancies_published: { type: integer, description: vacancies published in the period }
+    AdminBreakdown:
+      type: object
+      description: Where the period's activity went. Cached for up to 5 minutes.
+      required: [period, top_categories, top_regions, funnel]
+      properties:
+        period: { $ref: "#/components/schemas/StatsWindow" }
+        top_categories:
+          type: array
+          maxItems: 8
+          description: Top-level categories (a vacancy's subcategory counts toward its parent), most vacancies first.
+          items: { $ref: "#/components/schemas/RankedCatalogItem" }
+        top_regions:
+          type: array
+          maxItems: 8
+          description: Regions (viloyat / Tashkent city), most vacancies first.
+          items: { $ref: "#/components/schemas/RankedCatalogItem" }
+        funnel:
+          type: object
+          description: >
+            Applications seekers sent in the period and how many ever reached each later
+            stage (history counts, so one later rejected still counts as invited).
+            viewed = the employer opened it or moved it to invited/interview/hired;
+            invited = ever invited, at interview or hired; hired = ever hired.
+          required: [sent, viewed, invited, hired]
+          properties: { sent: { type: integer }, viewed: { type: integer }, invited: { type: integer }, hired: { type: integer } }
     AdminStats:
       type: object
-      description: Overview counters. Deleted accounts are excluded from every user counter.
+      description: >
+        Overview counters. Deleted accounts are excluded from every user counter. The
+        *_last_7d counters use the same window and rules as AdminActivity for days = 7
+        (7 calendar days in Asia/Tashkent ending today; signups are seekers and employers,
+        applications are the ones seekers sent), so they match its current totals.
       required: [users, companies, vacancies, applications, reports, skills]
       properties:
         users:
           type: object
           required: [total, signed_up_last_7d, blocked]
           properties:
-            total: { type: integer, description: active + blocked accounts }
-            signed_up_last_7d: { type: integer }
+            total: { type: integer, description: active + blocked accounts (admins included) }
+            signed_up_last_7d: { type: integer, description: "seekers + employers; = AdminActivity(days=7) signups_seeker + signups_employer current" }
             blocked: { type: integer }
         companies:
           type: object
@@ -194,15 +278,15 @@ components:
             blocked: { type: integer }
         vacancies:
           type: object
-          required: [published, pending_moderation]
+          required: [live, pending_moderation]
           properties:
-            published: { type: integer }
+            live: { type: integer, description: published right now (not the same as AdminActivity vacancies_published, which counts publications in a period) }
             pending_moderation: { type: integer }
         applications:
           type: object
           required: [sent_last_7d]
           properties:
-            sent_last_7d: { type: integer }
+            sent_last_7d: { type: integer, description: "sent by seekers (not employer invitations); = AdminActivity(days=7) applications_sent current" }
         reports:
           type: object
           required: [open_targets]
@@ -1141,6 +1225,32 @@ paths:
           content: { application/json: { schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminStats" } } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/AdminOnly" }
+  /admin/stats/activity:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Daily activity for the period with period-over-period totals
+      parameters: [{ $ref: "#/components/parameters/StatsDays" }]
+      responses:
+        "200":
+          description: Activity
+          content: { application/json: { schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminActivity" } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/stats/breakdown:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Top categories and regions by vacancies published, and the application funnel
+      parameters: [{ $ref: "#/components/parameters/StatsDays" }]
+      responses:
+        "200":
+          description: Breakdown
+          content: { application/json: { schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminBreakdown" } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "422": { $ref: "#/components/responses/Error" }
   /admin/companies:
     get:
       tags: [admin]
