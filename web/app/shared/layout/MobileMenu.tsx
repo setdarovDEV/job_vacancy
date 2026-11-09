@@ -9,7 +9,8 @@ import { DialogRoot, SheetContent } from "../ui/Dialog";
 import { useSession } from "../auth/session";
 import { Avatar } from "../ui/Avatar";
 import { InlineSwitchers } from "./Switchers";
-import { accountLinks, useSignOut } from "./UserArea";
+import { accountLinks } from "./account-nav";
+import { useSignOut } from "./UserArea";
 
 // Loaded on demand (see SiteHeader): Radix Dialog only ships to people who open the menu.
 export default function MobileMenu({

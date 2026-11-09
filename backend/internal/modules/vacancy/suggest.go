@@ -34,7 +34,7 @@ func (s *Service) Suggest(ctx context.Context, raw string) (Suggestions, error) 
 	if q.Empty() {
 		return out, nil
 	}
-	key := "search:suggest:" + q.Folded
+	key := suggestKeyPrefix + q.Folded
 	if b, err := s.Cache.RDB.Get(ctx, key).Bytes(); err == nil && json.Unmarshal(b, &out) == nil {
 		return out, nil
 	}

@@ -42,10 +42,17 @@ var rank = map[gen.CompanyMemberRole]int{
 	gen.CompanyMemberRoleOwner:     3,
 }
 
+// VisibilityNotifier is told when all of a company's vacancies become hidden or visible at
+// once (vacancy.Service), so whatever caches public results can drop them.
+type VisibilityNotifier interface {
+	CompanyVisibilityChanged(ctx context.Context, companyID uuid.UUID) error
+}
+
 type Service struct {
-	Pool    *pgxpool.Pool
-	Q       *gen.Queries
-	Catalog *catalog.Service
+	Pool       *pgxpool.Pool
+	Q          *gen.Queries
+	Catalog    *catalog.Service
+	Visibility VisibilityNotifier
 }
 
 type Input struct {
@@ -294,6 +301,32 @@ func (s *Service) SetVerified(ctx context.Context, ref string, verified bool) (g
 		return c, err
 	}
 	return s.Q.SetCompanyVerified(ctx, gen.SetCompanyVerifiedParams{ID: c.ID, Verified: verified})
+}
+
+// SetBlocked blocks or unblocks a company. While blocked, members can't manage it
+// (Authorize → ErrBlocked) and its profile and vacancies are hidden from the public; the
+// search index follows by trigger and unblocking brings back what hasn't expired.
+//
+// The visibility notification runs even when the status already matches, so retrying
+// after a failed notification still completes the side effect.
+func (s *Service) SetBlocked(ctx context.Context, ref string, blocked bool) (gen.Company, error) {
+	c, err := s.Resolve(ctx, ref)
+	if err != nil {
+		return c, err
+	}
+	status := gen.CompanyStatusActive
+	if blocked {
+		status = gen.CompanyStatusBlocked
+	}
+	if c.Status != status {
+		if c, err = s.Q.SetCompanyStatus(ctx, gen.SetCompanyStatusParams{ID: c.ID, Status: status}); err != nil {
+			return c, err
+		}
+	}
+	if s.Visibility == nil { // composition roots that never block companies (worker, CLI)
+		return c, nil
+	}
+	return c, s.Visibility.CompanyVisibilityChanged(ctx, c.ID)
 }
 
 // ---- helpers -----------------------------------------------------------------------------

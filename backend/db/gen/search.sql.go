@@ -218,7 +218,7 @@ INSERT INTO vacancy_search (vacancy_id, is_published, published_at, is_featured,
                             category_id, region_id, district_id, employment_type, work_format,
                             experience, schedule, salary_min, salary_max, currency,
                             title, tags, company, meta, body)
-SELECT v.id, v.status = 'published', v.published_at, v.is_featured, v.company_id,
+SELECT v.id, vacancy_is_public(v.status, v.company_id), v.published_at, v.is_featured, v.company_id,
        v.category_id, v.region_id, v.district_id, v.employment_type, v.work_format,
        v.experience, v.schedule, v.salary_min, v.salary_max, v.currency,
        $2, $3, $4, $5, $6
@@ -245,6 +245,7 @@ type UpsertVacancySearchParams struct {
 }
 
 // Copies the filter/rank columns from the vacancy row; the folded text comes from Go.
+// is_published = vacancy_is_public() (published AND company active, migration 00013).
 func (q *Queries) UpsertVacancySearch(ctx context.Context, arg UpsertVacancySearchParams) error {
 	_, err := q.db.Exec(ctx, upsertVacancySearch,
 		arg.ID,

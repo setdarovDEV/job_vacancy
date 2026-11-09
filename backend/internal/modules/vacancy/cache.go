@@ -27,7 +27,7 @@ type ListCache struct {
 func cacheKey(f Filter) string {
 	b, _ := json.Marshal(f) // struct fields marshal in a fixed order
 	sum := sha256.Sum256(b)
-	return "vacancy:list:" + hex.EncodeToString(sum[:12])
+	return listKeyPrefix + hex.EncodeToString(sum[:12])
 }
 
 func (c *ListCache) Get(ctx context.Context, f Filter, load func() (ListResult, error)) (ListResult, error) {
@@ -57,6 +57,49 @@ func (c *ListCache) Get(ctx context.Context, f Filter, load func() (ListResult, 
 		return ListResult{}, err
 	}
 	return v.(ListResult), nil
+}
+
+// Cached result families. Suggestions live in suggest.go but share the cache's Redis.
+const (
+	listKeyPrefix     = "vacancy:list:"
+	listKeyPattern    = listKeyPrefix + "*"
+	suggestKeyPrefix  = "search:suggest:"
+	suggestKeyPattern = suggestKeyPrefix + "*"
+)
+
+// DropPublicResults deletes every cached listing page and search suggestion. Used after
+// rare events (a company blocked or unblocked) that must show at once, not after the TTLs.
+func (c *ListCache) DropPublicResults(ctx context.Context) error {
+	for _, pattern := range []string{listKeyPattern, suggestKeyPattern} {
+		if err := c.drop(ctx, pattern); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *ListCache) drop(ctx context.Context, pattern string) error {
+	iter := c.RDB.Scan(ctx, 0, pattern, 500).Iterator()
+	var batch []string
+	flush := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		err := c.RDB.Unlink(ctx, batch...).Err()
+		batch = batch[:0]
+		return err
+	}
+	for iter.Next(ctx) {
+		if batch = append(batch, iter.Val()); len(batch) == 500 {
+			if err := flush(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return err
+	}
+	return flush()
 }
 
 // ---- popular searches ------------------------------------------------------------------

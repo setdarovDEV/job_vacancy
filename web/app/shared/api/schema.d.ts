@@ -1329,6 +1329,382 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Overview counters (what needs attention, platform size) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Counters */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["AdminStats"];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/companies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** All companies, newest first. status and verified filter independently. */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description name or slug substring */
+                    q?: string;
+                    status?: "active" | "blocked";
+                    verified?: boolean;
+                    cursor?: components["parameters"]["Cursor"];
+                    /** @description page size for every admin list */
+                    limit?: components["parameters"]["AdminLimit"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page of companies */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["AdminCompany"][];
+                            meta: components["schemas"]["PageMeta"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidCursor"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/companies/{company}/verification": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description uuid or slug */
+                company: components["parameters"]["CompanyRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark verified (badge + publishing without moderation). Idempotent. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminCompany"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["CompanyNotFound"];
+            };
+        };
+        post?: never;
+        /** Remove verification. Idempotent. */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminCompany"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["CompanyNotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/companies/{company}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description uuid or slug */
+                company: components["parameters"]["CompanyRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Block. The profile and every vacancy are hidden from the public and members can't manage the company. Idempotent. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminCompany"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["CompanyNotFound"];
+            };
+        };
+        post?: never;
+        /** Unblock. Vacancies that haven't expired meanwhile become visible again. Idempotent. */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid or slug */
+                    company: components["parameters"]["CompanyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminCompany"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["CompanyNotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** All accounts except deleted ones, newest first */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description name */
+                    q?: string;
+                    role?: "seeker" | "employer" | "admin";
+                    status?: "active" | "blocked";
+                    cursor?: components["parameters"]["Cursor"];
+                    /** @description page size for every admin list */
+                    limit?: components["parameters"]["AdminLimit"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page of users */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["AdminUser"][];
+                            meta: components["schemas"]["PageMeta"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidCursor"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
+                user: components["parameters"]["UserRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Change the platform role and sign the user out everywhere (the role is inside their tokens) */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
+                    user: components["parameters"]["UserRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        role: "seeker" | "employer" | "admin";
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["AdminUser"];
+                401: components["responses"]["Unauthorized"];
+                /** @description Not an admin (forbidden), or the target is yourself (admin_cannot_change_own_role) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["UserNotFound"];
+                422: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user}/block": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
+                user: components["parameters"]["UserRef"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Block and sign out everywhere; login and refresh are refused while blocked. Idempotent. */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
+                    user: components["parameters"]["UserRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminUser"];
+                401: components["responses"]["Unauthorized"];
+                /** @description Not an admin (forbidden), or the target is yourself (admin_cannot_block_self) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["UserNotFound"];
+            };
+        };
+        post?: never;
+        /** Unblock. Idempotent. */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
+                    user: components["parameters"]["UserRef"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["AdminUser"];
+                401: components["responses"]["Unauthorized"];
+                /** @description Not an admin (forbidden), or the target is yourself (admin_cannot_block_self) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["UserNotFound"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/vacancies/moderation": {
         parameters: {
             query?: never;
@@ -1341,7 +1717,8 @@ export interface paths {
             parameters: {
                 query?: {
                     cursor?: components["parameters"]["Cursor"];
-                    limit?: components["parameters"]["Limit"];
+                    /** @description page size for every admin list */
+                    limit?: components["parameters"]["AdminLimit"];
                 };
                 header?: never;
                 path?: never;
@@ -1350,6 +1727,10 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["VacancyPage"];
+                400: components["responses"]["InvalidCursor"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -1383,6 +1764,9 @@ export interface paths {
             requestBody?: never;
             responses: {
                 200: components["responses"]["Vacancy"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
             };
         };
@@ -1421,59 +1805,14 @@ export interface paths {
             };
             responses: {
                 200: components["responses"]["Vacancy"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["Error"];
                 409: components["responses"]["Error"];
+                422: components["responses"]["Error"];
             };
         };
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/admin/companies/{company}/verification": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description uuid or slug */
-                company: components["parameters"]["CompanyRef"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        /** Mark verified (badge + publishing without moderation) */
-        put: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description uuid or slug */
-                    company: components["parameters"]["CompanyRef"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Company"];
-            };
-        };
-        post?: never;
-        /** Remove verification */
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    /** @description uuid or slug */
-                    company: components["parameters"]["CompanyRef"];
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                200: components["responses"]["Company"];
-            };
-        };
         options?: never;
         head?: never;
         patch?: never;
@@ -3310,6 +3649,46 @@ export interface components {
              */
             my_role?: "owner" | "admin" | "recruiter";
         };
+        /** @description Overview counters. Deleted accounts are excluded from every user counter. */
+        AdminStats: {
+            users: {
+                /** @description active + blocked accounts */
+                total: number;
+                signed_up_last_7d: number;
+                blocked: number;
+            };
+            companies: {
+                total: number;
+                /** @description not blocked and not verified (their vacancies go through moderation) */
+                active_unverified: number;
+                blocked: number;
+            };
+            vacancies: {
+                published: number;
+                pending_moderation: number;
+            };
+            applications: {
+                sent_last_7d: number;
+            };
+        };
+        /** @description The same complete shape in lists and in mutation responses. */
+        AdminCompany: components["schemas"]["Company"] & {
+            /** @enum {string} */
+            status: "active" | "blocked";
+            owner_name: string;
+            owner_email: string | null;
+            open_vacancies: number;
+        };
+        AdminUser: components["schemas"]["User"] & {
+            /** @enum {string} */
+            status: "active" | "blocked";
+            /** Format: date-time */
+            last_seen_at: string | null;
+        };
+        PageMeta: {
+            /** @description pass as ?cursor= for the next page; null on the last page */
+            next_cursor: string | null;
+        };
         CompanySummary: {
             /** Format: uuid */
             id: string;
@@ -3629,6 +4008,73 @@ export interface components {
                 };
             };
         };
+        /** @description Missing, invalid, expired or revoked access token (unauthorized) */
+        Unauthorized: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Signed in but not an admin (forbidden) */
+        AdminOnly: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description cursor is not one this API issued (invalid_cursor) */
+        InvalidCursor: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description No company with that id or slug (company_not_found) */
+        CompanyNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description No such user, or a malformed id (user_not_found) */
+        UserNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Company with moderation state */
+        AdminCompany: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    data?: components["schemas"]["AdminCompany"];
+                };
+            };
+        };
+        /** @description User with account state */
+        AdminUser: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    data?: components["schemas"]["AdminUser"];
+                };
+            };
+        };
     };
     parameters: {
         Cursor: string;
@@ -3639,6 +4085,10 @@ export interface components {
         ApplicationRef: string;
         /** @description uuid or slug */
         CompanyRef: string;
+        /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
+        UserRef: string;
+        /** @description page size for every admin list */
+        AdminLimit: number;
         ClientType: "web" | "android" | "ios";
     };
     requestBodies: never;

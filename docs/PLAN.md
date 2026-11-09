@@ -113,6 +113,11 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] Tekshiruv: 42 ta brauzer tekshiruvi (`web/test/*.mjs`), production'da 11 sahifa sekin 4G'da LCP < 0,9 s, CLS < 0,1, hydration xatosiz;
         bosh sahifa JS 145 KB + CSS 15 KB gzip; `test/i18n-keys.mjs` 4 tildagi kalitlarni tekshiradi
 - [ ] **8. Admin panel**
+  - [x] A: umumiy ko'rinish, moderatsiya (ko'rib chiqish, qabul/rad), kompaniyalar (tasdiqlash, bloklash: vakansiyalar
+        yashiriladi va blokdan keyin qaytadi), foydalanuvchilar (rol, bloklash + sessiyalarni yopish); `test/e2e/admin.sh`, `shots-g.mjs`
+  - [ ] B: shikoyatlar (vakansiya/kompaniya → admin navbati)
+  - [ ] C: kataloglar (yangi ko'nikmalarni tasdiqlash/birlashtirish)
+  - [ ] D: statistika grafiklari
 - [ ] **9. Mobile (Flutter)**
 - [ ] **10. AI moduli + kreditlar** (to'lov "Tez kunda")
 - [ ] **11. Deploy:** nginx conf, SSL, prod compose, CI/CD, monitoring, backup

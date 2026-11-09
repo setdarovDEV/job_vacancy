@@ -29,6 +29,9 @@ SET verified_at = CASE WHEN sqlc.arg(verified)::boolean THEN COALESCE(verified_a
 WHERE id = $1
 RETURNING *;
 
+-- name: SetCompanyStatus :one
+UPDATE companies SET status = $2 WHERE id = $1 RETURNING *;
+
 -- name: AddCompanyMember :exec
 INSERT INTO company_members (company_id, user_id, role) VALUES ($1, $2, $3)
 ON CONFLICT (company_id, user_id) DO UPDATE SET role = EXCLUDED.role;

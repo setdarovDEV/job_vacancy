@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
+	"jobvacancy.uz/backend/internal/modules/admin"
 	"jobvacancy.uz/backend/internal/modules/application"
 	"jobvacancy.uz/backend/internal/modules/auth"
 	"jobvacancy.uz/backend/internal/modules/catalog"
@@ -50,6 +51,7 @@ type Deps struct {
 	SavedHandler   *savedsearch.Handler
 	WSHandler      *realtime.Handler
 	AppHandler     *application.Handler
+	AdminHandler   *admin.Handler
 }
 
 // Per-IP limits for unauthenticated auth endpoints (password guessing, sign-up spam).
@@ -133,7 +135,9 @@ func NewRouter(d Deps) http.Handler {
 			r.Route("/messages", d.ChatHandler.MessageRoutes)
 			r.Route("/admin", func(r chi.Router) {
 				r.Use(mw.RequireRole("admin"))
-				r.Route("/companies", d.CompanyHandler.AdminRoutes)
+				d.AdminHandler.Routes(r)
+				r.Route("/companies", d.AdminHandler.CompanyRoutes)
+				r.Route("/users", d.AdminHandler.UserRoutes)
 				r.Route("/vacancies", d.VacancyHandler.AdminRoutes)
 			})
 		})

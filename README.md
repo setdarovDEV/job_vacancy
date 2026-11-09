@@ -60,6 +60,7 @@ node test/shots-c.mjs                      # ochiq sahifalar: qidiruv, filtrlar,
 node test/shots-d.mjs                      # ish izlovchi kabineti
 node test/shots-e.mjs                      # ish beruvchi paneli, kanban drag & drop
 IMG=rasm.png node test/shots-f.mjs         # ikki foydalanuvchi o'rtasida real vaqtli chat
+node test/shots-g.mjs                      # admin panel: moderatsiya, kompaniyalar, foydalanuvchilar (test rejimi kerak)
 node --experimental-strip-types test/i18n-keys.mjs   # tarjima kalitlari
 pnpm build && PORT=5190 pnpm start &  WEB=http://localhost:5190 node test/prod-check.mjs   # SSR + Web Vitals
 ```

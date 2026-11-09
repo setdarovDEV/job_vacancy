@@ -1,9 +1,9 @@
-import { Bell, LogOut, MessageSquare, Plus } from "lucide-react";
+import { Bell, LogOut, MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, dataOf } from "../api/client";
-import { signOut, useSession, withAuth, type User } from "../auth/session";
+import { signOut, useSession, withAuth } from "../auth/session";
 import { localizedPath } from "../i18n/config";
 import { LocalizedLink, useLocale, useRootData } from "../i18n/hooks";
 import { useTranslation } from "../i18n/i18n";
@@ -12,30 +12,8 @@ import { Avatar } from "../ui/Avatar";
 import { Button } from "../ui/Button";
 import { Popover, popoverItem } from "../ui/Popover";
 import { Skeleton } from "../ui/Skeleton";
+import { accountLinks, headerShortcut } from "./account-nav";
 import { toast } from "../ui/toast-store";
-
-export type AccountLink = { to: string; key: string };
-
-export function accountLinks(user: User): AccountLink[] {
-  return user.role === "employer"
-    ? [
-        { to: "/employer", key: "account.dashboard" },
-        { to: "/employer/candidates", key: "account.candidates" },
-        { to: "/employer/company", key: "employer.company" },
-        { to: "/chat", key: "nav.messages" },
-        { to: "/me/notifications", key: "account.notifications" },
-        { to: "/me", key: "account.settings" },
-      ]
-    : [
-        { to: "/me/resumes", key: "account.myResumes" },
-        { to: "/me/applications", key: "nav.applications" },
-        { to: "/me/saved", key: "nav.saved" },
-        { to: "/me/searches", key: "account.searches" },
-        { to: "/chat", key: "nav.messages" },
-        { to: "/me/notifications", key: "account.notifications" },
-        { to: "/me", key: "account.settings" },
-      ];
-}
 
 /** Unread counters for the header badges; refreshed when the window regains focus. */
 function useUnread(enabled: boolean) {
@@ -118,14 +96,13 @@ export function UserArea() {
       </>
     );
   }
+  const cta = headerShortcut(user);
   const iconLink = "relative grid size-11 place-items-center rounded-control text-ink-2 transition-colors hover:bg-sunken hover:text-ink";
   return (
     <>
-      {user.role === "employer" && (
-        <Button asChild variant="soft" className="ml-1" icon={<Plus className="size-4" />}>
-          <LocalizedLink to="/employer/vacancies/new">
-            {t("nav.postVacancy")}
-          </LocalizedLink>
+      {cta && (
+        <Button asChild variant="soft" className="ml-1" icon={<cta.icon className="size-4" />}>
+          <LocalizedLink to={cta.to}>{t(cta.key)}</LocalizedLink>
         </Button>
       )}
       <LocalizedLink to="/chat" className={iconLink} aria-label={t("nav.messages")} title={t("nav.messages")}>

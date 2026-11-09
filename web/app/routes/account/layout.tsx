@@ -5,7 +5,7 @@ import { useSession } from "~/shared/auth/session";
 import { localizedPath } from "~/shared/i18n/config";
 import { useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
-import { accountLinks } from "~/shared/layout/UserArea";
+import { accountLinks, SECTION_ROOTS } from "~/shared/layout/account-nav";
 import { cn } from "~/shared/lib/cn";
 import { EmptyState } from "~/shared/ui/EmptyState";
 
@@ -30,7 +30,7 @@ export default function AccountLayout() {
               <li key={l.to} className="shrink-0">
                 <NavLink
                   to={localizedPath(locale, l.to)}
-                  end={l.to === "/me" || l.to === "/employer"}
+                  end={SECTION_ROOTS.has(l.to)}
                   className={({ isActive }) =>
                     cn(
                       "flex h-10 items-center whitespace-nowrap rounded-control px-3.5 text-sm font-medium transition-colors",

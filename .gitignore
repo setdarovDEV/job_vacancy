@@ -41,3 +41,5 @@ nginx/backups/
 # Local agent tooling (claude-flow / ruvector state)
 .claude-flow/
 ruvector.db
+.swarm/
+.claude/agent-memory-local/

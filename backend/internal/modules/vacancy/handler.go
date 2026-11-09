@@ -23,6 +23,9 @@ import (
 const (
 	defaultLimit = 20
 	maxLimit     = 50
+
+	moderationDefaultLimit = 30
+	moderationMaxLimit     = 100
 )
 
 type Handler struct{ Svc *Service }
@@ -245,7 +248,8 @@ func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) moderationQueue(w http.ResponseWriter, r *http.Request) {
-	after, limit, err := paging(r)
+	// Admin lists share one page size contract (AdminLimit in the OpenAPI spec).
+	after, limit, err := pagingUpTo(r, moderationDefaultLimit, moderationMaxLimit)
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -271,20 +275,14 @@ func vacancyID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 
 var errCursor = apperr.BadRequest("invalid_cursor", "cursor is invalid")
 
-func parseLimit(r *http.Request) (int, error) {
-	if s := r.URL.Query().Get("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 1 || n > maxLimit {
-			return 0, apperr.Validation(map[string]string{"limit": "max=50"})
-		}
-		return n, nil
-	}
-	return defaultLimit, nil
+func paging(r *http.Request) (*cursorKey, int, error) {
+	return pagingUpTo(r, defaultLimit, maxLimit)
 }
 
-func paging(r *http.Request) (*cursorKey, int, error) {
+// pagingUpTo parses ?cursor= and ?limit= (def when absent, at most max).
+func pagingUpTo(r *http.Request, def, max int) (*cursorKey, int, error) {
 	q := r.URL.Query()
-	limit, err := parseLimit(r)
+	limit, err := cursor.ParseLimit(q.Get("limit"), def, max)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -396,14 +394,11 @@ func ParseFilter(q url.Values) (Filter, error) {
 		return f, apperr.Validation(bad)
 	}
 
-	f.Limit = defaultLimit
-	if s := q.Get("limit"); s != "" {
-		n, err := strconv.Atoi(s)
-		if err != nil || n < 1 || n > maxLimit {
-			return f, apperr.Validation(map[string]string{"limit": "max=50"})
-		}
-		f.Limit = n
+	limit, err := cursor.ParseLimit(q.Get("limit"), defaultLimit, maxLimit)
+	if err != nil {
+		return f, err
 	}
+	f.Limit = limit
 	if c := q.Get("cursor"); c != "" {
 		var lc listCursor
 		if err := cursor.Decode(c, &lc); err != nil || lc.Sort == "" {

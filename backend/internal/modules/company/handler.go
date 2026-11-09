@@ -99,12 +99,6 @@ func (h *Handler) MeRoutes(r chi.Router) {
 	r.Get("/companies", h.mine)
 }
 
-// AdminRoutes are mounted under /admin/companies.
-func (h *Handler) AdminRoutes(r chi.Router) {
-	r.Put("/{company}/verification", h.setVerified(true))
-	r.Delete("/{company}/verification", h.setVerified(false))
-}
-
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	c, err := h.Svc.Resolve(r.Context(), chi.URLParam(r, "company"))
 	if err != nil {
@@ -270,15 +264,4 @@ func (h *Handler) removeMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.NoContent(w)
-}
-
-func (h *Handler) setVerified(v bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		c, err := h.Svc.SetVerified(r.Context(), chi.URLParam(r, "company"), v)
-		if err != nil {
-			response.Error(w, r, err)
-			return
-		}
-		response.JSON(w, http.StatusOK, ToDTO(c))
-	}
 }

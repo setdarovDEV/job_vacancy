@@ -12,6 +12,7 @@ import (
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/config"
 	"jobvacancy.uz/backend/internal/jobs"
+	"jobvacancy.uz/backend/internal/modules/admin"
 	"jobvacancy.uz/backend/internal/modules/application"
 	"jobvacancy.uz/backend/internal/modules/auth"
 	"jobvacancy.uz/backend/internal/modules/catalog"
@@ -117,6 +118,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Notify: notifySvc,
 		Log:    log,
 	}
+	companySvc.Visibility = vacancySvc // blocking a company drops vacancy caches
 
 	fileSvc := &file.Service{Q: q, Storage: st, Log: log}
 	resumeSvc := &resume.Service{Pool: pool, Q: q, Catalog: catalogSvc}
@@ -153,6 +155,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		VacancyHandler: &vacancy.Handler{Svc: vacancySvc},
 		ResumeHandler:  &resume.Handler{Svc: resumeSvc},
 		AppHandler:     &application.Handler{Svc: appSvc},
+		AdminHandler:   &admin.Handler{Svc: &admin.Service{Store: q, Companies: companySvc, Sessions: authSvc}},
 	})
 
 	srv := &http.Server{

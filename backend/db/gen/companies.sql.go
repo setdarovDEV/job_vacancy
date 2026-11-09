@@ -439,6 +439,42 @@ func (q *Queries) SetCompanyLogoURL(ctx context.Context, arg SetCompanyLogoURLPa
 	return i, err
 }
 
+const setCompanyStatus = `-- name: SetCompanyStatus :one
+UPDATE companies SET status = $2 WHERE id = $1 RETURNING id, owner_id, name, slug, logo_url, cover_url, industry_id, size, website, email, phone, region_id, address, about, founded_year, verified_at, status, created_at, updated_at
+`
+
+type SetCompanyStatusParams struct {
+	ID     uuid.UUID
+	Status CompanyStatus
+}
+
+func (q *Queries) SetCompanyStatus(ctx context.Context, arg SetCompanyStatusParams) (Company, error) {
+	row := q.db.QueryRow(ctx, setCompanyStatus, arg.ID, arg.Status)
+	var i Company
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Slug,
+		&i.LogoUrl,
+		&i.CoverUrl,
+		&i.IndustryID,
+		&i.Size,
+		&i.Website,
+		&i.Email,
+		&i.Phone,
+		&i.RegionID,
+		&i.Address,
+		&i.About,
+		&i.FoundedYear,
+		&i.VerifiedAt,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setCompanyVerified = `-- name: SetCompanyVerified :one
 UPDATE companies
 SET verified_at = CASE WHEN $2::boolean THEN COALESCE(verified_at, now()) END

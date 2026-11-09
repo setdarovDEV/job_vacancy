@@ -12,6 +12,7 @@ package vacancy
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 
@@ -215,6 +216,17 @@ func (s *Service) Delete(ctx context.Context, p reqctx.Principal, id uuid.UUID) 
 	}
 	if n == 0 {
 		return ErrOnlyDrafts
+	}
+	return nil
+}
+
+// CompanyVisibilityChanged is called when all of a company's vacancies become hidden or
+// visible at once (the company was blocked or unblocked). The search index follows by
+// trigger (migration 00013); cached listings and suggestions are dropped here so the
+// change is visible immediately.
+func (s *Service) CompanyVisibilityChanged(ctx context.Context, companyID uuid.UUID) error {
+	if err := s.Cache.DropPublicResults(ctx); err != nil {
+		return fmt.Errorf("drop cached results after company %s visibility change: %w", companyID, err)
 	}
 	return nil
 }

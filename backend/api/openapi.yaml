@@ -24,6 +24,11 @@ info:
     Web: the refresh token lives in the HttpOnly cookie `jv_refresh` (path `/api/v1/auth`).
     Mobile: send `X-Client-Type: android|ios`; the refresh token is returned in and read
     from the JSON body. Refresh tokens rotate on every use.
+
+    **Verbs for state.** A flag that can be set and cleared idempotently is a sub-resource:
+    `PUT` sets it, `DELETE` clears it (company verification and block, user block, saved
+    vacancies). A one-way step in a workflow is a `POST` action that may answer 409
+    `invalid_status_transition` (vacancy submit / approve / reject / archive).
 servers:
   - url: https://jobvacancy.uz/api/v1
   - url: http://localhost:8090/api/v1
@@ -38,6 +43,8 @@ components:
     ResumeRef: { name: resume, in: path, required: true, schema: { type: string, format: uuid } }
     ApplicationRef: { name: application, in: path, required: true, schema: { type: string, format: uuid } }
     CompanyRef: { name: company, in: path, required: true, schema: { type: string }, description: uuid or slug }
+    UserRef: { name: user, in: path, required: true, schema: { type: string, format: uuid }, description: "user id; a malformed id answers 404 user_not_found like an unknown one" }
+    AdminLimit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 }, description: page size for every admin list }
     ClientType:
       name: X-Client-Type
       in: header
@@ -156,6 +163,60 @@ components:
             created_at: { type: string, format: date-time }
             open_vacancies: { type: integer, description: public profile only }
             my_role: { type: string, enum: [owner, admin, recruiter], description: "/me/companies only" }
+    AdminStats:
+      type: object
+      description: Overview counters. Deleted accounts are excluded from every user counter.
+      required: [users, companies, vacancies, applications]
+      properties:
+        users:
+          type: object
+          required: [total, signed_up_last_7d, blocked]
+          properties:
+            total: { type: integer, description: active + blocked accounts }
+            signed_up_last_7d: { type: integer }
+            blocked: { type: integer }
+        companies:
+          type: object
+          required: [total, active_unverified, blocked]
+          properties:
+            total: { type: integer }
+            active_unverified: { type: integer, description: not blocked and not verified (their vacancies go through moderation) }
+            blocked: { type: integer }
+        vacancies:
+          type: object
+          required: [published, pending_moderation]
+          properties:
+            published: { type: integer }
+            pending_moderation: { type: integer }
+        applications:
+          type: object
+          required: [sent_last_7d]
+          properties:
+            sent_last_7d: { type: integer }
+    AdminCompany:
+      description: The same complete shape in lists and in mutation responses.
+      allOf:
+        - $ref: "#/components/schemas/Company"
+        - type: object
+          required: [status, owner_name, owner_email, open_vacancies]
+          properties:
+            status: { type: string, enum: [active, blocked] }
+            owner_name: { type: string }
+            owner_email: { type: [string, "null"] }
+            open_vacancies: { type: integer }
+    AdminUser:
+      allOf:
+        - $ref: "#/components/schemas/User"
+        - type: object
+          required: [status, last_seen_at]
+          properties:
+            status: { type: string, enum: [active, blocked] }
+            last_seen_at: { type: [string, "null"], format: date-time }
+    PageMeta:
+      type: object
+      required: [next_cursor]
+      properties:
+        next_cursor: { type: [string, "null"], description: "pass as ?cursor= for the next page; null on the last page" }
     CompanySummary:
       type: object
       required: [id, name, slug, logo_url, verified]
@@ -378,6 +439,31 @@ components:
       content:
         application/json:
           schema: { type: object, properties: { data: { $ref: "#/components/schemas/Company" } } }
+    Unauthorized:
+      description: Missing, invalid, expired or revoked access token (unauthorized)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    AdminOnly:
+      description: Signed in but not an admin (forbidden)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    InvalidCursor:
+      description: cursor is not one this API issued (invalid_cursor)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    CompanyNotFound:
+      description: No company with that id or slug (company_not_found)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    UserNotFound:
+      description: No such user, or a malformed id (user_not_found)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    AdminCompany:
+      description: Company with moderation state
+      content:
+        application/json:
+          schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminCompany" } } }
+    AdminUser:
+      description: User with account state
+      content:
+        application/json:
+          schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminUser" } } }
 
 paths:
   /auth/register:
@@ -862,20 +948,176 @@ paths:
             application/json:
               schema: { type: object, properties: { data: { type: array, items: { type: string } } } }
 
+  /admin/stats:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Overview counters (what needs attention, platform size)
+      responses:
+        "200":
+          description: Counters
+          content: { application/json: { schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminStats" } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+  /admin/companies:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: All companies, newest first. status and verified filter independently.
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: name or slug substring }
+        - { name: status, in: query, schema: { type: string, enum: [active, blocked] } }
+        - { name: verified, in: query, schema: { type: boolean } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/AdminLimit" }
+      responses:
+        "200":
+          description: Page of companies
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/AdminCompany" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "400": { $ref: "#/components/responses/InvalidCursor" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/companies/{company}/verification:
+    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Mark verified (badge + publishing without moderation). Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminCompany" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/CompanyNotFound" }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Remove verification. Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminCompany" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/CompanyNotFound" }
+  /admin/companies/{company}/block:
+    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Block. The profile and every vacancy are hidden from the public and members can't manage the company. Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminCompany" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/CompanyNotFound" }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Unblock. Vacancies that haven't expired meanwhile become visible again. Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminCompany" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/CompanyNotFound" }
+  /admin/users:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: All accounts except deleted ones, newest first
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 100 }, description: name, email or phone substring }
+        - { name: role, in: query, schema: { type: string, enum: [seeker, employer, admin] } }
+        - { name: status, in: query, schema: { type: string, enum: [active, blocked] } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/AdminLimit" }
+      responses:
+        "200":
+          description: Page of users
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/AdminUser" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "400": { $ref: "#/components/responses/InvalidCursor" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/users/{user}/role:
+    parameters: [{ $ref: "#/components/parameters/UserRef" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Change the platform role and sign the user out everywhere (the role is inside their tokens)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [role], properties: { role: { type: string, enum: [seeker, employer, admin] } } }
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Not an admin (forbidden), or the target is yourself (admin_cannot_change_own_role)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/users/{user}/block:
+    parameters: [{ $ref: "#/components/parameters/UserRef" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Block and sign out everywhere; login and refresh are refused while blocked. Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Not an admin (forbidden), or the target is yourself (admin_cannot_block_self)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Unblock. Idempotent.
+      responses:
+        "200": { $ref: "#/components/responses/AdminUser" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403":
+          description: Not an admin (forbidden), or the target is yourself (admin_cannot_block_self)
+          content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+        "404": { $ref: "#/components/responses/UserNotFound" }
   /admin/vacancies/moderation:
     get:
       tags: [admin]
       security: [{ bearer: [] }]
       summary: Moderation queue, oldest submission first
-      parameters: [{ $ref: "#/components/parameters/Cursor" }, { $ref: "#/components/parameters/Limit" }]
-      responses: { "200": { $ref: "#/components/responses/VacancyPage" } }
+      parameters: [{ $ref: "#/components/parameters/Cursor" }, { $ref: "#/components/parameters/AdminLimit" }]
+      responses:
+        "200": { $ref: "#/components/responses/VacancyPage" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "400": { $ref: "#/components/responses/InvalidCursor" }
+        "422": { $ref: "#/components/responses/Error" }
   /admin/vacancies/{vacancy}/approve:
     post:
       tags: [admin]
       security: [{ bearer: [] }]
       summary: Publish for 30 days
       parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
-      responses: { "200": { $ref: "#/components/responses/Vacancy" }, "409": { $ref: "#/components/responses/Error" } }
+      responses:
+        "200": { $ref: "#/components/responses/Vacancy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /admin/vacancies/{vacancy}/reject:
     post:
       tags: [admin]
@@ -887,19 +1129,13 @@ paths:
         content:
           application/json:
             schema: { type: object, required: [reason], properties: { reason: { type: string, minLength: 5, maxLength: 1000 } } }
-      responses: { "200": { $ref: "#/components/responses/Vacancy" }, "409": { $ref: "#/components/responses/Error" } }
-  /admin/companies/{company}/verification:
-    parameters: [{ $ref: "#/components/parameters/CompanyRef" }]
-    put:
-      tags: [admin]
-      security: [{ bearer: [] }]
-      summary: Mark verified (badge + publishing without moderation)
-      responses: { "200": { $ref: "#/components/responses/Company" } }
-    delete:
-      tags: [admin]
-      security: [{ bearer: [] }]
-      summary: Remove verification
-      responses: { "200": { $ref: "#/components/responses/Company" } }
+      responses:
+        "200": { $ref: "#/components/responses/Vacancy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
 
   /resumes:
     get:
