@@ -28,7 +28,8 @@ info:
     **Verbs for state.** A flag that can be set and cleared idempotently is a sub-resource:
     `PUT` sets it, `DELETE` clears it (company verification and block, user block, saved
     vacancies). A one-way step in a workflow is a `POST` action that may answer 409
-    `invalid_status_transition` (vacancy submit / approve / reject / archive).
+    `invalid_status_transition` (vacancy submit / approve / reject / takedown / archive,
+    resolving or dismissing reports).
 servers:
   - url: https://jobvacancy.uz/api/v1
   - url: http://localhost:8090/api/v1
@@ -45,6 +46,8 @@ components:
     CompanyRef: { name: company, in: path, required: true, schema: { type: string }, description: uuid or slug }
     UserRef: { name: user, in: path, required: true, schema: { type: string, format: uuid }, description: "user id; a malformed id answers 404 user_not_found like an unknown one" }
     AdminLimit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 }, description: page size for every admin list }
+    ReportTargetType: { name: target_type, in: path, required: true, schema: { type: string, enum: [vacancy, company] } }
+    ReportTargetId: { name: target_id, in: path, required: true, schema: { type: string, format: uuid }, description: "vacancy or company id; anything malformed answers 404 reported_target_not_found" }
     ClientType:
       name: X-Client-Type
       in: header
@@ -166,7 +169,7 @@ components:
     AdminStats:
       type: object
       description: Overview counters. Deleted accounts are excluded from every user counter.
-      required: [users, companies, vacancies, applications]
+      required: [users, companies, vacancies, applications, reports]
       properties:
         users:
           type: object
@@ -193,6 +196,134 @@ components:
           required: [sent_last_7d]
           properties:
             sent_last_7d: { type: integer }
+        reports:
+          type: object
+          required: [open_targets]
+          properties:
+            open_targets: { type: integer, description: vacancies and companies with at least one open report }
+    Notification:
+      type: object
+      description: >
+        In-app notification. `payload` carries what the type needs:
+        application.new (application_id, vacancy_title, candidate_name);
+        application.status (application_id, vacancy_title, company_name, status);
+        application.invited (application_id, vacancy_title, company_name);
+        vacancy.approved (vacancy_id, vacancy_title);
+        vacancy.rejected and vacancy.taken_down (vacancy_id, vacancy_title, reason);
+        search.alert (search_id, search_name, count, preview);
+        report.resolved and report.dismissed (target_type, target_name).
+      required: [id, type, payload, read_at, created_at]
+      properties:
+        id: { type: integer }
+        type:
+          type: string
+          enum: [application.new, application.status, application.invited, vacancy.approved, vacancy.rejected,
+                 vacancy.taken_down, search.alert, report.resolved, report.dismissed]
+        payload:
+          type: object
+          properties:
+            application_id: { type: string, format: uuid }
+            vacancy_id: { type: string, format: uuid }
+            vacancy_title: { type: string }
+            company_name: { type: string }
+            candidate_name: { type: string }
+            status: { type: string }
+            reason: { type: string, description: "vacancy.rejected / vacancy.taken_down: shown to the employer" }
+            search_id: { type: string }
+            search_name: { type: string }
+            count: { type: integer }
+            preview: { type: string }
+            target_type: { type: string, enum: [vacancy, company], description: "report.*: what was reported" }
+            target_name: { type: string, description: "report.*: the vacancy title or company name" }
+        read_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
+    ReportReason:
+      type: string
+      enum: [fraud, misleading, offensive, spam, other]
+      description: "fraud: scam or asks for money; misleading: false information; offensive: abusive or illegal content; spam: spam or duplicate; other: needs a comment"
+    Report:
+      type: object
+      required: [id, target_type, target_id, reason, comment, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        target_type: { type: string, enum: [vacancy, company] }
+        target_id: { type: string, format: uuid }
+        reason: { $ref: "#/components/schemas/ReportReason" }
+        comment: { type: [string, "null"] }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        created_at: { type: string, format: date-time }
+    ReportedTarget:
+      type: object
+      description: >
+        One row of the admin report queue: a target and its reports in `status`. Exactly one
+        of vacancy / company is set, matching target_type. status_report_count, `reasons` and
+        `latest` cover the reports in `status`; total_report_count covers every report ever
+        filed on the target. `public` says whether anyone can see the target right now.
+      required: [target_type, target_id, status, vacancy, company, status_report_count, total_report_count, reasons, latest,
+                 first_reported_at, last_reported_at, last_activity_at]
+      properties:
+        target_type: { type: string, enum: [vacancy, company] }
+        target_id: { type: string, format: uuid }
+        status: { type: string, enum: [open, resolved, dismissed] }
+        vacancy:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [id, title, slug, status, public, company]
+              properties:
+                id: { type: string, format: uuid }
+                title: { type: string }
+                slug: { type: string }
+                status: { type: string, enum: [draft, moderation, published, rejected, archived, expired] }
+                public: { type: boolean, description: published and its company is active }
+                company:
+                  type: object
+                  required: [id, name, slug, status]
+                  properties:
+                    id: { type: string, format: uuid }
+                    name: { type: string }
+                    slug: { type: string }
+                    status: { type: string, enum: [active, blocked] }
+        company:
+          oneOf:
+            - type: "null"
+            - type: object
+              required: [id, name, slug, logo_url, status, public, verified]
+              properties:
+                id: { type: string, format: uuid }
+                name: { type: string }
+                slug: { type: string }
+                logo_url: { type: [string, "null"] }
+                status: { type: string, enum: [active, blocked] }
+                public: { type: boolean, description: the company is active }
+                verified: { type: boolean }
+        status_report_count: { type: integer }
+        total_report_count: { type: integer }
+        reasons:
+          type: object
+          description: one counter per reason, always all of them
+          required: [fraud, misleading, offensive, spam, other]
+          properties:
+            fraud: { type: integer }
+            misleading: { type: integer }
+            offensive: { type: integer }
+            spam: { type: integer }
+            other: { type: integer }
+        latest:
+          type: array
+          description: the newest three reports, newest first
+          items:
+            type: object
+            required: [id, reason, comment, reporter_name, created_at]
+            properties:
+              id: { type: string, format: uuid }
+              reason: { $ref: "#/components/schemas/ReportReason" }
+              comment: { type: [string, "null"] }
+              reporter_name: { type: string }
+              created_at: { type: string, format: date-time }
+        first_reported_at: { type: string, format: date-time }
+        last_reported_at: { type: string, format: date-time }
+        last_activity_at: { type: string, format: date-time, description: "newest report, or when the reports were closed" }
     AdminCompany:
       description: The same complete shape in lists and in mutation responses.
       allOf:
@@ -289,9 +420,11 @@ components:
             submitted_at: { type: string, format: date-time, description: company members only }
     VacancyResponse:
       type: object
+      required: [data]
       properties: { data: { $ref: "#/components/schemas/VacancyDetail" } }
     VacancyPage:
       type: object
+      required: [data, meta]
       properties:
         data: { type: array, items: { $ref: "#/components/schemas/VacancyCard" } }
         meta:
@@ -438,7 +571,7 @@ components:
       description: Company
       content:
         application/json:
-          schema: { type: object, properties: { data: { $ref: "#/components/schemas/Company" } } }
+          schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/Company" } } }
     Unauthorized:
       description: Missing, invalid, expired or revoked access token (unauthorized)
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
@@ -454,16 +587,27 @@ components:
     UserNotFound:
       description: No such user, or a malformed id (user_not_found)
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    ReportTargetNotFound:
+      description: Not a public vacancy or company, or no reports for it (report_target_not_found)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    ReportedTargetNotFound:
+      description: No reports were ever filed on that target, it no longer exists, or the path is malformed (reported_target_not_found)
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    ReportedTarget:
+      description: The target as the queue now shows it
+      content:
+        application/json:
+          schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/ReportedTarget" } } }
     AdminCompany:
       description: Company with moderation state
       content:
         application/json:
-          schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminCompany" } } }
+          schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminCompany" } } }
     AdminUser:
       description: User with account state
       content:
         application/json:
-          schema: { type: object, properties: { data: { $ref: "#/components/schemas/AdminUser" } } }
+          schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/AdminUser" } } }
 
 paths:
   /auth/register:
@@ -1136,6 +1280,123 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+  /admin/vacancies/{vacancy}/takedown:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Take a published vacancy down (it becomes rejected with the reason; the author gets vacancy.taken_down)
+      description: >
+        With resolve_reports (the default) the vacancy's open reports are closed as resolved in
+        the same call, with the reason as the note, and the reporters are told. If closing the
+        reports fails after the takedown, the takedown still stands and the reports stay open
+        in the admin queue.
+      parameters: [{ $ref: "#/components/parameters/VacancyRef" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 5, maxLength: 1000 }
+                resolve_reports: { type: boolean, default: true }
+      responses:
+        "200": { $ref: "#/components/responses/Vacancy" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { description: "Not published (invalid_status_transition)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/reports:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Reported vacancies and companies, newest report first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, resolved, dismissed], default: open } }
+        - { name: target_type, in: query, schema: { type: string, enum: [vacancy, company] } }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/AdminLimit" }
+      responses:
+        "200":
+          description: Page of reported targets
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/ReportedTarget" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "400": { $ref: "#/components/responses/InvalidCursor" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/reports/{target_type}/{target_id}/resolve:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Close every open report of the target as resolved (action taken) and tell the reporters
+      parameters: [{ $ref: "#/components/parameters/ReportTargetType" }, { $ref: "#/components/parameters/ReportTargetId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { note: { type: string, maxLength: 1000, description: internal, not shown to reporters } } }
+      responses:
+        "200": { $ref: "#/components/responses/ReportedTarget" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/ReportedTargetNotFound" }
+        "409": { description: "Nothing open (no_open_reports)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/reports/{target_type}/{target_id}/dismiss:
+    post:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Close every open report of the target as dismissed (no violation) and tell the reporters
+      parameters: [{ $ref: "#/components/parameters/ReportTargetType" }, { $ref: "#/components/parameters/ReportTargetId" }]
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { note: { type: string, maxLength: 1000, description: internal, not shown to reporters } } }
+      responses:
+        "200": { $ref: "#/components/responses/ReportedTarget" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/ReportedTargetNotFound" }
+        "409": { description: "Nothing open (no_open_reports)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /reports:
+    post:
+      tags: [reports]
+      security: [{ bearer: [] }]
+      summary: Report a public vacancy or company (10 per hour per user)
+      description: >
+        A second report on the same target while the first is still open answers 409
+        already_reported; clients show "already reported" for it (there's no lookup endpoint).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [target_type, target_id, reason]
+              properties:
+                target_type: { type: string, enum: [vacancy, company] }
+                target_id: { type: string, format: uuid, description: "missing or malformed → 422 fields.target_id" }
+                reason: { $ref: "#/components/schemas/ReportReason" }
+                comment: { type: string, maxLength: 1000, description: "required when reason is other" }
+      responses:
+        "201":
+          description: Filed
+          content: { application/json: { schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/Report" } } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Your own company or its vacancy (cannot_report_own_company)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { $ref: "#/components/responses/ReportTargetNotFound" }
+        "409": { description: "You already have an open report on it (already_reported)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
 
   /resumes:
     get:
@@ -1393,12 +1654,22 @@ paths:
       tags: [notifications]
       security: [{ bearer: [] }]
       summary: In-app notifications, newest first
-      description: "Types: application.new, application.status, application.invited, vacancy.approved, vacancy.rejected, search.alert"
+      description: "See the Notification schema for the types and their payloads."
       parameters:
         - { name: unread, in: query, schema: { type: boolean } }
         - { name: cursor, in: query, schema: { type: string } }
         - { name: limit, in: query, schema: { type: integer, maximum: 50 } }
-      responses: { "200": { description: Page } }
+      responses:
+        "200":
+          description: Page of notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
   /me/notifications/unread-count:
     get:
       tags: [notifications]

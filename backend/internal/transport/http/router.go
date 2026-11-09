@@ -19,6 +19,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/company"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/modules/notification"
+	"jobvacancy.uz/backend/internal/modules/report"
 	"jobvacancy.uz/backend/internal/modules/resume"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
 	"jobvacancy.uz/backend/internal/modules/user"
@@ -52,6 +53,7 @@ type Deps struct {
 	WSHandler      *realtime.Handler
 	AppHandler     *application.Handler
 	AdminHandler   *admin.Handler
+	ReportHandler  *report.Handler
 }
 
 // Per-IP limits for unauthenticated auth endpoints (password guessing, sign-up spam).
@@ -60,6 +62,8 @@ var (
 	authIPRule  = ratelimit.Rule{Name: "auth_ip", Limit: 30, Window: time.Minute}
 	codeIPRule  = ratelimit.Rule{Name: "code_ip", Limit: 10, Window: 10 * time.Minute}
 	apiUserRule = ratelimit.Rule{Name: "api_user", Limit: 600, Window: time.Minute}
+	// Filing reports: generous for real use, a wall for report-bombing.
+	reportUserRule = ratelimit.Rule{Name: "report_user", Limit: 10, Window: time.Hour}
 )
 
 func NewRouter(d Deps) http.Handler {
@@ -131,6 +135,10 @@ func NewRouter(d Deps) http.Handler {
 				d.AppHandler.Routes(r)
 				d.ChatHandler.ApplicationRoutes(r)
 			})
+			r.Route("/reports", func(r chi.Router) {
+				r.Use(mw.RateLimit(d.Limiter, reportUserRule, mw.KeyByUser))
+				d.ReportHandler.Routes(r)
+			})
 			r.Route("/conversations", d.ChatHandler.Routes)
 			r.Route("/messages", d.ChatHandler.MessageRoutes)
 			r.Route("/admin", func(r chi.Router) {
@@ -139,6 +147,7 @@ func NewRouter(d Deps) http.Handler {
 				r.Route("/companies", d.AdminHandler.CompanyRoutes)
 				r.Route("/users", d.AdminHandler.UserRoutes)
 				r.Route("/vacancies", d.VacancyHandler.AdminRoutes)
+				r.Route("/reports", d.ReportHandler.AdminRoutes)
 			})
 		})
 	})

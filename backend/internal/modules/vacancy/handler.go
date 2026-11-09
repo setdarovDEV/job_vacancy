@@ -23,9 +23,6 @@ import (
 const (
 	defaultLimit = 20
 	maxLimit     = 50
-
-	moderationDefaultLimit = 30
-	moderationMaxLimit     = 100
 )
 
 type Handler struct{ Svc *Service }
@@ -61,6 +58,7 @@ func (h *Handler) AdminRoutes(r chi.Router) {
 	r.Get("/moderation", h.moderationQueue)
 	r.Post("/{vacancy}/approve", h.approve)
 	r.Post("/{vacancy}/reject", h.reject)
+	r.Post("/{vacancy}/takedown", h.takeDown)
 }
 
 // ---- public ----------------------------------------------------------------------------
@@ -226,7 +224,8 @@ func (h *Handler) listForCompany(w http.ResponseWriter, r *http.Request) {
 
 // ---- admin -------------------------------------------------------------------------------
 
-type rejectRequest struct {
+// reasonRequest carries a reason shown to the employer (reject).
+type reasonRequest struct {
 	Reason string `json:"reason" validate:"required,max=1000"`
 }
 
@@ -235,7 +234,7 @@ func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var req rejectRequest
+	var req reasonRequest
 	if !response.DecodeValid(w, r, &req) {
 		return
 	}
@@ -247,9 +246,33 @@ func (h *Handler) reject(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, d)
 }
 
+type takedownRequest struct {
+	Reason string `json:"reason" validate:"required,max=1000"`
+	// Close the vacancy's open reports as resolved too; defaults to true.
+	ResolveReports *bool `json:"resolve_reports"`
+}
+
+func (h *Handler) takeDown(w http.ResponseWriter, r *http.Request) {
+	id, ok := vacancyID(w, r)
+	if !ok {
+		return
+	}
+	var req takedownRequest
+	if !response.DecodeValid(w, r, &req) {
+		return
+	}
+	resolve := req.ResolveReports == nil || *req.ResolveReports
+	d, err := h.Svc.TakeDown(r.Context(), reqctx.MustPrincipal(r.Context()), id, req.Reason, resolve)
+	if err != nil {
+		response.Error(w, r, err)
+		return
+	}
+	response.JSON(w, http.StatusOK, d)
+}
+
 func (h *Handler) moderationQueue(w http.ResponseWriter, r *http.Request) {
 	// Admin lists share one page size contract (AdminLimit in the OpenAPI spec).
-	after, limit, err := pagingUpTo(r, moderationDefaultLimit, moderationMaxLimit)
+	after, limit, err := pagingUpTo(r, cursor.AdminDefaultLimit, cursor.AdminMaxLimit)
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -273,7 +296,7 @@ func vacancyID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	return id, true
 }
 
-var errCursor = apperr.BadRequest("invalid_cursor", "cursor is invalid")
+var errCursor = cursor.ErrBadCursor
 
 func paging(r *http.Request) (*cursorKey, int, error) {
 	return pagingUpTo(r, defaultLimit, maxLimit)

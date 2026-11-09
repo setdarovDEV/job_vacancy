@@ -68,7 +68,7 @@ for (const scheme of ["light", "dark"]) {
   await shot("overview");
   if (scheme === "light") {
     ok("header shows Boshqaruv for admins", await p.getByRole("banner").getByRole("link", { name: "Boshqaruv" }).isVisible());
-    ok("sidebar has admin sections", (await p.locator("nav[aria-label='Hisob menyusi'] a[href^='/admin']").count()) === 4);
+    ok("sidebar has admin sections", (await p.locator("nav[aria-label='Hisob menyusi'] a[href^='/admin']").count()) === 5);
   }
 
   await p.goto(B + "/admin/moderation", { waitUntil: "networkidle" });

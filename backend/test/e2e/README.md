@@ -17,6 +17,7 @@ go build -o bin/wsclient ./test/e2e/wsclient
 WORKER_LOG=/tmp/worker.log test/e2e/chat.sh      # 44 checks (WebSocket)
 test/e2e/saved_searches.sh                       # 14 checks (uses psql)
 test/e2e/admin.sh                                # 64 checks (needs bin/ctl): admin stats, companies, users, blocking
+test/e2e/reports.sh                              # 49 checks (needs bin/ctl): reports, admin queue, takedown, resolve/dismiss
 ```
 
 The auth endpoints are rate-limited per IP (30/min), so leave about a minute between

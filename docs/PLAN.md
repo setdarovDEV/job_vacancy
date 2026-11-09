@@ -115,7 +115,9 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
 - [ ] **8. Admin panel**
   - [x] A: umumiy ko'rinish, moderatsiya (ko'rib chiqish, qabul/rad), kompaniyalar (tasdiqlash, bloklash: vakansiyalar
         yashiriladi va blokdan keyin qaytadi), foydalanuvchilar (rol, bloklash + sessiyalarni yopish); `test/e2e/admin.sh`, `shots-g.mjs`
-  - [ ] B: shikoyatlar (vakansiya/kompaniya → admin navbati)
+  - [x] B: shikoyatlar: tizimga kirgan foydalanuvchi vakansiya yoki kompaniyaga sabab bilan shikoyat qiladi (soatiga 10 ta,
+        o'z kompaniyasiga emas, bitta ochiq shikoyat); adminda obyekt bo'yicha guruhlangan navbat, "choralar ko'rildi" / "asossiz"
+        (shikoyatchilarga bildirishnoma), vakansiyani olib tashlash, kompaniyani bloklash; `test/e2e/reports.sh`, `shots-h.mjs`
   - [ ] C: kataloglar (yangi ko'nikmalarni tasdiqlash/birlashtirish)
   - [ ] D: statistika grafiklari
 - [ ] **9. Mobile (Flutter)**

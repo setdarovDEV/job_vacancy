@@ -34,6 +34,7 @@ const NAV: Record<User["role"], RoleNav> = {
     links: [
       { to: "/admin", key: "admin.nav.overview" },
       { to: "/admin/moderation", key: "admin.nav.moderation" },
+      { to: "/admin/reports", key: "admin.nav.reports" },
       { to: "/admin/companies", key: "admin.nav.companies" },
       { to: "/admin/users", key: "admin.nav.users" },
       { to: "/me/notifications", key: "account.notifications" },

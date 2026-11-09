@@ -2,6 +2,7 @@ package admin
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -15,12 +16,10 @@ import (
 	"jobvacancy.uz/backend/internal/transport/http/response"
 )
 
-// Page size contract shared by every admin list (AdminLimit in the OpenAPI spec).
-const (
-	defaultLimit = 30
-	maxLimit     = 100
-	maxQueryLen  = 100
-)
+const maxQueryLen = 100
+
+// Deleted accounts are never listed, so they aren't a filter value either.
+var listableUserStatuses = []gen.UserStatus{gen.UserStatusActive, gen.UserStatusBlocked}
 
 type Handler struct{ Svc *Service }
 
@@ -57,7 +56,7 @@ func (h *Handler) stats(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) companies(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	after, limit, err := paging(r)
+	after, limit, err := cursor.ParseAdminPage(r.URL.Query())
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -69,7 +68,7 @@ func (h *Handler) companies(w http.ResponseWriter, r *http.Request) {
 		if st.Valid() {
 			f.Status = &st
 		} else {
-			bad["status"] = "oneof=active blocked"
+			bad["status"] = apperr.OneOf(gen.AllCompanyStatusValues())
 		}
 	}
 	if s := q.Get("verified"); s != "" {
@@ -116,7 +115,7 @@ func (h *Handler) setCompanyBlocked(blocked bool) http.HandlerFunc {
 
 func (h *Handler) users(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	after, limit, err := paging(r)
+	after, limit, err := cursor.ParseAdminPage(r.URL.Query())
 	if err != nil {
 		response.Error(w, r, err)
 		return
@@ -128,15 +127,15 @@ func (h *Handler) users(w http.ResponseWriter, r *http.Request) {
 		if role.Valid() {
 			f.Role = &role
 		} else {
-			bad["role"] = "oneof=seeker employer admin"
+			bad["role"] = apperr.OneOf(gen.AllUserRoleValues())
 		}
 	}
 	if s := q.Get("status"); s != "" {
 		st := gen.UserStatus(s)
-		if st == gen.UserStatusActive || st == gen.UserStatusBlocked {
+		if slices.Contains(listableUserStatuses, st) {
 			f.Status = &st
 		} else {
-			bad["status"] = "oneof=active blocked"
+			bad["status"] = apperr.OneOf(listableUserStatuses)
 		}
 	}
 	if len(bad) > 0 {
@@ -189,8 +188,6 @@ func (h *Handler) setUserBlocked(blocked bool) http.HandlerFunc {
 
 // ---- parsing -----------------------------------------------------------------------------
 
-var errCursor = apperr.BadRequest("invalid_cursor", "cursor is invalid")
-
 // userID parses {user}; a malformed id is reported like an unknown one (404 user_not_found).
 func userID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "user"))
@@ -199,23 +196,6 @@ func userID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 		return id, false
 	}
 	return id, true
-}
-
-func paging(r *http.Request) (*cursor.TimeID, int, error) {
-	q := r.URL.Query()
-	limit, err := cursor.ParseLimit(q.Get("limit"), defaultLimit, maxLimit)
-	if err != nil {
-		return nil, 0, err
-	}
-	var after *cursor.TimeID
-	if s := q.Get("cursor"); s != "" {
-		var k cursor.TimeID
-		if err := cursor.Decode(s, &k); err != nil {
-			return nil, 0, errCursor
-		}
-		after = &k
-	}
-	return after, limit, nil
 }
 
 func searchText(s string) string {

@@ -49,7 +49,7 @@ echo "== stats"
 check "stats 200" $(req $API/admin/stats -H "Authorization: Bearer $T_A") 200
 check "pending moderation ≥ 1" "$(J '.data.vacancies.pending_moderation >= 1')" true
 check "active unverified companies ≥ 1" "$(J '.data.companies.active_unverified >= 1')" true
-check "all sections present" "$(J '.data | keys | join(",")')" "applications,companies,users,vacancies"
+check "all sections present" "$(J '.data | keys | join(",")')" "applications,companies,reports,users,vacancies"
 check "renamed counters" "$(J '[.data.users.signed_up_last_7d, .data.applications.sent_last_7d] | map(type) | join(",")')" "number,number"
 
 echo "== moderation (existing endpoints)"

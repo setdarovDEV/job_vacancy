@@ -3,7 +3,6 @@ package admin
 import (
 	"context"
 	"errors"
-	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"jobvacancy.uz/backend/db/gen"
-	"jobvacancy.uz/backend/internal/pkg/cursor"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 )
 
@@ -175,35 +173,6 @@ func TestCompanyMutationsDelegateAndReturnFullRow(t *testing.T) {
 }
 
 // ---- parsing -----------------------------------------------------------------------------
-
-func TestPaging(t *testing.T) {
-	c := cursor.Encode(cursor.TimeID{ID: uuid.New()})
-	cases := []struct {
-		query     string
-		wantLimit int
-		wantAfter bool
-		wantErr   bool
-	}{
-		{"", defaultLimit, false, false},
-		{"limit=5", 5, false, false},
-		{"limit=100", 100, false, false},
-		{"limit=0", 0, false, true},
-		{"limit=101", 0, false, true},
-		{"limit=abc", 0, false, true},
-		{"cursor=" + c, defaultLimit, true, false},
-		{"cursor=not-a-cursor", 0, false, true},
-	}
-	for _, tc := range cases {
-		after, limit, err := paging(httptest.NewRequest("GET", "/?"+tc.query, nil))
-		if (err != nil) != tc.wantErr {
-			t.Errorf("%q: err=%v, wantErr=%v", tc.query, err, tc.wantErr)
-			continue
-		}
-		if !tc.wantErr && (limit != tc.wantLimit || (after != nil) != tc.wantAfter) {
-			t.Errorf("%q: limit=%d after=%v", tc.query, limit, after)
-		}
-	}
-}
 
 func TestSearchTextIsTrimmedAndCapped(t *testing.T) {
 	if got := searchText("  kassir  "); got != "kassir" {

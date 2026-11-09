@@ -28,6 +28,10 @@ type StatsDTO struct {
 	Applications struct {
 		SentLast7d int32 `json:"sent_last_7d"`
 	} `json:"applications"`
+	Reports struct {
+		// Vacancies and companies with at least one open report (the admin queue's length).
+		OpenTargets int32 `json:"open_targets"`
+	} `json:"reports"`
 }
 
 func statsDTO(r gen.AdminStatsRow) StatsDTO {
@@ -36,6 +40,7 @@ func statsDTO(r gen.AdminStatsRow) StatsDTO {
 	d.Companies.Total, d.Companies.ActiveUnverified, d.Companies.Blocked = r.CompaniesTotal, r.CompaniesActiveUnverified, r.CompaniesBlocked
 	d.Vacancies.Published, d.Vacancies.PendingModeration = r.VacanciesPublished, r.VacanciesPendingModeration
 	d.Applications.SentLast7d = r.ApplicationsSentLast7d
+	d.Reports.OpenTargets = r.ReportsOpenTargets
 	return d
 }
 

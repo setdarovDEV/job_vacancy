@@ -20,6 +20,8 @@ type Payload struct {
 	SearchID       string `json:"search_id,omitempty"`
 	SearchName     string `json:"search_name,omitempty"`
 	Count          int    `json:"count,omitempty"`
+	TargetType     string `json:"target_type,omitempty"` // reports: vacancy | company
+	TargetName     string `json:"target_name,omitempty"` // reports: vacancy title or company name
 }
 
 const (
@@ -28,8 +30,11 @@ const (
 	TypeApplicationInvited = "application.invited" // → seeker
 	TypeVacancyApproved    = "vacancy.approved"    // → vacancy author
 	TypeVacancyRejected    = "vacancy.rejected"    // → vacancy author
+	TypeVacancyTakenDown   = "vacancy.taken_down"  // → vacancy author: pulled while live
 	TypeMessageNew         = "message.new"         // → offline chat participant (not stored)
 	TypeSearchAlert        = "search.alert"        // → saved-search owner
+	TypeReportResolved     = "report.resolved"     // → reporters: action was taken
+	TypeReportDismissed    = "report.dismissed"    // → reporters: no violation found
 )
 
 // text is the rendered, localized notification.
@@ -96,6 +101,24 @@ func render(typ, lang string, p Payload) (text, bool) {
 		return text{
 			Title:  pick("Vakansiya rad etildi", "Вакансия рад этилди", "Вакансия отклонена", "Vacancy rejected"),
 			Body:   fmt.Sprintf(pick("«%s»: %s\nTuzatib, qayta yuboring.", "«%s»: %s\nТузатиб, қайта юборинг.", "«%s»: %s\nИсправьте и отправьте снова.", "“%s”: %s\nPlease fix it and resubmit."), p.VacancyTitle, p.Reason),
+			Button: b("open"), Path: "/employer/vacancies/" + p.VacancyID,
+		}, true
+	case TypeReportResolved:
+		return text{
+			Title:  pick("Shikoyatingiz ko'rib chiqildi", "Шикоятингиз кўриб чиқилди", "Ваша жалоба рассмотрена", "Your report was reviewed"),
+			Body:   fmt.Sprintf(pick("«%s»: choralar ko'rildi. Rahmat!", "«%s»: чоралар кўрилди. Раҳмат!", "«%s»: приняты меры. Спасибо!", "“%s”: we took action. Thank you!"), p.TargetName),
+			Button: b("open"), Path: "/me/notifications",
+		}, true
+	case TypeReportDismissed:
+		return text{
+			Title:  pick("Shikoyatingiz ko'rib chiqildi", "Шикоятингиз кўриб чиқилди", "Ваша жалоба рассмотрена", "Your report was reviewed"),
+			Body:   fmt.Sprintf(pick("«%s»: qoidabuzarlik topilmadi.", "«%s»: қоидабузарлик топилмади.", "«%s»: нарушений не найдено.", "“%s”: we found no violation."), p.TargetName),
+			Button: b("open"), Path: "/me/notifications",
+		}, true
+	case TypeVacancyTakenDown:
+		return text{
+			Title:  pick("Vakansiya saytdan olib tashlandi", "Вакансия сайтдан олиб ташланди", "Вакансия снята с сайта", "Vacancy taken down"),
+			Body:   fmt.Sprintf(pick("«%s»: %s\nTuzatib, qayta yuborishingiz mumkin.", "«%s»: %s\nТузатиб, қайта юборишингиз мумкин.", "«%s»: %s\nМожно исправить и отправить снова.", "“%s”: %s\nYou can fix it and resubmit."), p.VacancyTitle, p.Reason),
 			Button: b("open"), Path: "/employer/vacancies/" + p.VacancyID,
 		}, true
 	case TypeMessageNew:

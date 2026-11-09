@@ -6,6 +6,7 @@ package apperr
 import (
 	"errors"
 	"net/http"
+	"strings"
 )
 
 type Error struct {
@@ -48,4 +49,14 @@ func As(err error) (*Error, bool) {
 	var e *Error
 	ok := errors.As(err, &e)
 	return e, ok
+}
+
+// OneOf is the validation rule text for an enum field, built from its allowed values so
+// the message can't drift from the type ("oneof=active blocked").
+func OneOf[T ~string](values []T) string {
+	s := make([]string, len(values))
+	for i, v := range values {
+		s[i] = string(v)
+	}
+	return "oneof=" + strings.Join(s, " ")
 }

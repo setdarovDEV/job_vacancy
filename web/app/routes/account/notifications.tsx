@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Bell, BellRing, BriefcaseBusiness, CheckCheck, CircleX, Inbox, Send, Sparkles } from "lucide-react";
+import { Bell, BellRing, BriefcaseBusiness, CheckCheck, CircleX, Inbox, Send, ShieldCheck, ShieldX, Sparkles } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { api } from "~/shared/api/client";
@@ -28,13 +28,16 @@ export function describe(n: Notification, t: TFunction) {
   const p = n.payload;
   const v = { vacancy: String(p.vacancy_title ?? ""), company: String(p.company_name ?? ""), candidate: String(p.candidate_name ?? ""),
     status: p.status ? t(`enums.application_status.${p.status}`).toLowerCase() : "", reason: String(p.reason ?? ""),
-    search: String(p.search_name ?? ""), count: Number(p.count ?? 0) };
+    search: String(p.search_name ?? ""), count: Number(p.count ?? 0), target: String(p.target_name ?? "") };
   switch (n.type) {
     case "application.new": return { title: t("notif.applicationNew", v), to: `/employer/applications/${p.application_id}`, Icon: Inbox };
     case "application.status": return { title: t("notif.applicationStatus", v), to: `/me/applications/${p.application_id}`, Icon: BriefcaseBusiness };
     case "application.invited": return { title: t("notif.applicationInvited", v), to: `/me/applications/${p.application_id}`, Icon: Send };
     case "vacancy.approved": return { title: t("notif.vacancyApproved", v), to: `/vacancies/${p.vacancy_id}`, Icon: Sparkles };
     case "vacancy.rejected": return { title: t("notif.vacancyRejected", v), body: v.reason, to: `/employer/vacancies/${p.vacancy_id}/edit`, Icon: CircleX };
+    case "report.resolved": return { title: t("notif.reportResolved", v), to: "/me/notifications", Icon: ShieldCheck };
+    case "report.dismissed": return { title: t("notif.reportDismissed", v), to: "/me/notifications", Icon: ShieldX };
+    case "vacancy.taken_down": return { title: t("notif.vacancyTakenDown", v), body: v.reason, to: `/employer/vacancies/${p.vacancy_id}/edit`, Icon: CircleX };
     case "search.alert": return { title: t("notif.searchAlert", v), body: String(p.preview ?? ""), to: `/me/searches`, Icon: BellRing };
     default: return { title: n.type, to: "/me/notifications", Icon: Bell };
   }

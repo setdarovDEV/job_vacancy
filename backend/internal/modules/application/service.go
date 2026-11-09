@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -83,7 +82,10 @@ func (s *Service) Apply(ctx context.Context, p reqctx.Principal, vacancyID uuid.
 	if v.Status != gen.VacancyStatusPublished {
 		return Detail{}, ErrVacancyClosed
 	}
-	if s.Companies.IsMember(ctx, reqctx.Principal{UserID: p.UserID}, v.CompanyID) {
+	// HasMember, not IsMember: a failed lookup must refuse, not let a team member apply.
+	if member, err := s.Companies.HasMember(ctx, v.CompanyID, p.UserID); err != nil {
+		return Detail{}, err
+	} else if member {
 		return Detail{}, ErrOwnVacancy
 	}
 	if _, err := s.Resumes.OwnedBy(ctx, in.ResumeID, p.UserID); err != nil {
@@ -173,8 +175,7 @@ func (s *Service) create(ctx context.Context, params gen.CreateApplicationParams
 			ApplicationID: a.ID, ActorID: &actor, ToStatus: a.Status, Note: note,
 		})
 	})
-	var pe *pgconn.PgError
-	if errors.As(err, &pe) && pe.Code == "23505" {
+	if postgres.IsUniqueViolation(err) {
 		return a, ErrAlreadyApplied
 	}
 	return a, err

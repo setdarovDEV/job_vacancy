@@ -1818,6 +1818,292 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/vacancies/{vacancy}/takedown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a published vacancy down (it becomes rejected with the reason; the author gets vacancy.taken_down)
+         * @description With resolve_reports (the default) the vacancy's open reports are closed as resolved in the same call, with the reason as the note, and the reporters are told. If closing the reports fails after the takedown, the takedown still stands and the reports stay open in the admin queue.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description uuid (writes) or slug (reads) */
+                    vacancy: components["parameters"]["VacancyRef"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        reason: string;
+                        /** @default true */
+                        resolve_reports?: boolean;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["Vacancy"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["Error"];
+                /** @description Not published (invalid_status_transition) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Reported vacancies and companies, newest report first */
+        get: {
+            parameters: {
+                query?: {
+                    status?: "open" | "resolved" | "dismissed";
+                    target_type?: "vacancy" | "company";
+                    cursor?: components["parameters"]["Cursor"];
+                    /** @description page size for every admin list */
+                    limit?: components["parameters"]["AdminLimit"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page of reported targets */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["ReportedTarget"][];
+                            meta: components["schemas"]["PageMeta"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidCursor"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reports/{target_type}/{target_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close every open report of the target as resolved (action taken) and tell the reporters */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    target_type: components["parameters"]["ReportTargetType"];
+                    /** @description vacancy or company id; anything malformed answers 404 reported_target_not_found */
+                    target_id: components["parameters"]["ReportTargetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description internal */
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["ReportedTarget"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["ReportedTargetNotFound"];
+                /** @description Nothing open (no_open_reports) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reports/{target_type}/{target_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Close every open report of the target as dismissed (no violation) and tell the reporters */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    target_type: components["parameters"]["ReportTargetType"];
+                    /** @description vacancy or company id; anything malformed answers 404 reported_target_not_found */
+                    target_id: components["parameters"]["ReportTargetId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description internal */
+                        note?: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["ReportedTarget"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["ReportedTargetNotFound"];
+                /** @description Nothing open (no_open_reports) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report a public vacancy or company (10 per hour per user)
+         * @description A second report on the same target while the first is still open answers 409 already_reported; clients show "already reported" for it (there's no lookup endpoint).
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        target_type: "vacancy" | "company";
+                        /**
+                         * Format: uuid
+                         * @description missing or malformed → 422 fields.target_id
+                         */
+                        target_id: string;
+                        reason: components["schemas"]["ReportReason"];
+                        /** @description required when reason is other */
+                        comment?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Filed */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["Report"];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Your own company or its vacancy (cannot_report_own_company) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                404: components["responses"]["ReportTargetNotFound"];
+                /** @description You already have an open report on it (already_reported) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/resumes": {
         parameters: {
             query?: never;
@@ -2675,7 +2961,7 @@ export interface paths {
         };
         /**
          * In-app notifications, newest first
-         * @description Types: application.new, application.status, application.invited, vacancy.approved, vacancy.rejected, search.alert
+         * @description See the Notification schema for the types and their payloads.
          */
         get: {
             parameters: {
@@ -2690,12 +2976,17 @@ export interface paths {
             };
             requestBody?: never;
             responses: {
-                /** @description Page */
+                /** @description Page of notifications */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["Notification"][];
+                            meta: components["schemas"]["PageMeta"];
+                        };
+                    };
                 };
             };
         };
@@ -3670,6 +3961,130 @@ export interface components {
             applications: {
                 sent_last_7d: number;
             };
+            reports: {
+                /** @description vacancies and companies with at least one open report */
+                open_targets: number;
+            };
+        };
+        /** @description In-app notification. `payload` carries what the type needs: application.new (application_id, vacancy_title, candidate_name); application.status (application_id, vacancy_title, company_name, status); application.invited (application_id, vacancy_title, company_name); vacancy.approved (vacancy_id, vacancy_title); vacancy.rejected and vacancy.taken_down (vacancy_id, vacancy_title, reason); search.alert (search_id, search_name, count, preview); report.resolved and report.dismissed (target_type, target_name). */
+        Notification: {
+            id: number;
+            /** @enum {string} */
+            type: "application.new" | "application.status" | "application.invited" | "vacancy.approved" | "vacancy.rejected" | "vacancy.taken_down" | "search.alert" | "report.resolved" | "report.dismissed";
+            payload: {
+                /** Format: uuid */
+                application_id?: string;
+                /** Format: uuid */
+                vacancy_id?: string;
+                vacancy_title?: string;
+                company_name?: string;
+                candidate_name?: string;
+                status?: string;
+                /** @description vacancy.rejected / vacancy.taken_down: shown to the employer */
+                reason?: string;
+                search_id?: string;
+                search_name?: string;
+                count?: number;
+                preview?: string;
+                /**
+                 * @description report.*: what was reported
+                 * @enum {string}
+                 */
+                target_type?: "vacancy" | "company";
+                /** @description report.*: the vacancy title or company name */
+                target_name?: string;
+            };
+            /** Format: date-time */
+            read_at: string | null;
+            /** Format: date-time */
+            created_at: string;
+        };
+        /**
+         * @description fraud: scam or asks for money; misleading: false information; offensive: abusive or illegal content; spam: spam or duplicate; other: needs a comment
+         * @enum {string}
+         */
+        ReportReason: "fraud" | "misleading" | "offensive" | "spam" | "other";
+        Report: {
+            /** Format: uuid */
+            id: string;
+            /** @enum {string} */
+            target_type: "vacancy" | "company";
+            /** Format: uuid */
+            target_id: string;
+            reason: components["schemas"]["ReportReason"];
+            comment: string | null;
+            /** @enum {string} */
+            status: "open" | "resolved" | "dismissed";
+            /** Format: date-time */
+            created_at: string;
+        };
+        /** @description One row of the admin report queue: a target and its reports in `status`. Exactly one of vacancy / company is set, matching target_type. status_report_count, `reasons` and `latest` cover the reports in `status`; total_report_count covers every report ever filed on the target. `public` says whether anyone can see the target right now. */
+        ReportedTarget: {
+            /** @enum {string} */
+            target_type: "vacancy" | "company";
+            /** Format: uuid */
+            target_id: string;
+            /** @enum {string} */
+            status: "open" | "resolved" | "dismissed";
+            vacancy: null | {
+                /** Format: uuid */
+                id: string;
+                title: string;
+                slug: string;
+                /** @enum {string} */
+                status: "draft" | "moderation" | "published" | "rejected" | "archived" | "expired";
+                /** @description published and its company is active */
+                public: boolean;
+                company: {
+                    /** Format: uuid */
+                    id: string;
+                    name: string;
+                    slug: string;
+                    /** @enum {string} */
+                    status: "active" | "blocked";
+                };
+            };
+            company: null | {
+                /** Format: uuid */
+                id: string;
+                name: string;
+                slug: string;
+                logo_url: string | null;
+                /** @enum {string} */
+                status: "active" | "blocked";
+                /** @description the company is active */
+                public: boolean;
+                verified: boolean;
+            };
+            status_report_count: number;
+            total_report_count: number;
+            /** @description one counter per reason, always all of them */
+            reasons: {
+                fraud: number;
+                misleading: number;
+                offensive: number;
+                spam: number;
+                other: number;
+            };
+            /** @description the newest three reports, newest first */
+            latest: {
+                /** Format: uuid */
+                id: string;
+                reason: components["schemas"]["ReportReason"];
+                comment: string | null;
+                reporter_name: string;
+                /** Format: date-time */
+                created_at: string;
+            }[];
+            /** Format: date-time */
+            first_reported_at: string;
+            /** Format: date-time */
+            last_reported_at: string;
+            /**
+             * Format: date-time
+             * @description newest report, or when the reports were closed
+             */
+            last_activity_at: string;
         };
         /** @description The same complete shape in lists and in mutation responses. */
         AdminCompany: components["schemas"]["Company"] & {
@@ -3779,11 +4194,11 @@ export interface components {
             submitted_at?: string;
         };
         VacancyResponse: {
-            data?: components["schemas"]["VacancyDetail"];
+            data: components["schemas"]["VacancyDetail"];
         };
         VacancyPage: {
-            data?: components["schemas"]["VacancyCard"][];
-            meta?: {
+            data: components["schemas"]["VacancyCard"][];
+            meta: {
                 /** @description pass as ?cursor= for the next page */
                 next_cursor?: string | null;
                 /** @description first page of /vacancies only; capped at 1000 */
@@ -4004,7 +4419,7 @@ export interface components {
             };
             content: {
                 "application/json": {
-                    data?: components["schemas"]["Company"];
+                    data: components["schemas"]["Company"];
                 };
             };
         };
@@ -4053,6 +4468,35 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Not a public vacancy or company, or no reports for it (report_target_not_found) */
+        ReportTargetNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description No reports were ever filed on that target, it no longer exists, or the path is malformed (reported_target_not_found) */
+        ReportedTargetNotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description The target as the queue now shows it */
+        ReportedTarget: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    data: components["schemas"]["ReportedTarget"];
+                };
+            };
+        };
         /** @description Company with moderation state */
         AdminCompany: {
             headers: {
@@ -4060,7 +4504,7 @@ export interface components {
             };
             content: {
                 "application/json": {
-                    data?: components["schemas"]["AdminCompany"];
+                    data: components["schemas"]["AdminCompany"];
                 };
             };
         };
@@ -4071,7 +4515,7 @@ export interface components {
             };
             content: {
                 "application/json": {
-                    data?: components["schemas"]["AdminUser"];
+                    data: components["schemas"]["AdminUser"];
                 };
             };
         };
@@ -4089,6 +4533,9 @@ export interface components {
         UserRef: string;
         /** @description page size for every admin list */
         AdminLimit: number;
+        ReportTargetType: "vacancy" | "company";
+        /** @description vacancy or company id; anything malformed answers 404 reported_target_not_found */
+        ReportTargetId: string;
         ClientType: "web" | "android" | "ios";
     };
     requestBodies: never;

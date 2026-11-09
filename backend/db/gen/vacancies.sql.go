@@ -631,6 +631,58 @@ func (q *Queries) SubmitVacancy(ctx context.Context, arg SubmitVacancyParams) (V
 	return i, err
 }
 
+const takeDownVacancy = `-- name: TakeDownVacancy :one
+UPDATE vacancies
+SET status = 'rejected', reject_reason = $2, moderated_by = $3, moderated_at = now()
+WHERE id = $1 AND status = 'published'
+RETURNING id, company_id, created_by, title, slug, description, category_id, region_id, district_id, address, salary_min, salary_max, currency, employment_type, work_format, experience, schedule, status, reject_reason, moderated_by, moderated_at, is_featured, views_count, applications_count, submitted_at, published_at, expires_at, created_at, updated_at
+`
+
+type TakeDownVacancyParams struct {
+	ID           uuid.UUID
+	RejectReason *string
+	ModeratedBy  *uuid.UUID
+}
+
+// Admin takedown of a live vacancy (e.g. after reports): it becomes rejected with the
+// reason, like a moderation rejection, and the author can fix and resubmit it.
+func (q *Queries) TakeDownVacancy(ctx context.Context, arg TakeDownVacancyParams) (Vacancy, error) {
+	row := q.db.QueryRow(ctx, takeDownVacancy, arg.ID, arg.RejectReason, arg.ModeratedBy)
+	var i Vacancy
+	err := row.Scan(
+		&i.ID,
+		&i.CompanyID,
+		&i.CreatedBy,
+		&i.Title,
+		&i.Slug,
+		&i.Description,
+		&i.CategoryID,
+		&i.RegionID,
+		&i.DistrictID,
+		&i.Address,
+		&i.SalaryMin,
+		&i.SalaryMax,
+		&i.Currency,
+		&i.EmploymentType,
+		&i.WorkFormat,
+		&i.Experience,
+		&i.Schedule,
+		&i.Status,
+		&i.RejectReason,
+		&i.ModeratedBy,
+		&i.ModeratedAt,
+		&i.IsFeatured,
+		&i.ViewsCount,
+		&i.ApplicationsCount,
+		&i.SubmittedAt,
+		&i.PublishedAt,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateVacancy = `-- name: UpdateVacancy :one
 UPDATE vacancies
 SET title = $2, description = $3, category_id = $4, region_id = $5, district_id = $6,

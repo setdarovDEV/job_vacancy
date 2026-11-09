@@ -1,5 +1,5 @@
 import { ShieldAlert, Search } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router";
 
 import { errorText } from "~/shared/api/errors";
@@ -9,7 +9,11 @@ import { ApiFailure } from "~/shared/query/query";
 import { Button } from "~/shared/ui/Button";
 import { DialogContent, DialogRoot } from "~/shared/ui/Dialog";
 import { EmptyState } from "~/shared/ui/EmptyState";
+import { Field, Textarea } from "~/shared/ui/Field";
 import { toast } from "~/shared/ui/toast-store";
+
+/** Shortest reason a rejection or takedown accepts (vacancy.MinRejectReason on the server). */
+export const MIN_REASON_LENGTH = 5;
 
 /** Admin pages: anyone else following a link gets an explanation instead of a 403 toast. */
 export function AdminOnly({ children }: { children: ReactNode }) {
@@ -73,6 +77,39 @@ export function ConfirmDialog({
           </>
         }
       />
+    </DialogRoot>
+  );
+}
+
+/**
+ * A dialog that asks for a text before confirming (rejection reason, internal note).
+ * With minLength the text is required; otherwise it may stay empty.
+ */
+export function NoteDialog({
+  open, title, body, label, placeholder, minLength, confirmLabel, danger, pending, extra, onConfirm, onClose,
+}: {
+  open: boolean; title: string; body: string; label: string; placeholder?: string; minLength?: number;
+  confirmLabel: string; danger?: boolean; pending: boolean; extra?: ReactNode;
+  onConfirm: (text: string) => void; onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const [text, setText] = useState("");
+  const tooShort = !!minLength && text.trim().length < minLength;
+  return (
+    <DialogRoot open={open} onOpenChange={(o) => { if (!o) { onClose(); setText(""); } }}>
+      <DialogContent title={title} description={body} closeLabel={t("common.close")}>
+        <form onSubmit={(e) => { e.preventDefault(); if (!tooShort) onConfirm(text.trim()); }} className="flex flex-col gap-5">
+          <Field label={label} optional={minLength ? undefined : t("common.optional")}>
+            <Textarea rows={3} maxLength={1000} minLength={minLength} required={!!minLength} value={text}
+              onChange={(e) => setText(e.target.value)} placeholder={placeholder} />
+          </Field>
+          {extra}
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>{t("common.cancel")}</Button>
+            <Button type="submit" variant={danger ? "danger" : "primary"} disabled={tooShort} loading={pending}>{confirmLabel}</Button>
+          </div>
+        </form>
+      </DialogContent>
     </DialogRoot>
   );
 }

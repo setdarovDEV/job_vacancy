@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"jobvacancy.uz/backend/internal/platform/postgres"
 	"log/slog"
 	"net/netip"
 	"strings"
@@ -14,7 +15,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/jobs"
@@ -557,10 +557,7 @@ func sha(s string) []byte {
 	return h[:]
 }
 
-func isUniqueViolation(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == "23505"
-}
+func isUniqueViolation(err error) bool { return postgres.IsUniqueViolation(err) }
 
 func addrPtr(a netip.Addr) *netip.Addr {
 	if !a.IsValid() {

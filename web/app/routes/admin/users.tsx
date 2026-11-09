@@ -1,10 +1,9 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { UsersRound } from "lucide-react";
 
-import { AdminOnly, SearchForm, useFailToast, useUrlFilters } from "./admin-ui";
-import { adminKeys, invalidateAdmin } from "./keys";
+import { AdminOnly, SearchForm, useUrlFilters } from "./admin-ui";
+import { adminKeys } from "./keys";
 import { AdminList, useCursorList } from "./list";
-import { BlockToggle, useToggleResource } from "./toggle";
+import { BlockToggle, useAdminMutation, useToggleResource } from "./toggle";
 import { api, type Schemas } from "~/shared/api/client";
 import { useSession } from "~/shared/auth/session";
 import { useTranslation } from "~/shared/i18n/i18n";
@@ -14,7 +13,6 @@ import { Avatar } from "~/shared/ui/Avatar";
 import { Badge } from "~/shared/ui/Badge";
 import { PageHeader } from "~/shared/ui/Section";
 import { Select } from "~/shared/ui/Select";
-import { toast } from "~/shared/ui/toast-store";
 
 type User = Schemas["AdminUser"];
 type Role = User["role"];
@@ -59,14 +57,12 @@ function Page() {
 function Row({ u }: { u: User }) {
   const { t } = useTranslation();
   const { user: me } = useSession();
-  const qc = useQueryClient();
-  const fail = useFailToast();
   const self = me?.id === u.id;
   const path = { params: { path: { user: u.id } } };
-  const setRole = useMutation({
+  const setRole = useAdminMutation({
     mutationFn: (role: Role) => authed<User>(() => api.PUT("/admin/users/{user}/role", { ...path, body: { role } })),
-    onSuccess: () => { invalidateAdmin(qc, adminKeys.users()); toast({ tone: "success", title: t("admin.roleChanged") }); },
-    onError: fail,
+    done: t("admin.roleChanged"),
+    invalidate: [adminKeys.users()],
   });
   const block = useToggleResource({
     set: () => authed<User>(() => api.PUT("/admin/users/{user}/block", path)),

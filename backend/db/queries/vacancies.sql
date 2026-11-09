@@ -60,6 +60,14 @@ SET status = 'rejected', reject_reason = $2, moderated_by = $3, moderated_at = n
 WHERE id = $1 AND status = 'moderation'
 RETURNING *;
 
+-- Admin takedown of a live vacancy (e.g. after reports): it becomes rejected with the
+-- reason, like a moderation rejection, and the author can fix and resubmit it.
+-- name: TakeDownVacancy :one
+UPDATE vacancies
+SET status = 'rejected', reject_reason = $2, moderated_by = $3, moderated_at = now()
+WHERE id = $1 AND status = 'published'
+RETURNING *;
+
 -- name: ArchiveVacancy :one
 UPDATE vacancies SET status = 'archived'
 WHERE id = $1 AND status IN ('published', 'moderation', 'expired', 'rejected')

@@ -14,11 +14,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -39,10 +39,13 @@ var (
 	ErrTransition     = apperr.Conflict("invalid_status_transition", "this action isn't allowed in the vacancy's current status")
 	ErrOnlyDrafts     = apperr.Conflict("only_drafts_deletable", "only drafts can be deleted; archive the vacancy instead")
 	ErrSalaryRange    = apperr.Validation(map[string]string{"salary_max": "gtefield=salary_min"})
-	ErrRejectReason   = apperr.Validation(map[string]string{"reason": "min=5"})
+	ErrRejectReason   = apperr.Validation(map[string]string{"reason": "min=" + strconv.Itoa(MinRejectReason)})
 	resubmittable     = []string{"draft", "rejected", "archived", "expired"}
 	fromModerationSet = []string{"moderation"}
 )
+
+// MinRejectReason is the shortest reason (in characters) a rejection or takedown accepts.
+const MinRejectReason = 5
 
 type Service struct {
 	Pool      *pgxpool.Pool
@@ -52,6 +55,7 @@ type Service struct {
 	Views     *ViewCounter
 	Cache     *ListCache
 	Notify    *notification.Service
+	Reports   ReportResolver // set after construction (reports depend on companies too)
 	Log       *slog.Logger
 }
 
@@ -247,20 +251,68 @@ func (s *Service) Approve(ctx context.Context, admin reqctx.Principal, id uuid.U
 }
 
 func (s *Service) Reject(ctx context.Context, admin reqctx.Principal, id uuid.UUID, reason string) (Detail, error) {
-	reason = strings.TrimSpace(reason)
-	if len([]rune(reason)) < 5 {
-		return Detail{}, ErrRejectReason
-	}
-	v, err := s.Q.RejectVacancy(ctx, gen.RejectVacancyParams{ID: id, RejectReason: &reason, ModeratedBy: &admin.UserID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Detail{}, s.missingOr(ctx, id, ErrTransition)
-	}
+	v, err := s.closeWithReason(ctx, id, reason, notification.TypeVacancyRejected, func(r *string) (gen.Vacancy, error) {
+		return s.Q.RejectVacancy(ctx, gen.RejectVacancyParams{ID: id, RejectReason: r, ModeratedBy: &admin.UserID})
+	})
 	if err != nil {
 		return Detail{}, err
 	}
-	s.Notify.Notify(ctx, []uuid.UUID{v.CreatedBy}, notification.TypeVacancyRejected,
-		notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title, Reason: reason}, true)
 	return s.detailLoadCompany(ctx, v)
+}
+
+// ReportResolver closes a vacancy's open reports after it was taken down (report.Service).
+type ReportResolver interface {
+	ResolveVacancyReports(ctx context.Context, admin reqctx.Principal, vacancyID uuid.UUID, note string) error
+}
+
+// TakeDown pulls a live vacancy (e.g. after reports): it becomes rejected with the reason
+// and the author is told (vacancy.taken_down), so they can fix and resubmit it like a
+// moderation rejection. With resolveReports its open reports are closed as resolved, with
+// the reason as the note, and the reporters are told (API-020: one call, not two).
+//
+// The search index follows the status by trigger; cached public results are dropped so it
+// disappears at once. Unlike company blocking (OO-020), whose retry re-runs the drop,
+// a takedown can't be repeated (a second one answers 409), so failing here after the
+// status change would only strand the caller. A failed drop is therefore logged: those
+// caches expire on their own within minutes. For the same reason a failure to close the
+// reports is logged rather than returned; they stay open in the admin queue, which shows
+// the vacancy as no longer public, and can be resolved there.
+func (s *Service) TakeDown(ctx context.Context, admin reqctx.Principal, id uuid.UUID, reason string, resolveReports bool) (Detail, error) {
+	v, err := s.closeWithReason(ctx, id, reason, notification.TypeVacancyTakenDown, func(r *string) (gen.Vacancy, error) {
+		return s.Q.TakeDownVacancy(ctx, gen.TakeDownVacancyParams{ID: id, RejectReason: r, ModeratedBy: &admin.UserID})
+	})
+	if err != nil {
+		return Detail{}, err
+	}
+	if err := s.Cache.DropPublicResults(ctx); err != nil {
+		s.Log.WarnContext(ctx, "drop cached results after takedown", "vacancy", v.ID, "err", err)
+	}
+	if resolveReports && s.Reports != nil { // nil in composition roots without reports (worker, CLI)
+		if err := s.Reports.ResolveVacancyReports(ctx, admin, v.ID, *v.RejectReason); err != nil {
+			s.Log.ErrorContext(ctx, "resolve reports after takedown", "vacancy", v.ID, "err", err)
+		}
+	}
+	return s.detailLoadCompany(ctx, v)
+}
+
+// closeWithReason is the shared part of rejecting and taking down (OO-017): validate the
+// reason, apply the status change, map "wrong status" to 409, tell the author why.
+func (s *Service) closeWithReason(ctx context.Context, id uuid.UUID, reason, notifyType string,
+	apply func(reason *string) (gen.Vacancy, error)) (gen.Vacancy, error) {
+	reason = strings.TrimSpace(reason)
+	if len([]rune(reason)) < MinRejectReason {
+		return gen.Vacancy{}, ErrRejectReason
+	}
+	v, err := apply(&reason)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return gen.Vacancy{}, s.missingOr(ctx, id, ErrTransition)
+	}
+	if err != nil {
+		return gen.Vacancy{}, err
+	}
+	s.Notify.Notify(ctx, []uuid.UUID{v.CreatedBy}, notifyType,
+		notification.Payload{VacancyID: v.ID.String(), VacancyTitle: v.Title, Reason: reason}, true)
+	return v, nil
 }
 
 func (s *Service) publish(ctx context.Context, id uuid.UUID, from []string, moderator *uuid.UUID) (gen.Vacancy, error) {
@@ -475,7 +527,4 @@ func skillIDs(sk []catalog.Skill) []int32 {
 	return ids
 }
 
-func isUnique(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == "23505"
-}
+func isUnique(err error) bool { return postgres.IsUniqueViolation(err) }

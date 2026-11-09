@@ -52,6 +52,8 @@ func Error(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // Decode reads a JSON body into dst.
+var errEmptyBody = apperr.BadRequest("empty_body", "request body is empty")
+
 func Decode(r *http.Request, dst any) error {
 	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBodyBytes))
 	if err := dec.Decode(dst); err != nil {
@@ -60,7 +62,7 @@ func Decode(r *http.Request, dst any) error {
 		case errors.As(err, &mbe):
 			return apperr.New(http.StatusRequestEntityTooLarge, "body_too_large", "request body too large")
 		case errors.Is(err, io.EOF):
-			return apperr.BadRequest("empty_body", "request body is empty")
+			return errEmptyBody
 		default:
 			return apperr.BadRequest("invalid_json", "request body is not valid JSON")
 		}
@@ -73,6 +75,20 @@ func write(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// DecodeValidOptional is DecodeValid for a body the client may omit entirely: an empty
+// body leaves dst at its zero value. A malformed one is still an error.
+func DecodeValidOptional(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := Decode(r, dst); err != nil && !errors.Is(err, errEmptyBody) {
+		Error(w, r, err)
+		return false
+	}
+	if err := validate.Struct(dst); err != nil {
+		Error(w, r, err)
+		return false
+	}
+	return true
 }
 
 // DecodeValid decodes and validates a JSON body, writing the error response itself.

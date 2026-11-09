@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -70,4 +71,35 @@ func ParseLimit(raw string, def, max int) (int, error) {
 		return 0, apperr.Validation(map[string]string{"limit": "max=" + strconv.Itoa(max)})
 	}
 	return n, nil
+}
+
+// ErrBadCursor is the API error for a ?cursor= this API didn't issue (400 invalid_cursor).
+var ErrBadCursor = apperr.BadRequest("invalid_cursor", "cursor is invalid")
+
+// ParseAfter decodes an optional ?cursor= value into its key type; empty means "first page".
+func ParseAfter[K any](raw string) (*K, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	var k K
+	if err := Decode(raw, &k); err != nil {
+		return nil, ErrBadCursor
+	}
+	return &k, nil
+}
+
+// The page size contract shared by every admin list (AdminLimit in the OpenAPI spec).
+const (
+	AdminDefaultLimit = 30
+	AdminMaxLimit     = 100
+)
+
+// ParseAdminPage reads ?cursor= and ?limit= of an admin list keyed by (time, id).
+func ParseAdminPage(q url.Values) (*TimeID, int, error) {
+	limit, err := ParseLimit(q.Get("limit"), AdminDefaultLimit, AdminMaxLimit)
+	if err != nil {
+		return nil, 0, err
+	}
+	after, err := ParseAfter[TimeID](q.Get("cursor"))
+	return after, limit, err
 }

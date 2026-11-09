@@ -10,7 +10,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -214,12 +213,30 @@ func (s *Service) Authorize(ctx context.Context, p reqctx.Principal, ref string,
 }
 
 // IsMember reports membership without failing (used for "can see drafts" checks).
+//
+// A lookup failure counts as "not a member": IsMember only widens what a viewer may see
+// (drafts, own vacancies), so failing closed there just hides things for a moment.
 func (s *Service) IsMember(ctx context.Context, p reqctx.Principal, companyID uuid.UUID) bool {
 	if p.Role == string(gen.UserRoleAdmin) {
 		return true
 	}
-	_, err := s.Q.GetMemberRole(ctx, gen.GetMemberRoleParams{CompanyID: companyID, UserID: p.UserID})
-	return err == nil
+	member, _ := s.HasMember(ctx, companyID, p.UserID)
+	return member
+}
+
+// HasMember reports whether the user is on the company's team (owner, admin or recruiter).
+// Unlike IsMember it gives platform admins no special treatment, and it returns lookup
+// failures instead of guessing, for checks that must not fail open (reports).
+func (s *Service) HasMember(ctx context.Context, companyID, userID uuid.UUID) (bool, error) {
+	_, err := s.Q.GetMemberRole(ctx, gen.GetMemberRoleParams{CompanyID: companyID, UserID: userID})
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, pgx.ErrNoRows):
+		return false, nil
+	default:
+		return false, err
+	}
 }
 
 func (s *Service) RequireVerifiedUser(ctx context.Context, userID uuid.UUID) error {
@@ -371,7 +388,4 @@ func sizePtr(s *string) *gen.CompanySize {
 	return &v
 }
 
-func isUnique(err error) bool {
-	var pe *pgconn.PgError
-	return errors.As(err, &pe) && pe.Code == "23505"
-}
+func isUnique(err error) bool { return postgres.IsUniqueViolation(err) }

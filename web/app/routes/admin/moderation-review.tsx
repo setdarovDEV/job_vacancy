@@ -1,10 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, BadgeCheck, Check, X } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router";
 
-import { AdminOnly, useFailToast } from "./admin-ui";
-import { adminKeys, invalidateAdmin } from "./keys";
+import { AdminOnly, MIN_REASON_LENGTH, NoteDialog } from "./admin-ui";
+import { adminKeys } from "./keys";
+import { useAdminMutation } from "./toggle";
 import { api, type Schemas } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
 import { localizedPath } from "~/shared/i18n/config";
@@ -14,15 +15,11 @@ import { relativeTime } from "~/shared/lib/format";
 import { ApiFailure, authed } from "~/shared/query/query";
 import { Avatar } from "~/shared/ui/Avatar";
 import { Button } from "~/shared/ui/Button";
-import { DialogContent, DialogRoot } from "~/shared/ui/Dialog";
 import { EmptyState } from "~/shared/ui/EmptyState";
-import { Field, Textarea } from "~/shared/ui/Field";
 import { Skeleton } from "~/shared/ui/Skeleton";
-import { toast } from "~/shared/ui/toast-store";
 import { VacancyContent, VacancyFacts } from "~/shared/vacancy/VacancyDetails";
 
 type Vacancy = Schemas["VacancyDetail"];
-const MIN_REASON = 5;
 
 export default function ModerationReview() {
   return <AdminOnly><Page /></AdminOnly>;
@@ -55,20 +52,20 @@ function Review({ v }: { v: Vacancy }) {
   const { t } = useTranslation();
   const locale = useLocale();
   const navigate = useNavigate();
-  const qc = useQueryClient();
-  const fail = useFailToast();
   const [rejecting, setRejecting] = useState(false);
   const inModeration = v.status === "moderation";
+  const path = { params: { path: { vacancy: v.id } } };
+  const backToQueue = () => navigate(localizedPath(locale, "/admin/moderation"));
 
-  const finish = (message: string) => {
-    invalidateAdmin(qc, adminKeys.moderation());
-    toast({ tone: "success", title: message });
-    navigate(localizedPath(locale, "/admin/moderation"));
-  };
-  const approve = useMutation({
-    mutationFn: () => authed<Vacancy>(() => api.POST("/admin/vacancies/{vacancy}/approve", { params: { path: { vacancy: v.id } } })),
-    onSuccess: () => finish(t("admin.approved")),
-    onError: fail,
+  const approve = useAdminMutation({
+    mutationFn: () => authed<Vacancy>(() => api.POST("/admin/vacancies/{vacancy}/approve", path)),
+    done: t("admin.approved"),
+    invalidate: [adminKeys.moderation()],
+  });
+  const reject = useAdminMutation({
+    mutationFn: (reason: string) => authed<Vacancy>(() => api.POST("/admin/vacancies/{vacancy}/reject", { ...path, body: { reason } })),
+    done: t("admin.rejected"),
+    invalidate: [adminKeys.moderation()],
   });
 
   return (
@@ -96,43 +93,27 @@ function Review({ v }: { v: Vacancy }) {
         <VacancyFacts v={v} />
         {inModeration && (
           <div className="mt-7 flex flex-wrap gap-2">
-            <Button icon={<Check className="size-4.5" />} loading={approve.isPending} onClick={() => approve.mutate()}>{t("admin.approve")}</Button>
+            <Button icon={<Check className="size-4.5" />} loading={approve.isPending} onClick={() => approve.mutate(undefined, { onSuccess: backToQueue })}>
+              {t("admin.approve")}
+            </Button>
             <Button variant="secondary" icon={<X className="size-4.5" />} onClick={() => setRejecting(true)}>{t("admin.reject")}</Button>
           </div>
         )}
       </header>
       <VacancyContent v={v} />
-      <RejectDialog vacancyId={v.id} open={rejecting} onClose={() => setRejecting(false)} onDone={() => finish(t("admin.rejected"))} />
+      <NoteDialog
+        open={rejecting}
+        title={t("admin.rejectTitle")}
+        body={t("admin.rejectHint")}
+        label={t("admin.rejectReason")}
+        placeholder={t("admin.rejectPlaceholder")}
+        minLength={MIN_REASON_LENGTH}
+        confirmLabel={t("admin.reject")}
+        danger
+        pending={reject.isPending}
+        onConfirm={(reason) => reject.mutate(reason, { onSuccess: backToQueue })}
+        onClose={() => setRejecting(false)}
+      />
     </div>
-  );
-}
-
-function RejectDialog({ vacancyId, open, onClose, onDone }: { vacancyId: string; open: boolean; onClose: () => void; onDone: () => void }) {
-  const { t } = useTranslation();
-  const fail = useFailToast();
-  const [reason, setReason] = useState("");
-  const reject = useMutation({
-    mutationFn: () => authed(() => api.POST("/admin/vacancies/{vacancy}/reject", {
-      params: { path: { vacancy: vacancyId } }, body: { reason: reason.trim() },
-    })),
-    onSuccess: onDone,
-    onError: fail,
-  });
-  const tooShort = reason.trim().length < MIN_REASON;
-  return (
-    <DialogRoot open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title={t("admin.rejectTitle")} description={t("admin.rejectHint")} closeLabel={t("common.close")}>
-        <form onSubmit={(e) => { e.preventDefault(); if (!tooShort) reject.mutate(); }} className="flex flex-col gap-5">
-          <Field label={t("admin.rejectReason")}>
-            <Textarea rows={4} required minLength={MIN_REASON} maxLength={1000} value={reason}
-              onChange={(e) => setReason(e.target.value)} placeholder={t("admin.rejectPlaceholder")} />
-          </Field>
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" variant="ghost" onClick={onClose}>{t("common.cancel")}</Button>
-            <Button type="submit" variant="danger" disabled={tooShort} loading={reject.isPending}>{t("admin.reject")}</Button>
-          </div>
-        </form>
-      </DialogContent>
-    </DialogRoot>
   );
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"jobvacancy.uz/backend/db/gen"
-	"jobvacancy.uz/backend/internal/pkg/apperr"
 	"jobvacancy.uz/backend/internal/pkg/cursor"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/pkg/searchq"
@@ -61,7 +60,7 @@ type SearchResult struct {
 	Fuzzy       bool    `json:"fuzzy,omitempty"`
 }
 
-var errCursor = apperr.BadRequest("invalid_cursor", "cursor is invalid")
+var errCursor = cursor.ErrBadCursor
 
 // Search finds public resumes for employers. Like vacancy search it ranks ids inside the
 // resume_search index table and loads full rows only for the page; with no exact match it

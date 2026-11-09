@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { EmployerOnly } from "./EmployerOnly";
 import { useMyCompany, type Company } from "./company-hook";
 import { useNeedsVerification, VerifyContactCard } from "~/shared/account/ContactVerification";
+import { invalidateMembership } from "~/shared/company/membership";
 import { api, type Schemas } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
 import { useSession, withAuth } from "~/shared/auth/session";
@@ -93,6 +94,7 @@ function CompanyForm({ company, disabled }: { company: Company | null; disabled:
       () => withAuth(() => (company ? api.PUT("/companies/{company}", { params: { path: { company: company.id } }, body }) : api.POST("/companies", { body }))),
       () => {
         void qc.invalidateQueries({ queryKey: ["my-companies"] });
+        if (!company) invalidateMembership(); // public pages now treat it as the user's own
         toast({ tone: "success", title: company ? t("common.saved") : t("employer.companyCreated") });
       },
     );

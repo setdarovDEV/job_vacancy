@@ -4,6 +4,7 @@ package savedsearch
 import (
 	"context"
 	"errors"
+	"jobvacancy.uz/backend/internal/platform/postgres"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -15,7 +16,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/notification"
@@ -128,8 +128,7 @@ func (s *Service) Create(ctx context.Context, p reqctx.Principal, in Input) (DTO
 	row, err := s.Q.CreateSavedSearch(ctx, gen.CreateSavedSearchParams{
 		UserID: p.UserID, Name: strings.TrimSpace(in.Name), Params: params, Notify: notify,
 	})
-	var pe *pgconn.PgError
-	if errors.As(err, &pe) && pe.Code == "23505" {
+	if postgres.IsUniqueViolation(err) {
 		return DTO{}, ErrExists
 	}
 	return toDTO(row), err

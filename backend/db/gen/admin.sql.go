@@ -224,7 +224,8 @@ SELECT
     (SELECT count(*) FROM companies WHERE status = 'blocked')::int                                              AS companies_blocked,
     (SELECT count(*) FROM vacancies WHERE status = 'published')::int                                            AS vacancies_published,
     (SELECT count(*) FROM vacancies WHERE status = 'moderation')::int                                           AS vacancies_pending_moderation,
-    (SELECT count(*) FROM applications WHERE created_at >= now() - interval '7 days')::int                     AS applications_sent_last_7d
+    (SELECT count(*) FROM applications WHERE created_at >= now() - interval '7 days')::int                     AS applications_sent_last_7d,
+    (SELECT count(DISTINCT target_id) FROM reports WHERE status = 'open')::int                                  AS reports_open_targets
 `
 
 type AdminStatsRow struct {
@@ -237,6 +238,7 @@ type AdminStatsRow struct {
 	VacanciesPublished         int32
 	VacanciesPendingModeration int32
 	ApplicationsSentLast7d     int32
+	ReportsOpenTargets         int32
 }
 
 // Platform administration (mounted under /admin, admins only).
@@ -254,6 +256,7 @@ func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 		&i.VacanciesPublished,
 		&i.VacanciesPendingModeration,
 		&i.ApplicationsSentLast7d,
+		&i.ReportsOpenTargets,
 	)
 	return i, err
 }

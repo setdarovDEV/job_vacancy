@@ -40,6 +40,7 @@ export default [
         route("admin/moderation/:id", "routes/admin/moderation-review.tsx"),
         route("admin/companies", "routes/admin/companies.tsx"),
         route("admin/users", "routes/admin/users.tsx"),
+        route("admin/reports", "routes/admin/reports.tsx"),
       ]),
       route("resumes/:id", "routes/resume.tsx"),
       route("chat/:id?", "routes/chat/index.tsx"),

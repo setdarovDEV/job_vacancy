@@ -8,6 +8,7 @@ import { LocalizedLink, useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { RichText } from "~/shared/lib/markdown";
 import { forwardHeaders, seo } from "~/shared/seo/seo";
+import { ReportButton } from "~/shared/report/ReportButton";
 import { VacancyRow } from "~/shared/vacancy/VacancyRow";
 import { Avatar } from "~/shared/ui/Avatar";
 import { Button } from "~/shared/ui/Button";
@@ -98,6 +99,7 @@ export default function CompanyPage({ loaderData }: Route.ComponentProps) {
               {c.size && <Info icon={<Users />} label={t("companies.size")}>{c.size}</Info>}
               {c.founded_year && <Info icon={<CalendarDays />} label={t("companies.founded")}>{c.founded_year}</Info>}
             </dl>
+            <ReportButton target={{ type: "company", id: c.id, name: c.name }} companyId={c.id} className="mt-3 text-ink-3" />
           </aside>
         </div>
       </div>

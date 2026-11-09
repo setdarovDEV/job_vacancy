@@ -982,6 +982,192 @@ func AllRegionKindValues() []RegionKind {
 	}
 }
 
+type ReportReason string
+
+const (
+	ReportReasonFraud      ReportReason = "fraud"
+	ReportReasonMisleading ReportReason = "misleading"
+	ReportReasonOffensive  ReportReason = "offensive"
+	ReportReasonSpam       ReportReason = "spam"
+	ReportReasonOther      ReportReason = "other"
+)
+
+func (e *ReportReason) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReportReason(s)
+	case string:
+		*e = ReportReason(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReportReason: %T", src)
+	}
+	return nil
+}
+
+type NullReportReason struct {
+	ReportReason ReportReason
+	Valid        bool // Valid is true if ReportReason is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReportReason) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReportReason, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReportReason.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReportReason) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReportReason), nil
+}
+
+func (e ReportReason) Valid() bool {
+	switch e {
+	case ReportReasonFraud,
+		ReportReasonMisleading,
+		ReportReasonOffensive,
+		ReportReasonSpam,
+		ReportReasonOther:
+		return true
+	}
+	return false
+}
+
+func AllReportReasonValues() []ReportReason {
+	return []ReportReason{
+		ReportReasonFraud,
+		ReportReasonMisleading,
+		ReportReasonOffensive,
+		ReportReasonSpam,
+		ReportReasonOther,
+	}
+}
+
+type ReportStatus string
+
+const (
+	ReportStatusOpen      ReportStatus = "open"
+	ReportStatusResolved  ReportStatus = "resolved"
+	ReportStatusDismissed ReportStatus = "dismissed"
+)
+
+func (e *ReportStatus) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReportStatus(s)
+	case string:
+		*e = ReportStatus(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReportStatus: %T", src)
+	}
+	return nil
+}
+
+type NullReportStatus struct {
+	ReportStatus ReportStatus
+	Valid        bool // Valid is true if ReportStatus is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReportStatus) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReportStatus, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReportStatus.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReportStatus) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReportStatus), nil
+}
+
+func (e ReportStatus) Valid() bool {
+	switch e {
+	case ReportStatusOpen,
+		ReportStatusResolved,
+		ReportStatusDismissed:
+		return true
+	}
+	return false
+}
+
+func AllReportStatusValues() []ReportStatus {
+	return []ReportStatus{
+		ReportStatusOpen,
+		ReportStatusResolved,
+		ReportStatusDismissed,
+	}
+}
+
+type ReportTarget string
+
+const (
+	ReportTargetVacancy ReportTarget = "vacancy"
+	ReportTargetCompany ReportTarget = "company"
+)
+
+func (e *ReportTarget) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = ReportTarget(s)
+	case string:
+		*e = ReportTarget(s)
+	default:
+		return fmt.Errorf("unsupported scan type for ReportTarget: %T", src)
+	}
+	return nil
+}
+
+type NullReportTarget struct {
+	ReportTarget ReportTarget
+	Valid        bool // Valid is true if ReportTarget is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullReportTarget) Scan(value interface{}) error {
+	if value == nil {
+		ns.ReportTarget, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.ReportTarget.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullReportTarget) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.ReportTarget), nil
+}
+
+func (e ReportTarget) Valid() bool {
+	switch e {
+	case ReportTargetVacancy,
+		ReportTargetCompany:
+		return true
+	}
+	return false
+}
+
+func AllReportTargetValues() []ReportTarget {
+	return []ReportTarget{
+		ReportTargetVacancy,
+		ReportTargetCompany,
+	}
+}
+
 type ResumeVisibility string
 
 const (
@@ -1499,6 +1685,22 @@ type Region struct {
 	NameRu     string
 	NameEn     string
 	SortOrder  int32
+}
+
+type Report struct {
+	ID             uuid.UUID
+	ReporterID     uuid.UUID
+	TargetType     ReportTarget
+	VacancyID      *uuid.UUID
+	CompanyID      *uuid.UUID
+	TargetID       uuid.UUID
+	Reason         ReportReason
+	Comment        *string
+	Status         ReportStatus
+	ResolutionNote *string
+	ResolvedBy     *uuid.UUID
+	ResolvedAt     *time.Time
+	CreatedAt      time.Time
 }
 
 type Resume struct {

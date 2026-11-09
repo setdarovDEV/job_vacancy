@@ -9,9 +9,29 @@ import { Button } from "~/shared/ui/Button";
 import { toast } from "~/shared/ui/toast-store";
 
 /**
+ * Any admin action: on success the given lists and the overview counters refresh and a
+ * toast says what happened (`done` may depend on the variables); failures toast the error.
+ */
+export function useAdminMutation<V, R>({ mutationFn, done, invalidate }: {
+  mutationFn: (vars: V) => Promise<R>;
+  done: string | ((vars: V) => string);
+  invalidate: QueryKey[];
+}) {
+  const qc = useQueryClient();
+  const fail = useFailToast();
+  return useMutation({
+    mutationFn,
+    onSuccess: (_, vars) => {
+      invalidateAdmin(qc, ...invalidate);
+      toast({ tone: "success", title: typeof done === "string" ? done : done(vars) });
+    },
+    onError: fail,
+  });
+}
+
+/**
  * A PUT-sets / DELETE-clears flag (verification, block): mutate(true) sets it, mutate(false)
- * clears it; afterwards the given lists and the overview counters refresh and a toast says
- * what happened.
+ * clears it.
  */
 export function useToggleResource<R>({ set, clear, done, invalidate }: {
   set: () => Promise<R>;
@@ -19,15 +39,10 @@ export function useToggleResource<R>({ set, clear, done, invalidate }: {
   done: { set: string; clear: string };
   invalidate: QueryKey[];
 }) {
-  const qc = useQueryClient();
-  const fail = useFailToast();
-  return useMutation({
+  return useAdminMutation({
     mutationFn: (on: boolean) => (on ? set() : clear()),
-    onSuccess: (_, on) => {
-      invalidateAdmin(qc, ...invalidate);
-      toast({ tone: "success", title: on ? done.set : done.clear });
-    },
-    onError: fail,
+    done: (on) => (on ? done.set : done.clear),
+    invalidate,
   });
 }
 

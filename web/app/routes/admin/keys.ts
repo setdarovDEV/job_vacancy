@@ -10,6 +10,7 @@ export const adminKeys = {
   vacancy: (id: string) => ["admin", "vacancy", id] as const,
   companies: (filters?: Record<string, unknown>) => (filters ? ["admin", "companies", filters] : ["admin", "companies"]) as QueryKey,
   users: (filters?: Record<string, unknown>) => (filters ? ["admin", "users", filters] : ["admin", "users"]) as QueryKey,
+  reports: (filters?: Record<string, unknown>) => (filters ? ["admin", "reports", filters] : ["admin", "reports"]) as QueryKey,
 };
 
 /** Refetch the given admin data (and the overview counters, which every admin action moves). */

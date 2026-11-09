@@ -10,6 +10,7 @@ import { salary } from "~/shared/lib/format";
 import { metaT } from "~/shared/seo/meta";
 import { forwardHeaders, seo, SITE } from "~/shared/seo/seo";
 import { SaveButton } from "~/shared/vacancy/SaveButton";
+import { ReportButton } from "~/shared/report/ReportButton";
 import { VacancyContent, VacancyFacts, useVacancyPlace } from "~/shared/vacancy/VacancyDetails";
 import { Avatar } from "~/shared/ui/Avatar";
 import { Badge } from "~/shared/ui/Badge";
@@ -141,6 +142,7 @@ export default function VacancyPage({ loaderData }: Route.ComponentProps) {
             <div className="flex items-center gap-2"><Eye className="size-4 text-ink-3" />{t("jobs.views", { count: v.views_count })}</div>
             <div className="flex items-center gap-2"><Users className="size-4 text-ink-3" />{t("jobs.applicants", { count: v.applications_count })}</div>
           </dl>
+          {open && <ReportButton target={{ type: "vacancy", id: v.id, name: v.title }} companyId={v.company.id} className="self-start text-ink-3" />}
         </aside>
       </div>
 
