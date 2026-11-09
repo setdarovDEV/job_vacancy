@@ -66,7 +66,7 @@ Texnik yondashuv: Anthropic Go SDK, structured outputs, streaming, prompt cachin
   - [x] Kompaniyalar: profil, jamoa (owner/admin/recruiter), admin tasdig'i (verified)
   - [x] Vakansiyalar: draft → moderatsiya → e'lon (30 kun) → arxiv/muddati tugagan, filtrlar, cursor
   - [x] Ko'rishlar soni: Redis'da yig'iladi, har daqiqada DB'ga yoziladi (bir kishi 1 soatda 1 marta hisoblanadi)
-  - [ ] Qolgan ~200 tumanni rasmiy SOATO klassifikatoridan import qilish
+  - [x] Hududlar: 14 viloyat + 209 tuman/shahar, SOATO kodlari bilan (`00012_seed_districts.sql`)
 - [x] **3. Qidiruv**
   - [x] Lotin/kirill/rus matnlar bitta ko'rinishga normallashadi (`pkg/translit`): "дастурчи" = "dasturchi"
   - [x] Yengil o'zak ajratish + prefiks qidiruv (`pkg/searchq`): "dasturchilar", "продажам"
