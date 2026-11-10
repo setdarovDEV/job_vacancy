@@ -12,6 +12,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"jobvacancy.uz/backend/internal/modules/admin"
+	"jobvacancy.uz/backend/internal/modules/ai"
 	"jobvacancy.uz/backend/internal/modules/application"
 	"jobvacancy.uz/backend/internal/modules/auth"
 	"jobvacancy.uz/backend/internal/modules/catalog"
@@ -54,6 +55,7 @@ type Deps struct {
 	AppHandler     *application.Handler
 	AdminHandler   *admin.Handler
 	ReportHandler  *report.Handler
+	AIHandler      *ai.Handler
 }
 
 // Per-IP limits for unauthenticated auth endpoints (password guessing, sign-up spam).
@@ -125,6 +127,7 @@ func NewRouter(d Deps) http.Handler {
 				d.FileHandler.MeRoutes(r)
 				d.NotifyHandler.MeRoutes(r)
 				d.SavedHandler.MeRoutes(r)
+				d.AIHandler.Routes(r)
 			})
 			r.Route("/files", d.FileHandler.Routes)
 			r.Route("/resumes", func(r chi.Router) {

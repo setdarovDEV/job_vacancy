@@ -13,6 +13,67 @@ import (
 	"github.com/google/uuid"
 )
 
+type AiOperation string
+
+const (
+	AiOperationResumeImprove      AiOperation = "resume_improve"
+	AiOperationCoverLetter        AiOperation = "cover_letter"
+	AiOperationVacancyDescription AiOperation = "vacancy_description"
+)
+
+func (e *AiOperation) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = AiOperation(s)
+	case string:
+		*e = AiOperation(s)
+	default:
+		return fmt.Errorf("unsupported scan type for AiOperation: %T", src)
+	}
+	return nil
+}
+
+type NullAiOperation struct {
+	AiOperation AiOperation
+	Valid       bool // Valid is true if AiOperation is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullAiOperation) Scan(value interface{}) error {
+	if value == nil {
+		ns.AiOperation, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.AiOperation.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullAiOperation) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.AiOperation), nil
+}
+
+func (e AiOperation) Valid() bool {
+	switch e {
+	case AiOperationResumeImprove,
+		AiOperationCoverLetter,
+		AiOperationVacancyDescription:
+		return true
+	}
+	return false
+}
+
+func AllAiOperationValues() []AiOperation {
+	return []AiOperation{
+		AiOperationResumeImprove,
+		AiOperationCoverLetter,
+		AiOperationVacancyDescription,
+	}
+}
+
 type AppLocale string
 
 const (
@@ -1544,6 +1605,25 @@ func AllWorkScheduleValues() []WorkSchedule {
 		WorkScheduleFlexible,
 		WorkScheduleRotation,
 	}
+}
+
+type AiCredit struct {
+	UserID    uuid.UUID
+	Balance   int32
+	UpdatedAt time.Time
+}
+
+type AiUsage struct {
+	ID           int64
+	UserID       uuid.UUID
+	Operation    AiOperation
+	Model        string
+	Prompt       string
+	Response     string
+	TokensInput  int32
+	TokensOutput int32
+	CostCredits  int32
+	CreatedAt    time.Time
 }
 
 type Application struct {

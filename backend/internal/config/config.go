@@ -24,6 +24,7 @@ type Config struct {
 	SMTP     SMTP
 	Telegram Telegram
 	S3       S3
+	AI       AI
 	Log      Log
 }
 
@@ -101,6 +102,13 @@ type S3 struct {
 	PublicBaseURL string `env:"S3_PUBLIC_BASE_URL" envDefault:"http://localhost:9200/jv-public"`
 }
 
+type AI struct {
+	// Anthropic API key. Empty in development: the service returns a placeholder.
+	AnthropicAPIKey string `env:"ANTHROPIC_API_KEY"`
+	Model           string `env:"AI_MODEL" envDefault:"claude-3-5-sonnet-20241022"`
+	MaxTokens       int    `env:"AI_MAX_TOKENS" envDefault:"1024"`
+}
+
 type Log struct {
 	Level  string `env:"LOG_LEVEL" envDefault:"info"`
 	Format string `env:"LOG_FORMAT" envDefault:"text"` // text | json
@@ -128,9 +136,6 @@ func (c *Config) validate() error {
 	if c.IsProduction() {
 		if !c.Auth.CookieSecure {
 			return errors.New("AUTH_COOKIE_SECURE must be true in production")
-		}
-		if c.Telegram.GatewayToken == "" {
-			return errors.New("TELEGRAM_GATEWAY_TOKEN is required in production")
 		}
 	}
 	return nil

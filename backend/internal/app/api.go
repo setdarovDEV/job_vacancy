@@ -13,6 +13,7 @@ import (
 	"jobvacancy.uz/backend/internal/config"
 	"jobvacancy.uz/backend/internal/jobs"
 	"jobvacancy.uz/backend/internal/modules/admin"
+	"jobvacancy.uz/backend/internal/modules/ai"
 	"jobvacancy.uz/backend/internal/modules/application"
 	"jobvacancy.uz/backend/internal/modules/auth"
 	"jobvacancy.uz/backend/internal/modules/catalog"
@@ -136,6 +137,14 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		Notify: notifySvc, Log: log,
 	}
 
+	var aiProvider ai.Provider = ai.DevProvider{Log: log}
+	if cfg.AI.AnthropicAPIKey != "" {
+		aiProvider = &ai.AnthropicClient{APIKey: cfg.AI.AnthropicAPIKey, Model: cfg.AI.Model}
+	} else {
+		log.Warn("ANTHROPIC_API_KEY not set: AI generation returns placeholders")
+	}
+	aiSvc := &ai.Service{Q: q, Provider: aiProvider, Model: cfg.AI.Model, MaxTokens: cfg.AI.MaxTokens, Log: log}
+
 	handler := httpapi.NewRouter(httpapi.Deps{
 		Log:         log,
 		DB:          pool,
@@ -162,6 +171,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		AppHandler:     &application.Handler{Svc: appSvc},
 		AdminHandler:   &admin.Handler{Svc: &admin.Service{Store: q, Companies: companySvc, Sessions: authSvc, Skills: skillAdmin, Cache: redis.JSONCache{RDB: rdb}}},
 		ReportHandler:  &report.Handler{Svc: reportSvc},
+		AIHandler:      &ai.Handler{Svc: aiSvc},
 	})
 
 	srv := &http.Server{
