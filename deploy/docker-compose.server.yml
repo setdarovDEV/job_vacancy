@@ -17,15 +17,29 @@ services:
   api:
     image: *api-image
     pull_policy: missing
+    environment: &backend-extra
+      # Launch hardening (docs/LAUNCH.md). Empty values keep a feature off.
+      TOTP_ENC_KEY: ${TOTP_ENC_KEY:?set TOTP_ENC_KEY in nginx/.env}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      FEEDBACK_TELEGRAM_CHAT_ID: ${FEEDBACK_TELEGRAM_CHAT_ID:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${IMAGE_TAG}
   worker:
     image: *api-image
     pull_policy: missing
+    environment: *backend-extra
   web:
     image: ghcr.io/setdarovdev/jobvacancy-web:${IMAGE_TAG:?set IMAGE_TAG}
     pull_policy: missing
     environment:
       # The SSR server calls the API over the compose network (web/app/shared/api/client.ts).
       API_URL: http://api:8090/api/v1
+      # Turnstile: must ship together with the backend's TURNSTILE_SECRET_KEY, or web
+      # logins fail (the API wants a token the page can't produce).
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      SENTRY_DSN_WEB: ${SENTRY_DSN_WEB:-}
+      SENTRY_RELEASE: ${IMAGE_TAG}
+      GA4_ID: ${GA4_ID:-}
       # 1 hides the site from search engines (robots.txt, noindex, empty sitemap), e.g. while
       # it holds demo data. Set in nginx/.env on the server.
       SITE_NOINDEX: ${SITE_NOINDEX:-}
