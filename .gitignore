@@ -43,3 +43,8 @@ nginx/backups/
 ruvector.db
 .swarm/
 .claude/agent-memory-local/
+
+# Firebase client configs (public repo): provided to CI via secrets
+mobile/android/app/google-services.json
+mobile/ios/Runner/GoogleService-Info.plist
+.claude/

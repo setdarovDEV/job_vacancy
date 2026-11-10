@@ -1,0 +1,25 @@
+# Production override for the shared host (2.29.150.64, Caddy in front).
+#
+#   IMAGE_TAG=<sha> docker compose -f nginx/docker-compose.prod.yml -f deploy/docker-compose.server.yml ...
+#
+# - Images come from GHCR, built by .github/workflows/deploy.yml; IMAGE_TAG is the commit SHA.
+# - Only migrate, api, worker and web are managed here. The host's Caddy terminates TLS for
+#   jobvacancy.uz (/etc/caddy/jobvacancy-uz.caddy) and proxies to the 127.0.0.1 ports, so the
+#   nginx/certbot/monitoring services of the prod file are never started on this host:
+#   ports 80/443 belong to Caddy and other projects run here too.
+
+x-api-image: &api-image ghcr.io/setdarovdev/jobvacancy-api:${IMAGE_TAG:?set IMAGE_TAG}
+
+services:
+  migrate:
+    image: *api-image
+    pull_policy: missing
+  api:
+    image: *api-image
+    pull_policy: missing
+  worker:
+    image: *api-image
+    pull_policy: missing
+  web:
+    image: ghcr.io/setdarovdev/jobvacancy-web:${IMAGE_TAG:?set IMAGE_TAG}
+    pull_policy: missing
