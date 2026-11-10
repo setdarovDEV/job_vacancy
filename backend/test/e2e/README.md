@@ -20,6 +20,9 @@ test/e2e/admin.sh                                # 64 checks (needs bin/ctl): ad
 test/e2e/reports.sh                              # 49 checks (needs bin/ctl): reports, admin queue, takedown, resolve/dismiss
 test/e2e/skills.sh                               # 50 checks (needs bin/ctl and the worker): skill review, rename, merge, aliases, delete, search refresh
 test/e2e/stats.sh                                # 31 checks (needs bin/ctl; run alone: exact +1 deltas): daily activity, breakdown, funnel, cache
+test/e2e/totp.sh                                 # 38 checks (needs bin/ctl, ~1.5 min): admin 2FA enrollment, login challenge, recovery codes
+GATE_API=http://localhost:8091/api/v1 test/e2e/totp.sh  # +3: /admin gate, against a second API with ADMIN_2FA_REQUIRED=true HTTP_ADDR=:8091
+test/e2e/feedback.sh                             # 24 checks (needs bin/ctl; clear rl:* first): feedback form, admin queue, 5/hour limit
 ```
 
 The auth endpoints are rate-limited per IP (30/min), so leave about a minute between
@@ -27,6 +30,9 @@ suites when running them back to back.
 
 The phone check reads the dev verification code from the API log, and e-mail codes are read
 from Mailpit (http://localhost:8025).
+
+Local runs need `ADMIN_2FA_REQUIRED=false` in backend/.env (the suites sign admins in with a
+password only) and no `TURNSTILE_SECRET_KEY`. Env vars for launch: docs/LAUNCH.md.
 
 ## Demo data (for showing the product)
 
