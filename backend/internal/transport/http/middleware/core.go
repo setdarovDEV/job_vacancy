@@ -32,29 +32,55 @@ func RequestID(next http.Handler) http.Handler {
 	})
 }
 
-// ClientIP resolves the caller address. Proxy headers are honoured only when trustProxy
-// is set (i.e. the API is reachable exclusively through our nginx).
+// ClientIP resolves the caller address for logging and rate limits.
+//
+// With trustProxy set, X-Forwarded-For is honoured only when the direct peer is an internal
+// hop (loopback or private network: Caddy via docker-proxy, the SSR web container), and the
+// list is walked from the right, skipping internal hops: the first public address is the
+// client. Entries a client injected itself sit further left and are never reached, and a
+// request arriving straight from a public address can't override its own address at all.
+// X-Real-IP is ignored: Caddy passes a client-supplied one through unchanged.
 func ClientIP(trustProxy bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var ip netip.Addr
-			if trustProxy {
-				if v := r.Header.Get("X-Real-IP"); v != "" {
-					ip, _ = netip.ParseAddr(strings.TrimSpace(v))
-				} else if v := r.Header.Get("X-Forwarded-For"); v != "" {
-					first, _, _ := strings.Cut(v, ",")
-					ip, _ = netip.ParseAddr(strings.TrimSpace(first))
-				}
-			}
-			if !ip.IsValid() {
-				host, _, err := net.SplitHostPort(r.RemoteAddr)
-				if err == nil {
-					ip, _ = netip.ParseAddr(host)
-				}
-			}
-			next.ServeHTTP(w, r.WithContext(reqctx.WithClientIP(r.Context(), ip.Unmap())))
+			ip := clientAddr(r.RemoteAddr, r.Header.Values("X-Forwarded-For"), trustProxy)
+			next.ServeHTTP(w, r.WithContext(reqctx.WithClientIP(r.Context(), ip)))
 		})
 	}
+}
+
+func clientAddr(remoteAddr string, xff []string, trustProxy bool) netip.Addr {
+	var peer netip.Addr
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		peer, _ = netip.ParseAddr(host)
+	}
+	peer = peer.Unmap()
+	if !trustProxy || !internal(peer) {
+		return peer
+	}
+	var hops []netip.Addr
+	for _, h := range xff {
+		for _, part := range strings.Split(h, ",") {
+			if a, err := netip.ParseAddr(strings.TrimSpace(part)); err == nil {
+				hops = append(hops, a.Unmap())
+			}
+		}
+	}
+	for i := len(hops) - 1; i >= 0; i-- {
+		if !internal(hops[i]) {
+			return hops[i]
+		}
+	}
+	// A fully internal chain (development, health checks): the original sender is left-most.
+	if len(hops) > 0 {
+		return hops[0]
+	}
+	return peer
+}
+
+// internal reports hops we run ourselves: loopback, private and link-local ranges.
+func internal(a netip.Addr) bool {
+	return a.IsValid() && (a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast())
 }
 
 type statusWriter struct {
@@ -158,7 +184,7 @@ func CORS(origins []string) func(http.Handler) http.Handler {
 				h.Add("Vary", "Origin")
 				if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 					h.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-					h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Client-Type, X-Request-ID, Accept-Language")
+					h.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Client-Type, X-Request-ID, Accept-Language, X-Turnstile-Token")
 					h.Set("Access-Control-Max-Age", "600")
 					w.WriteHeader(http.StatusNoContent)
 					return
