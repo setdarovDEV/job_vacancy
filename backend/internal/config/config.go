@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -39,6 +40,23 @@ type Sentry struct {
 // Captcha is Cloudflare Turnstile; off while the secret is empty.
 type Captcha struct {
 	TurnstileSecret string `env:"TURNSTILE_SECRET_KEY"`
+	// Host a token must have been solved on; default: the host of WEB_URL, "*" = any
+	// (Cloudflare's test keys answer with example.com).
+	TurnstileHostname string `env:"TURNSTILE_HOSTNAME"`
+}
+
+// Hostname is the host Turnstile tokens must come from ("" = don't check).
+func (c Captcha) Hostname(webURL string) string {
+	switch c.TurnstileHostname {
+	case "*":
+		return ""
+	case "":
+		if u, err := url.Parse(webURL); err == nil {
+			return u.Hostname()
+		}
+		return ""
+	}
+	return c.TurnstileHostname
 }
 
 type HTTP struct {
@@ -163,6 +181,14 @@ func (c *Config) validate() error {
 		}
 		if !c.Auth.Admin2FARequired {
 			return errors.New("ADMIN_2FA_REQUIRED cannot be turned off in production")
+		}
+		// Its own key: deriving it from JWT_SECRET would tie 2FA to the token key (rotating
+		// one would silently break the other).
+		if c.Auth.TOTPEncKey == "" {
+			return errors.New("TOTP_ENC_KEY is required in production")
+		}
+		if c.Auth.TOTPEncKey == c.Auth.JWTSecret {
+			return errors.New("TOTP_ENC_KEY must differ from JWT_SECRET")
 		}
 	}
 	return nil

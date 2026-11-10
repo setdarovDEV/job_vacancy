@@ -37,3 +37,23 @@ WHERE user_id = $1 AND code_hash = $2 AND used_at IS NULL;
 
 -- name: CountRecoveryCodesLeft :one
 SELECT count(*)::int FROM user_recovery_codes WHERE user_id = $1 AND used_at IS NULL;
+
+-- ctl two-factor enroll: an enabled secret in one step (the operator hands over the QR).
+-- name: InsertConfirmedTOTP :exec
+INSERT INTO user_totp (user_id, secret_enc, confirmed_at) VALUES ($1, $2, now());
+
+-- name: MarkSessionSecondFactor :execrows
+UPDATE user_sessions SET mfa_at = now()
+WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL;
+
+-- name: RevokeOtherUserSessions :many
+UPDATE user_sessions SET revoked_at = now()
+WHERE user_id = $1 AND id <> sqlc.arg(keep)::uuid AND revoked_at IS NULL
+RETURNING id;
+
+-- What the /admin gate needs: is 2FA on, and did this session prove it.
+-- name: SecondFactorState :one
+SELECT
+    EXISTS (SELECT 1 FROM user_totp t WHERE t.user_id = sqlc.arg(user_id)::uuid AND t.confirmed_at IS NOT NULL) AS enabled,
+    EXISTS (SELECT 1 FROM user_sessions s WHERE s.id = sqlc.arg(session_id)::uuid AND s.user_id = sqlc.arg(user_id)::uuid
+                                          AND s.revoked_at IS NULL AND s.mfa_at IS NOT NULL) AS session_verified;

@@ -18,6 +18,7 @@ import (
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/catalog"
+	"jobvacancy.uz/backend/internal/modules/feedback"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/modules/savedsearch"
@@ -159,6 +160,21 @@ func (w *DeliverWorker) Work(ctx context.Context, job *river.Job[notification.De
 	return w.D.Deliver(ctx, job.Args)
 }
 
+// ---- feedback notice ---------------------------------------------------------------------
+
+type FeedbackNotifyWorker struct {
+	river.WorkerDefaults[feedback.NotifyArgs]
+	N feedback.TelegramNotifier
+}
+
+func (w *FeedbackNotifyWorker) Timeout(*river.Job[feedback.NotifyArgs]) time.Duration {
+	return 30 * time.Second
+}
+
+func (w *FeedbackNotifyWorker) Work(ctx context.Context, job *river.Job[feedback.NotifyArgs]) error {
+	return w.N.Notify(ctx, job.Args.FeedbackID)
+}
+
 // ---- saved-search alerts -----------------------------------------------------------------
 
 type SavedSearchAlertsArgs struct{}
@@ -224,7 +240,9 @@ type Deps struct {
 	Bot     telegram.Bot
 	Push    notification.PushSender
 	WebURL  string
-	Saved   *savedsearch.Service
+	// Team chat for new feedback (0 = off).
+	FeedbackChatID int64
+	Saved          *savedsearch.Service
 	// Search refresh after skill administration.
 	Vacancies VacancyReindexer
 	Resumes   ResumeTagRefresher
@@ -247,6 +265,9 @@ func NewWorkerClient(d Deps) (*river.Client[pgx.Tx], error) {
 	river.AddWorker(workers, &ExpireVacanciesWorker{Q: q, Log: d.Log})
 	river.AddWorker(workers, &DeliverWorker{D: &notification.Deliverer{
 		Q: q, Mailer: d.Mailer, Bot: d.Bot, Push: d.Push, WebURL: d.WebURL, Log: d.Log,
+	}})
+	river.AddWorker(workers, &FeedbackNotifyWorker{N: feedback.TelegramNotifier{
+		Feedback: &feedback.Service{Store: q, Log: d.Log}, Bot: d.Bot, ChatID: d.FeedbackChatID, WebURL: d.WebURL,
 	}})
 	river.AddWorker(workers, &SavedSearchAlertsWorker{Svc: d.Saved, Log: d.Log})
 	river.AddWorker(workers, &SkillReindexWorker{Vacancies: d.Vacancies, Resumes: d.Resumes})

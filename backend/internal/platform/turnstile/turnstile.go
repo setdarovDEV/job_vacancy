@@ -16,12 +16,15 @@ const verifyURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 
 type Client struct {
 	Secret string
-	HTTP   *http.Client
-	URL    string // tests; defaults to Cloudflare
+	// Hostname the token must have been issued on (the site's host); empty = any. A token
+	// solved on another site with the same key is refused.
+	Hostname string
+	HTTP     *http.Client
+	URL      string // tests; defaults to Cloudflare
 }
 
-func New(secret string) *Client {
-	return &Client{Secret: secret, HTTP: &http.Client{Timeout: 8 * time.Second}}
+func New(secret, hostname string) *Client {
+	return &Client{Secret: secret, Hostname: hostname, HTTP: &http.Client{Timeout: 8 * time.Second}}
 }
 
 // Verify reports whether the token is valid (ok=false: the visitor failed). err means
@@ -49,10 +52,14 @@ func (c *Client) Verify(ctx context.Context, token string, ip netip.Addr) (bool,
 		return false, fmt.Errorf("turnstile: status %d", res.StatusCode)
 	}
 	var out struct {
-		Success bool `json:"success"`
+		Success  bool   `json:"success"`
+		Hostname string `json:"hostname"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&out); err != nil {
 		return false, err
+	}
+	if c.Hostname != "" && !strings.EqualFold(out.Hostname, c.Hostname) {
+		return false, nil
 	}
 	return out.Success, nil
 }

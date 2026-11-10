@@ -2,33 +2,65 @@ package feedback
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
-	"log/slog"
 
+	"github.com/google/uuid"
+	"github.com/riverqueue/river"
+
+	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/platform/telegram"
 )
 
-// TelegramNotifier posts new feedback to one team chat (FEEDBACK_TELEGRAM_CHAT_ID).
-type TelegramNotifier struct {
-	Bot    telegram.Bot
-	ChatID int64
-	WebURL string
-	Log    *slog.Logger
+// NotifyArgs posts one feedback message to the team chat (worker job, retried on failure).
+type NotifyArgs struct {
+	FeedbackID uuid.UUID `json:"feedback_id"`
 }
 
-var categoryLabel = map[string]string{"bug": "🐞 Xato", "idea": "💡 Taklif", "other": "💬 Boshqa"}
+func (NotifyArgs) Kind() string { return "feedback.notify" }
 
-func (t TelegramNotifier) FeedbackReceived(ctx context.Context, f Item) {
-	msg := fmt.Sprintf("<b>%s</b>\n%s", categoryLabel[string(f.Category)], html.EscapeString(f.Message))
+func (NotifyArgs) InsertOpts() river.InsertOpts { return river.InsertOpts{MaxAttempts: 5} }
+
+// TelegramNotifier posts feedback to one team chat (FEEDBACK_TELEGRAM_CHAT_ID).
+type TelegramNotifier struct {
+	Feedback *Service
+	Bot      telegram.Bot
+	ChatID   int64 // 0 = not configured: jobs finish without sending
+	WebURL   string
+}
+
+var categoryLabel = map[gen.FeedbackCategory]string{
+	gen.FeedbackCategoryBug:   "🐞 Xato",
+	gen.FeedbackCategoryIdea:  "💡 Taklif",
+	gen.FeedbackCategoryOther: "💬 Boshqa",
+}
+
+func label(c gen.FeedbackCategory) string {
+	if l, ok := categoryLabel[c]; ok {
+		return l
+	}
+	return "💬 " + string(c)
+}
+
+// Notify sends the message; a message deleted meanwhile is skipped.
+func (t TelegramNotifier) Notify(ctx context.Context, id uuid.UUID) error {
+	if t.ChatID == 0 {
+		return nil
+	}
+	f, err := t.Feedback.Get(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	msg := fmt.Sprintf("<b>%s</b>\n%s", label(f.Category), html.EscapeString(f.Message))
 	if f.Contact != nil {
 		msg += "\n\n✉️ " + html.EscapeString(*f.Contact)
 	}
 	if f.PageURL != nil {
 		msg += "\n🔗 " + html.EscapeString(*f.PageURL)
 	}
-	btn := &telegram.Button{Text: "Fikrlar", URL: t.WebURL + "/admin/feedback"}
-	if err := t.Bot.Send(ctx, t.ChatID, msg, btn); err != nil {
-		t.Log.WarnContext(ctx, "feedback telegram notification failed", "err", err)
-	}
+	return t.Bot.Send(ctx, t.ChatID, msg, &telegram.Button{Text: "Fikrlar", URL: t.WebURL + "/admin/feedback"})
 }

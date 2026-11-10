@@ -11,6 +11,7 @@ import (
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/modules/user"
+	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/transport/http/response"
 )
@@ -32,27 +33,40 @@ type Handler struct {
 	Svc    *Service
 	Cookie CookieConfig
 	// Captcha guards register, login and forgot-password (Turnstile); nil = off.
-	Captcha func(http.Handler) http.Handler
+	Captcha CaptchaGuard
 }
 
-func (h *Handler) captcha() func(http.Handler) http.Handler {
+// CaptchaGuard is the Turnstile check (middleware.CaptchaGuard). The rule is the per-IP
+// backstop for the mobile apps, which have no widget.
+type CaptchaGuard interface {
+	Require(mobile ratelimit.Rule) func(http.Handler) http.Handler
+}
+
+// Per-IP backstops for app requests (no CAPTCHA) on the guarded endpoints, each with its
+// own budget. Per-account limits apply on top (login_email, register_email, forgot_email).
+var (
+	loginAppRule    = ratelimit.Rule{Name: "app_login_ip", Limit: 20, Window: 10 * time.Minute}
+	registerAppRule = ratelimit.Rule{Name: "app_register_ip", Limit: 10, Window: time.Hour}
+	forgotAppRule   = ratelimit.Rule{Name: "app_forgot_ip", Limit: 10, Window: time.Hour}
+)
+
+func (h *Handler) captcha(mobile ratelimit.Rule) func(http.Handler) http.Handler {
 	if h.Captcha == nil {
 		return func(next http.Handler) http.Handler { return next }
 	}
-	return h.Captcha
+	return h.Captcha.Require(mobile)
 }
 
 // PublicRoutes are mounted under /auth (rate-limited by the router).
 func (h *Handler) PublicRoutes(r chi.Router) {
 	// Google sign-in already proves a person (Google's own checks), refresh/logout carry a
 	// cookie; the endpoints a bot would hammer get the CAPTCHA.
-	guarded := r.With(h.captcha())
-	guarded.Post("/register", h.register)
-	guarded.Post("/login", h.login)
+	r.With(h.captcha(registerAppRule)).Post("/register", h.register)
+	r.With(h.captcha(loginAppRule)).Post("/login", h.login)
 	r.Post("/google", h.google)
 	r.Post("/refresh", h.refresh)
 	r.Post("/logout", h.logout)
-	guarded.Post("/password/forgot", h.forgotPassword)
+	r.With(h.captcha(forgotAppRule)).Post("/password/forgot", h.forgotPassword)
 	r.Post("/password/reset", h.resetPassword)
 	r.Post("/two-factor/verify", h.verifySecondFactor)
 }

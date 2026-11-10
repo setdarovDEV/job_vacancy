@@ -37,7 +37,20 @@ const (
 )
 
 // Per-account brute-force protection, on top of the per-IP limit in the router.
-var loginRule = ratelimit.Rule{Name: "login_email", Limit: 10, Window: 15 * time.Minute}
+var (
+	loginRule    = ratelimit.Rule{Name: "login_email", Limit: 10, Window: 15 * time.Minute}
+	registerRule = ratelimit.Rule{Name: "register_email", Limit: 5, Window: time.Hour}
+	forgotRule   = ratelimit.Rule{Name: "forgot_email", Limit: 5, Window: time.Hour}
+)
+
+// allowFor applies a per-address limit; a limiter outage lets the request through (the
+// per-IP limits in the router still apply).
+func (s *Service) allowFor(ctx context.Context, rule ratelimit.Rule, email string) error {
+	if ok, retry, _ := s.Limiter.Allow(ctx, rule, email); !ok {
+		return apperr.TooManyRequests(int(retry.Seconds()) + 1)
+	}
+	return nil
+}
 
 type EmailQueue interface {
 	EnqueueEmailCode(ctx context.Context, a jobs.EmailCodeArgs) error
@@ -57,7 +70,8 @@ type Service struct {
 	// ExposeDevCodes returns phone codes in the API response (test mode: no Telegram
 	// gateway token). Config refuses to start production without a token.
 	ExposeDevCodes bool
-	// MFA asks for a second factor after the password when the user has one set up.
+	// MFA asks for a second factor after the password when the user has one set up
+	// (required: a lookup failure refuses the sign-in rather than skipping the factor).
 	MFA *SecondFactor
 }
 
@@ -95,6 +109,9 @@ type RegisterInput struct {
 
 func (s *Service) Register(ctx context.Context, in RegisterInput, meta ClientMeta) (*Result, error) {
 	email := normalizeEmail(in.Email)
+	if err := s.allowFor(ctx, registerRule, email); err != nil {
+		return nil, err
+	}
 	pw, err := hash.Password(in.Password)
 	if err != nil {
 		return nil, err
@@ -116,7 +133,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, meta ClientMet
 		s.Log.WarnContext(ctx, "verification email not queued", "user_id", u.ID, "err", err)
 	}
 
-	res, err := s.startSession(ctx, u, meta)
+	res, err := s.startSession(ctx, u, meta, false)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +143,8 @@ func (s *Service) Register(ctx context.Context, in RegisterInput, meta ClientMet
 
 func (s *Service) Login(ctx context.Context, email, password string, meta ClientMeta) (*Result, error) {
 	email = normalizeEmail(email)
-	if ok, retry, _ := s.Limiter.Allow(ctx, loginRule, email); !ok {
-		return nil, apperr.TooManyRequests(int(retry.Seconds()) + 1)
+	if err := s.allowFor(ctx, loginRule, email); err != nil {
+		return nil, err
 	}
 
 	u, err := s.Q.GetUserByEmail(ctx, &email)
@@ -154,27 +171,22 @@ func (s *Service) Login(ctx context.Context, email, password string, meta Client
 // signIn starts a session, or a second-factor challenge for users with 2FA on. Failing to
 // find out whether 2FA is on refuses the sign-in rather than skipping the factor.
 func (s *Service) signIn(ctx context.Context, u gen.User, meta ClientMeta) (*Result, error) {
-	if s.MFA != nil {
-		on, err := s.MFA.Enabled(ctx, u.ID)
+	on, err := s.MFA.Enabled(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	if on {
+		ch, err := s.MFA.StartChallenge(ctx, u.ID)
 		if err != nil {
 			return nil, err
 		}
-		if on {
-			ch, err := s.MFA.StartChallenge(ctx, u.ID)
-			if err != nil {
-				return nil, err
-			}
-			return &Result{User: u, Challenge: &ch}, nil
-		}
+		return &Result{User: u, Challenge: &ch}, nil
 	}
-	return s.startSession(ctx, u, meta)
+	return s.startSession(ctx, u, meta, false)
 }
 
 // CompleteSecondFactor finishes a sign-in that was answered with a challenge.
 func (s *Service) CompleteSecondFactor(ctx context.Context, token, code, recovery string, meta ClientMeta) (*Result, error) {
-	if s.MFA == nil {
-		return nil, ErrTwoFactorChallenge
-	}
 	userID, err := s.MFA.CompleteChallenge(ctx, token, code, recovery)
 	if err != nil {
 		return nil, err
@@ -186,7 +198,7 @@ func (s *Service) CompleteSecondFactor(ctx context.Context, token, code, recover
 	if err := checkStatus(u); err != nil {
 		return nil, err
 	}
-	return s.startSession(ctx, u, meta)
+	return s.startSession(ctx, u, meta, true) // this session proved the second factor
 }
 
 // GoogleLogin signs in with a Google ID token. New users are created with the given role;
@@ -263,7 +275,7 @@ func (s *Service) googleSignIn(ctx context.Context, id *GoogleIdentity, role gen
 	if err != nil {
 		return nil, err
 	}
-	res, err := s.startSession(ctx, u, meta)
+	res, err := s.startSession(ctx, u, meta, false)
 	if err != nil {
 		return nil, err
 	}
@@ -273,9 +285,14 @@ func (s *Service) googleSignIn(ctx context.Context, id *GoogleIdentity, role gen
 
 // ---- sessions ------------------------------------------------------------------------
 
-func (s *Service) startSession(ctx context.Context, u gen.User, meta ClientMeta) (*Result, error) {
+// startSession creates a session; secondFactor marks it as having proven 2FA (kept on refresh).
+func (s *Service) startSession(ctx context.Context, u gen.User, meta ClientMeta, secondFactor bool) (*Result, error) {
 	refresh := random.Token(32)
 	now := time.Now()
+	var mfaAt *time.Time
+	if secondFactor {
+		mfaAt = &now
+	}
 	sess, err := s.Q.CreateSession(ctx, gen.CreateSessionParams{
 		UserID:      u.ID,
 		RefreshHash: sha(refresh),
@@ -283,6 +300,7 @@ func (s *Service) startSession(ctx context.Context, u gen.User, meta ClientMeta)
 		UserAgent:   truncate(meta.UserAgent, 512),
 		Ip:          addrPtr(meta.IP),
 		ExpiresAt:   now.Add(s.RefreshTTL),
+		MfaAt:       mfaAt,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
@@ -474,6 +492,10 @@ func (s *Service) VerifyEmail(ctx context.Context, userID uuid.UUID, code string
 // ForgotPassword never reveals whether the e-mail exists.
 func (s *Service) ForgotPassword(ctx context.Context, email string) error {
 	email = normalizeEmail(email)
+	// Counted for any address, so the limit says nothing about whether it exists.
+	if err := s.allowFor(ctx, forgotRule, email); err != nil {
+		return err
+	}
 	u, err := s.Q.GetUserByEmail(ctx, &email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil

@@ -9,6 +9,9 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"testing"
+	"time"
+
+	"jobvacancy.uz/backend/internal/pkg/ratelimit"
 )
 
 type fakeVerifier struct {
@@ -35,7 +38,8 @@ func TestCaptcha(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			h := Captcha(c.v, nil, log)(okHandler)
+			g := &CaptchaGuard{Verifier: c.v, Log: log}
+			h := g.Require(ratelimit.Rule{Name: "t", Limit: 1, Window: time.Minute})(okHandler)
 			req := httptest.NewRequest(http.MethodPost, "/", nil)
 			if c.token != "" {
 				req.Header.Set(CaptchaHeader, c.token)

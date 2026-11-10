@@ -2011,6 +2011,7 @@ type UserSession struct {
 	LastUsedAt      time.Time
 	ExpiresAt       time.Time
 	RevokedAt       *time.Time
+	MfaAt           *time.Time
 }
 
 type UserTotp struct {

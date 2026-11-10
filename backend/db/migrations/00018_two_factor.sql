@@ -18,6 +18,11 @@ CREATE TABLE user_recovery_codes (
     PRIMARY KEY (user_id, code_hash)
 );
 
+-- When the session proved a second factor (signed in with a code, or turned 2FA on in it).
+-- /admin needs it once 2FA is on; refresh keeps it, a new sign-in starts without it.
+ALTER TABLE user_sessions ADD COLUMN mfa_at timestamptz;
+
 -- +goose Down
+ALTER TABLE user_sessions DROP COLUMN IF EXISTS mfa_at;
 DROP TABLE IF EXISTS user_recovery_codes;
 DROP TABLE IF EXISTS user_totp;

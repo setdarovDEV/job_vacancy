@@ -81,6 +81,21 @@ func (q *Queries) GetUserTOTP(ctx context.Context, userID uuid.UUID) (UserTotp, 
 	return i, err
 }
 
+const insertConfirmedTOTP = `-- name: InsertConfirmedTOTP :exec
+INSERT INTO user_totp (user_id, secret_enc, confirmed_at) VALUES ($1, $2, now())
+`
+
+type InsertConfirmedTOTPParams struct {
+	UserID    uuid.UUID
+	SecretEnc []byte
+}
+
+// ctl two-factor enroll: an enabled secret in one step (the operator hands over the QR).
+func (q *Queries) InsertConfirmedTOTP(ctx context.Context, arg InsertConfirmedTOTPParams) error {
+	_, err := q.db.Exec(ctx, insertConfirmedTOTP, arg.UserID, arg.SecretEnc)
+	return err
+}
+
 const insertRecoveryCodes = `-- name: InsertRecoveryCodes :exec
 INSERT INTO user_recovery_codes (user_id, code_hash)
 SELECT $1::uuid, unnest($2::bytea[])
@@ -105,6 +120,80 @@ func (q *Queries) IsTOTPEnabled(ctx context.Context, userID uuid.UUID) (bool, er
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const markSessionSecondFactor = `-- name: MarkSessionSecondFactor :execrows
+UPDATE user_sessions SET mfa_at = now()
+WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL
+`
+
+type MarkSessionSecondFactorParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) MarkSessionSecondFactor(ctx context.Context, arg MarkSessionSecondFactorParams) (int64, error) {
+	result, err := q.db.Exec(ctx, markSessionSecondFactor, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const revokeOtherUserSessions = `-- name: RevokeOtherUserSessions :many
+UPDATE user_sessions SET revoked_at = now()
+WHERE user_id = $1 AND id <> $2::uuid AND revoked_at IS NULL
+RETURNING id
+`
+
+type RevokeOtherUserSessionsParams struct {
+	UserID uuid.UUID
+	Keep   uuid.UUID
+}
+
+func (q *Queries) RevokeOtherUserSessions(ctx context.Context, arg RevokeOtherUserSessionsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, revokeOtherUserSessions, arg.UserID, arg.Keep)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const secondFactorState = `-- name: SecondFactorState :one
+SELECT
+    EXISTS (SELECT 1 FROM user_totp t WHERE t.user_id = $1::uuid AND t.confirmed_at IS NOT NULL) AS enabled,
+    EXISTS (SELECT 1 FROM user_sessions s WHERE s.id = $2::uuid AND s.user_id = $1::uuid
+                                          AND s.revoked_at IS NULL AND s.mfa_at IS NOT NULL) AS session_verified
+`
+
+type SecondFactorStateParams struct {
+	UserID    uuid.UUID
+	SessionID uuid.UUID
+}
+
+type SecondFactorStateRow struct {
+	Enabled         bool
+	SessionVerified bool
+}
+
+// What the /admin gate needs: is 2FA on, and did this session prove it.
+func (q *Queries) SecondFactorState(ctx context.Context, arg SecondFactorStateParams) (SecondFactorStateRow, error) {
+	row := q.db.QueryRow(ctx, secondFactorState, arg.UserID, arg.SessionID)
+	var i SecondFactorStateRow
+	err := row.Scan(&i.Enabled, &i.SessionVerified)
+	return i, err
 }
 
 const upsertPendingTOTP = `-- name: UpsertPendingTOTP :one

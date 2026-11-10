@@ -28,9 +28,11 @@ func (h *Handler) AdminRoutes(r chi.Router) {
 
 type submitRequest struct {
 	Category string `json:"category" validate:"required"`
-	Message  string `json:"message" validate:"required,min=5,max=2000"`
-	Contact  string `json:"contact" validate:"max=200"`
-	PageURL  string `json:"page_url" validate:"max=500"`
+	// Length rules apply after trimming (Service.Submit); this only caps the body.
+	Message string `json:"message" validate:"required,max=8000"`
+	Contact string `json:"contact" validate:"max=200"`
+	// Kept only when it is an absolute http(s) link to this site; otherwise stored as null.
+	PageURL string `json:"page_url" validate:"max=500"`
 }
 
 type submittedDTO struct {

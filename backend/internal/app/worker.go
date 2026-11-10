@@ -60,7 +60,8 @@ func RunWorker(ctx context.Context, cfg *config.Config, log *slog.Logger) error 
 	client, err := jobs.NewWorkerClient(jobs.Deps{
 		Pool: pool, Redis: rdb, Mailer: m, Storage: st, Bot: bot,
 		Push: notification.LogPush{Log: log}, WebURL: cfg.WebURL, Saved: svc.saved,
-		Vacancies: svc.vacancies, Resumes: svc.resumes, Log: log,
+		FeedbackChatID: cfg.Telegram.FeedbackChatID,
+		Vacancies:      svc.vacancies, Resumes: svc.resumes, Log: log,
 	})
 	if err != nil {
 		return fmt.Errorf("river: %w", err)

@@ -14,9 +14,9 @@ import (
 )
 
 const createSession = `-- name: CreateSession :one
-INSERT INTO user_sessions (user_id, refresh_hash, platform, user_agent, ip, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
-RETURNING id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at
+INSERT INTO user_sessions (user_id, refresh_hash, platform, user_agent, ip, expires_at, mfa_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at, mfa_at
 `
 
 type CreateSessionParams struct {
@@ -26,6 +26,7 @@ type CreateSessionParams struct {
 	UserAgent   string
 	Ip          *netip.Addr
 	ExpiresAt   time.Time
+	MfaAt       *time.Time
 }
 
 func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (UserSession, error) {
@@ -36,6 +37,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (U
 		arg.UserAgent,
 		arg.Ip,
 		arg.ExpiresAt,
+		arg.MfaAt,
 	)
 	var i UserSession
 	err := row.Scan(
@@ -50,6 +52,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (U
 		&i.LastUsedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.MfaAt,
 	)
 	return i, err
 }
@@ -69,7 +72,7 @@ func (q *Queries) DeleteExpiredSessions(ctx context.Context) (int64, error) {
 }
 
 const getSessionByPrevRefreshHash = `-- name: GetSessionByPrevRefreshHash :one
-SELECT id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at FROM user_sessions WHERE prev_refresh_hash = $1
+SELECT id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at, mfa_at FROM user_sessions WHERE prev_refresh_hash = $1
 `
 
 func (q *Queries) GetSessionByPrevRefreshHash(ctx context.Context, prevRefreshHash []byte) (UserSession, error) {
@@ -87,12 +90,13 @@ func (q *Queries) GetSessionByPrevRefreshHash(ctx context.Context, prevRefreshHa
 		&i.LastUsedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.MfaAt,
 	)
 	return i, err
 }
 
 const getSessionByRefreshHash = `-- name: GetSessionByRefreshHash :one
-SELECT id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at FROM user_sessions WHERE refresh_hash = $1
+SELECT id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at, mfa_at FROM user_sessions WHERE refresh_hash = $1
 `
 
 func (q *Queries) GetSessionByRefreshHash(ctx context.Context, refreshHash []byte) (UserSession, error) {
@@ -110,12 +114,13 @@ func (q *Queries) GetSessionByRefreshHash(ctx context.Context, refreshHash []byt
 		&i.LastUsedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.MfaAt,
 	)
 	return i, err
 }
 
 const listActiveSessions = `-- name: ListActiveSessions :many
-SELECT id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at FROM user_sessions
+SELECT id, user_id, refresh_hash, prev_refresh_hash, platform, user_agent, ip, created_at, last_used_at, expires_at, revoked_at, mfa_at FROM user_sessions
 WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
 ORDER BY last_used_at DESC
 `
@@ -141,6 +146,7 @@ func (q *Queries) ListActiveSessions(ctx context.Context, userID uuid.UUID) ([]U
 			&i.LastUsedAt,
 			&i.ExpiresAt,
 			&i.RevokedAt,
+			&i.MfaAt,
 		); err != nil {
 			return nil, err
 		}

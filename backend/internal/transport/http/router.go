@@ -34,15 +34,15 @@ import (
 )
 
 type Deps struct {
-	// AdminSecondFactor guards /admin: administrators need two-factor sign-in on.
-	AdminSecondFactor func(http.Handler) http.Handler
-	Log               *slog.Logger
-	DB                *pgxpool.Pool
-	Redis             *redis.Client
-	Limiter           *ratelimit.Limiter
-	Auth              *mw.Authenticator
-	CORSOrigins       []string
-	TrustProxy        bool
+	// SecondFactor guards /admin: 2FA on (when required) and proven in this session.
+	SecondFactor mw.SecondFactorGate
+	Log          *slog.Logger
+	DB           *pgxpool.Pool
+	Redis        *redis.Client
+	Limiter      *ratelimit.Limiter
+	Auth         *mw.Authenticator
+	CORSOrigins  []string
+	TrustProxy   bool
 
 	AuthHandler     *auth.Handler
 	UserHandler     *user.Handler
@@ -61,7 +61,7 @@ type Deps struct {
 	AIHandler       *ai.Handler
 	FeedbackHandler *feedback.Handler
 	// Captcha is the Turnstile check (passthrough when not configured).
-	Captcha func(http.Handler) http.Handler
+	Captcha *mw.CaptchaGuard
 }
 
 // Per-IP limits for unauthenticated auth endpoints (password guessing, sign-up spam).
@@ -74,6 +74,9 @@ var (
 	reportUserRule = ratelimit.Rule{Name: "report_user", Limit: 10, Window: time.Hour}
 	// Feedback is open to visitors: a handful per hour per address is plenty.
 	feedbackIPRule = ratelimit.Rule{Name: "feedback_ip", Limit: 5, Window: time.Hour}
+	// Per-IP backstops for app requests, which skip the CAPTCHA (see CaptchaGuard).
+	feedbackAppRule = ratelimit.Rule{Name: "app_feedback_ip", Limit: 5, Window: time.Hour}
+	reportAppRule   = ratelimit.Rule{Name: "app_report_ip", Limit: 30, Window: time.Hour}
 )
 
 func NewRouter(d Deps) http.Handler {
@@ -109,7 +112,7 @@ func NewRouter(d Deps) http.Handler {
 		})
 		r.Route("/search", d.VacancyHandler.SearchRoutes)
 		r.Route("/feedback", func(r chi.Router) {
-			r.Use(d.Auth.Optional, mw.RateLimit(d.Limiter, feedbackIPRule, mw.KeyByIP), d.Captcha)
+			r.Use(d.Auth.Optional, mw.RateLimit(d.Limiter, feedbackIPRule, mw.KeyByIP), d.Captcha.Require(feedbackAppRule))
 			d.FeedbackHandler.Routes(r)
 		})
 		d.NotifyHandler.WebhookRoutes(r)
@@ -151,13 +154,13 @@ func NewRouter(d Deps) http.Handler {
 				d.ChatHandler.ApplicationRoutes(r)
 			})
 			r.Route("/reports", func(r chi.Router) {
-				r.Use(mw.RateLimit(d.Limiter, reportUserRule, mw.KeyByUser), d.Captcha)
+				r.Use(mw.RateLimit(d.Limiter, reportUserRule, mw.KeyByUser), d.Captcha.Require(reportAppRule))
 				d.ReportHandler.Routes(r)
 			})
 			r.Route("/conversations", d.ChatHandler.Routes)
 			r.Route("/messages", d.ChatHandler.MessageRoutes)
 			r.Route("/admin", func(r chi.Router) {
-				r.Use(mw.RequireRole("admin"), d.AdminSecondFactor)
+				r.Use(mw.RequireRole("admin"), mw.RequireSecondFactor(d.SecondFactor))
 				d.AdminHandler.Routes(r)
 				r.Route("/companies", d.AdminHandler.CompanyRoutes)
 				r.Route("/users", d.AdminHandler.UserRoutes)

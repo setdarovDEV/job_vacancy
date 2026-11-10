@@ -6,6 +6,8 @@
 //	ctl telegram-webhook <https://jobvacancy.uz/api/v1/telegram/webhook>
 //	ctl seed-demo [--reset]   realistic demo data (all demo emails end with @demo.uz)
 //	ctl purge-demo            remove exactly that demo data
+//	ctl two-factor enroll <email> [--force]   turn on 2FA for an admin, print QR URI + recovery codes
+//	ctl two-factor reset <email>              turn off 2FA (lost phone and codes), sign out everywhere
 package main
 
 import (
@@ -46,6 +48,8 @@ const usage = `usage:
   ctl telegram-webhook <url>
   ctl seed-demo [--reset]
   ctl purge-demo
+  ctl two-factor enroll <email> [--force]
+  ctl two-factor reset <email>
   ctl totp <base32-secret>     (development only: prints the current code)`
 
 func run(args []string) error {
@@ -78,6 +82,8 @@ func run(args []string) error {
 	switch {
 	case args[0] == "set-role" && len(args) == 3:
 		return setRole(ctx, pool, args[1], args[2])
+	case args[0] == "two-factor":
+		return twoFactor(ctx, cfg, pool, args[1:])
 	case args[0] == "reindex-search" && len(args) == 1:
 		return reindex(ctx, pool)
 	case args[0] == "run-alerts" && len(args) == 1:

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"jobvacancy.uz/backend/db/gen"
@@ -29,7 +30,6 @@ import (
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/otp"
 	"jobvacancy.uz/backend/internal/pkg/ratelimit"
-	"jobvacancy.uz/backend/internal/pkg/sealbox"
 	"jobvacancy.uz/backend/internal/pkg/token"
 	"jobvacancy.uz/backend/internal/platform/metrics"
 	"jobvacancy.uz/backend/internal/platform/postgres"
@@ -88,18 +88,9 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	revoked := auth.NewRevocationStore(rdb, cfg.Auth.AccessTokenTTL)
 	limiter := ratelimit.New(rdb)
 
-	totpKey := cfg.Auth.TOTPEncKey
-	if totpKey == "" {
-		totpKey = cfg.Auth.JWTSecret
-	}
-	totpBox, err := sealbox.New([]byte(totpKey), "totp")
+	secondFactor, err := NewSecondFactor(cfg, pool, rdb, log)
 	if err != nil {
 		return err
-	}
-	secondFactor := &auth.SecondFactor{
-		Pool: pool, Q: q, Box: totpBox, Challenges: &auth.ChallengeStore{RDB: rdb},
-		Failures: &auth.FailureBudget{RDB: rdb}, Issuer: cfg.AppName,
-		AdminRequired: cfg.Auth.Admin2FARequired,
 	}
 
 	authSvc := &auth.Service{
@@ -127,15 +118,16 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	notifySvc := &notification.Service{Q: q, Publisher: publisher, Jobs: enq, Log: log}
 
 	// Turnstile on the endpoints bots like (off without TURNSTILE_SECRET_KEY).
-	var verifier mw.CaptchaVerifier
+	captcha := &mw.CaptchaGuard{Limiter: limiter, Log: log}
 	if cfg.Captcha.TurnstileSecret != "" {
-		verifier = turnstile.New(cfg.Captcha.TurnstileSecret)
+		captcha.Verifier = turnstile.New(cfg.Captcha.TurnstileSecret, cfg.Captcha.Hostname(cfg.WebURL))
+	} else if cfg.IsProduction() {
+		log.Warn("TURNSTILE_SECRET_KEY not set: sign-up, sign-in, feedback and reports have no CAPTCHA")
 	}
-	captcha := mw.Captcha(verifier, limiter, log)
 
-	feedbackSvc := &feedback.Service{Store: q, Log: log}
+	feedbackSvc := &feedback.Service{Store: q, SiteHost: siteHost(cfg.WebURL), Log: log}
 	if cfg.Telegram.BotToken != "" && cfg.Telegram.FeedbackChatID != 0 {
-		feedbackSvc.Notify = feedback.TelegramNotifier{Bot: bot, ChatID: cfg.Telegram.FeedbackChatID, WebURL: cfg.WebURL, Log: log}
+		feedbackSvc.Jobs = enq // the worker posts it to the team chat
 	}
 
 	catalogSvc := &catalog.Service{Q: q, Log: log}
@@ -176,16 +168,16 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	aiSvc := &ai.Service{Q: q, Provider: aiProvider, Model: cfg.AI.Model, MaxTokens: cfg.AI.MaxTokens, Log: log}
 
 	handler := httpapi.NewRouter(httpapi.Deps{
-		Log:               log,
-		DB:                pool,
-		Redis:             rdb,
-		Limiter:           limiter,
-		Auth:              &mw.Authenticator{Tokens: tokens, Revoked: revoked},
-		CORSOrigins:       cfg.HTTP.CORSOrigins,
-		TrustProxy:        cfg.HTTP.TrustProxy,
-		AdminSecondFactor: secondFactor.RequireEnrolled(),
-		Captcha:           captcha,
-		FeedbackHandler:   &feedback.Handler{Svc: feedbackSvc},
+		Log:             log,
+		DB:              pool,
+		Redis:           rdb,
+		Limiter:         limiter,
+		Auth:            &mw.Authenticator{Tokens: tokens, Revoked: revoked},
+		CORSOrigins:     cfg.HTTP.CORSOrigins,
+		TrustProxy:      cfg.HTTP.TrustProxy,
+		SecondFactor:    secondFactor,
+		Captcha:         captcha,
+		FeedbackHandler: &feedback.Handler{Svc: feedbackSvc},
 		AuthHandler: &auth.Handler{Svc: authSvc, Captcha: captcha, Cookie: auth.CookieConfig{
 			Domain: cfg.Auth.CookieDomain, Secure: cfg.Auth.CookieSecure,
 		}},
@@ -237,4 +229,13 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.HTTP.ShutdownTimeout)
 	defer cancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// siteHost is the host (with port, if any) of the public web URL.
+func siteHost(webURL string) string {
+	u, err := url.Parse(webURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }

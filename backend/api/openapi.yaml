@@ -58,8 +58,9 @@ components:
       description: >
         Cloudflare Turnstile token from the web widget. Required from web clients while the
         server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400
-        captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with
-        X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes).
+        captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Tokens solved on
+        another host are rejected. Requests with X-Client-Type android|ios skip it and get
+        the endpoint's own per-IP backstop instead (see x-rate-limits on each operation).
     AdminLimit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 }, description: page size for every admin list }
     SkillRef: { name: skill, in: path, required: true, schema: { type: integer, minimum: 1 }, description: "skill id; a malformed id answers 404 skill_not_found like an unknown one" }
     ReportTargetType: { name: target_type, in: path, required: true, schema: { type: string, enum: [vacancy, company] } }
@@ -109,13 +110,25 @@ components:
             two_factor_required: { type: boolean, const: true }
             challenge_token: { type: string, description: "Send it to POST /auth/two-factor/verify with a code; single use, 5 attempts." }
             expires_in: { type: integer, description: seconds }
+    TwoFactorReauth:
+      type: object
+      description: >
+        Proof of the account owner: `password` (when the account has one) and exactly one of
+        `code` or `recovery_code` (lost phone: use a recovery code, then enroll again). Any
+        failure answers 400 reauth_failed without saying which part was wrong; wrong
+        passwords and codes share the per-user budget (10 per 15 minutes, then 429).
+      properties:
+        password: { type: string, maxLength: 72 }
+        code: { type: string, pattern: "^[0-9]{6}$" }
+        recovery_code: { type: string, maxLength: 32 }
     TwoFactorStatus:
       type: object
-      required: [required, enabled, pending, confirmed_at, recovery_codes_left]
+      required: [required, enabled, pending, session_verified, confirmed_at, recovery_codes_left]
       properties:
         required: { type: boolean, description: "This user must turn it on before using /admin (administrators while ADMIN_2FA_REQUIRED is on)." }
         enabled: { type: boolean }
         pending: { type: boolean, description: "A secret was issued by /setup but not confirmed yet." }
+        session_verified: { type: boolean, description: "The current session proved the second factor (signed in with a code, or turned 2FA on in it). With 2FA on, /admin needs it; sign in again otherwise." }
         confirmed_at: { type: [string, "null"], format: date-time }
         recovery_codes_left: { type: integer }
     RecoveryCodes:
@@ -774,7 +787,7 @@ components:
       description: Missing, invalid, expired or revoked access token (unauthorized)
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     AdminOnly:
-      description: "Signed in but not an admin (forbidden), or an admin without two-factor sign-in while ADMIN_2FA_REQUIRED is on (two_factor_setup_required: enroll under /me/two-factor first)"
+      description: "Signed in but not an admin (forbidden); an admin without two-factor sign-in while ADMIN_2FA_REQUIRED is on (two_factor_setup_required: enroll under /me/two-factor first); or 2FA is on but this session didn't prove it (two_factor_session_required: sign in again with a code)"
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     InvalidCursor:
       description: cursor is not one this API issued (invalid_cursor)
@@ -820,6 +833,7 @@ paths:
     post:
       tags: [auth]
       summary: Sign up with email and password (sends a verification code by email)
+      x-rate-limits: "Limits: 30/min per IP; 5 per hour per email. Apps (no CAPTCHA): 10 per hour per IP."
       parameters: [{ $ref: "#/components/parameters/ClientType" }, { $ref: "#/components/parameters/TurnstileToken" }]
       requestBody:
         required: true
@@ -844,6 +858,7 @@ paths:
     post:
       tags: [auth]
       summary: Sign in with email and password
+      x-rate-limits: "Limits: 30/min per IP; 10 per 15 minutes per email. Apps (no CAPTCHA): 20 per 10 minutes per IP."
       parameters: [{ $ref: "#/components/parameters/ClientType" }, { $ref: "#/components/parameters/TurnstileToken" }]
       requestBody:
         required: true
@@ -868,7 +883,9 @@ paths:
       tags: [auth]
       summary: Second step of a sign-in answered with 202 (two_factor_required)
       description: |
-        Send either `code` (6 digits from the authenticator app) or `recovery_code`. A code
+        Send exactly one of `code` (6 digits from the authenticator app) or `recovery_code`
+        (both or neither → 422). The session created here counts as having proven the second
+        factor (needed for /admin). A code
         works once (replays fail), wrong codes count against a per-user budget (10 per 15
         minutes, then 429) and a challenge allows 5 attempts.
       parameters: [{ $ref: "#/components/parameters/ClientType" }]
@@ -970,6 +987,7 @@ paths:
     post:
       tags: [auth]
       summary: Email a password reset code (always 204, never reveals if the email exists)
+      x-rate-limits: "Limits: 30/min per IP; 5 per hour per email (counted for unknown addresses too). Apps (no CAPTCHA): 10 per hour per IP."
       parameters: [{ $ref: "#/components/parameters/TurnstileToken" }]
       requestBody:
         required: true
@@ -1131,7 +1149,7 @@ paths:
     post:
       tags: [me]
       security: [{ bearer: [] }]
-      summary: Turn two-factor sign-in on with a code from the app; returns recovery codes
+      summary: Turn two-factor sign-in on with a code from the app; returns recovery codes, marks this session verified and signs out every other session
       requestBody:
         required: true
         content:
@@ -1148,20 +1166,15 @@ paths:
     post:
       tags: [me]
       security: [{ bearer: [] }]
-      summary: Replace all recovery codes (password, if the account has one, and a current code)
+      summary: Replace all recovery codes (password, if the account has one, and a code or a recovery code)
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [code]
-              properties:
-                password: { type: string }
-                code: { type: string, pattern: "^[0-9]{6}$" }
+            schema: { $ref: "#/components/schemas/TwoFactorReauth" }
       responses:
         "200": { $ref: "#/components/responses/RecoveryCodes" }
-        "400": { description: "wrong_password or two_factor_code_invalid", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "400": { description: "Password or code wrong (reauth_failed, one code for both)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "409": { description: "Not on (two_factor_not_enabled)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "422": { $ref: "#/components/responses/Error" }
@@ -1170,20 +1183,15 @@ paths:
     post:
       tags: [me]
       security: [{ bearer: [] }]
-      summary: Turn two-factor sign-in off (password and a current code); admins then lose /admin until they enroll again
+      summary: Turn two-factor sign-in off (password and a code or a recovery code); signs out the user's other sessions; admins then lose /admin until they enroll again
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [code]
-              properties:
-                password: { type: string }
-                code: { type: string, pattern: "^[0-9]{6}$" }
+            schema: { $ref: "#/components/schemas/TwoFactorReauth" }
       responses:
         "204": { $ref: "#/components/responses/NoContent" }
-        "400": { description: "wrong_password or two_factor_code_invalid", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "400": { description: "Password or code wrong (reauth_failed, one code for both)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "409": { description: "Not on (two_factor_not_enabled)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "422": { $ref: "#/components/responses/Error" }
@@ -1826,6 +1834,7 @@ paths:
       tags: [feedback]
       security: [{ bearer: [] }, {}]
       summary: Send feedback to the team ("Fikr bildirish"; 5 per hour per IP)
+      x-rate-limits: "Limits: 5 per hour per IP. Apps (no CAPTCHA): 5 per hour per IP."
       description: >
         Open to everyone; when signed in the message is linked to the account. Administrators
         read it in GET /admin/feedback; a team Telegram chat is notified when configured.
@@ -1839,9 +1848,9 @@ paths:
               required: [category, message]
               properties:
                 category: { $ref: "#/components/schemas/FeedbackCategory" }
-                message: { type: string, minLength: 5, maxLength: 2000 }
+                message: { type: string, description: "5–2000 characters after trimming (else 422 fields.message min=5 / max=2000)" }
                 contact: { type: string, maxLength: 200, description: "optional email, phone or Telegram for a reply" }
-                page_url: { type: string, maxLength: 500, description: the page the visitor was on }
+                page_url: { type: string, maxLength: 500, description: "the page the visitor was on; kept only when it is an absolute http(s) URL on this site (WEB_URL host), otherwise stored as null" }
       responses:
         "201":
           description: Received
@@ -1969,6 +1978,7 @@ paths:
       tags: [reports]
       security: [{ bearer: [] }]
       summary: Report a public vacancy or company (10 per hour per user)
+      x-rate-limits: "Limits: 10 per hour per user. Apps (no CAPTCHA): 30 per hour per IP."
       description: >
         A second report on the same target while the first is still open answers 409
         already_reported; clients show "already reported" for it (there's no lookup endpoint).

@@ -3,15 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"jobvacancy.uz/backend/internal/app"
 	"jobvacancy.uz/backend/internal/config"
-	"jobvacancy.uz/backend/internal/platform/errtrack"
-	"jobvacancy.uz/backend/internal/platform/logger"
 )
 
 func main() {
@@ -20,18 +17,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	tracking, flush, err := errtrack.Init(errtrack.Config{
-		DSN: cfg.Sentry.DSN, Environment: cfg.Env, Release: cfg.Sentry.Release, ServerName: "api",
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "sentry:", err)
-	}
+	log, flush := app.NewLogger(cfg, "api")
 	defer flush()
-	var wrap []func(slog.Handler) slog.Handler
-	if tracking {
-		wrap = append(wrap, errtrack.Wrap)
-	}
-	log := logger.New(cfg.Log.Level, cfg.Log.Format, wrap...)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

@@ -3,16 +3,13 @@ package auth
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
 	"errors"
-	"net/http"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/redis/go-redis/v9"
 
 	"jobvacancy.uz/backend/db/gen"
 	"jobvacancy.uz/backend/internal/pkg/apperr"
@@ -21,8 +18,6 @@ import (
 	"jobvacancy.uz/backend/internal/pkg/reqctx"
 	"jobvacancy.uz/backend/internal/pkg/sealbox"
 	"jobvacancy.uz/backend/internal/pkg/totp"
-	"jobvacancy.uz/backend/internal/platform/postgres"
-	"jobvacancy.uz/backend/internal/transport/http/response"
 )
 
 var (
@@ -32,32 +27,26 @@ var (
 	ErrTwoFactorCodeInvalid    = apperr.BadRequest("two_factor_code_invalid", "the code is wrong or was already used")
 	ErrTwoFactorChallenge      = apperr.Unauthorized("two_factor_challenge_invalid", "this sign-in step expired; sign in again")
 	ErrTwoFactorSetupRequired  = apperr.Forbidden("two_factor_setup_required", "administrators must turn on two-factor sign-in first")
+	ErrTwoFactorSession        = apperr.Forbidden("two_factor_session_required", "sign in again with your two-factor code")
+	// One answer for any failed re-authentication, so it can't be used to test passwords.
+	ErrReauthFailed = apperr.BadRequest("reauth_failed", "the password or the code is wrong")
 )
 
-const (
-	recoveryCodeCount = 10
-	challengeTTL      = 5 * time.Minute
-	challengeAttempts = 5
-)
-
-// Wrong codes allowed per user (across challenges, setup and changes) per window. Only
-// failures count, so normal use never runs into it.
-const (
-	maxCodeFailures = 10
-	failureWindow   = 15 * time.Minute
-)
+const recoveryCodeCount = 10
 
 // SecondFactor owns TOTP sign-in: enrollment (admins only), verification with a replay
-// guard, single-use recovery codes and the short-lived challenge between password and code.
+// guard, single-use recovery codes, the challenge between password and code, and which
+// sessions proved a second factor.
 type SecondFactor struct {
-	Pool       *pgxpool.Pool
-	Q          *gen.Queries
+	Store      TwoFactorStore
 	Box        *sealbox.Box // seals secrets at rest
-	Challenges *ChallengeStore
-	Failures   *FailureBudget
+	Challenges ChallengeKeeper
+	Failures   FailureLimiter
+	Sessions   AccessRevoker
 	Issuer     string
 	// AdminRequired: administrators must have 2FA on to use /admin (ADMIN_2FA_REQUIRED).
 	AdminRequired bool
+	Log           *slog.Logger
 	Now           func() time.Time
 }
 
@@ -65,6 +54,7 @@ type TwoFactorStatus struct {
 	Required          bool // this user must turn it on (admin while AdminRequired)
 	Enabled           bool
 	Pending           bool // a secret was issued but not confirmed yet
+	SessionVerified   bool // the current session proved a second factor
 	ConfirmedAt       *time.Time
 	RecoveryCodesLeft int
 }
@@ -74,6 +64,14 @@ type Enrollment struct {
 	URI    string // otpauth://, shown as a QR code
 }
 
+// Reauth proves the account owner before 2FA changes: the password (when the account has
+// one) and either a current code or a recovery code.
+type Reauth struct {
+	Password string
+	Code     string
+	Recovery string
+}
+
 func (f *SecondFactor) now() time.Time {
 	if f.Now != nil {
 		return f.Now()
@@ -81,36 +79,77 @@ func (f *SecondFactor) now() time.Time {
 	return time.Now()
 }
 
-// Enabled reports whether u signs in with a second factor.
+// Enabled reports whether the user signs in with a second factor.
 func (f *SecondFactor) Enabled(ctx context.Context, userID uuid.UUID) (bool, error) {
-	return f.Q.IsTOTPEnabled(ctx, userID)
+	return f.Store.IsTOTPEnabled(ctx, userID)
 }
 
 func (f *SecondFactor) Status(ctx context.Context, p reqctx.Principal) (TwoFactorStatus, error) {
-	userID := p.UserID
-	required := f.AdminRequired && p.Role == string(gen.UserRoleAdmin)
-	row, err := f.Q.GetUserTOTP(ctx, userID)
+	st := TwoFactorStatus{Required: f.AdminRequired && p.Role == string(gen.UserRoleAdmin)}
+	row, err := f.Store.GetUserTOTP(ctx, p.UserID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return TwoFactorStatus{Required: required}, nil
+		return st, nil
 	}
 	if err != nil {
 		return TwoFactorStatus{}, err
 	}
-	st := TwoFactorStatus{Required: required, Enabled: row.ConfirmedAt != nil, Pending: row.ConfirmedAt == nil, ConfirmedAt: row.ConfirmedAt}
+	st.Enabled, st.Pending, st.ConfirmedAt = row.ConfirmedAt != nil, row.ConfirmedAt == nil, row.ConfirmedAt
 	if st.Enabled {
-		n, err := f.Q.CountRecoveryCodesLeft(ctx, userID)
+		state, err := f.Store.SecondFactorState(ctx, gen.SecondFactorStateParams{UserID: p.UserID, SessionID: p.SessionID})
 		if err != nil {
-			return st, err
+			return TwoFactorStatus{}, err
+		}
+		st.SessionVerified = state.SessionVerified
+		n, err := f.Store.CountRecoveryCodesLeft(ctx, p.UserID)
+		if err != nil {
+			return TwoFactorStatus{}, err
 		}
 		st.RecoveryCodesLeft = int(n)
 	}
 	return st, nil
 }
 
-// Setup issues a new secret (replacing an unconfirmed one) for an administrator.
-func (f *SecondFactor) Setup(ctx context.Context, u gen.User) (Enrollment, error) {
+// AdminAccess is the /admin gate. With 2FA on, the session must have proven it (a session
+// from before 2FA was turned on doesn't count); without, required admins must enroll.
+// Lookup failures refuse.
+func (f *SecondFactor) AdminAccess(ctx context.Context, p reqctx.Principal) error {
+	state, err := f.Store.SecondFactorState(ctx, gen.SecondFactorStateParams{UserID: p.UserID, SessionID: p.SessionID})
+	if err != nil {
+		return err
+	}
+	switch {
+	case state.Enabled && !state.SessionVerified:
+		return ErrTwoFactorSession
+	case !state.Enabled && f.AdminRequired:
+		return ErrTwoFactorSetupRequired
+	}
+	return nil
+}
+
+func (f *SecondFactor) admin(ctx context.Context, userID uuid.UUID) (gen.User, error) {
+	u, err := f.Store.GetUserByID(ctx, userID)
+	if err != nil {
+		return gen.User{}, err
+	}
 	if u.Role != gen.UserRoleAdmin {
-		return Enrollment{}, ErrTwoFactorAdminsOnly
+		return gen.User{}, ErrTwoFactorAdminsOnly
+	}
+	return u, nil
+}
+
+func (f *SecondFactor) enrollment(u gen.User, secret []byte) Enrollment {
+	account := u.FullName
+	if u.Email != nil {
+		account = *u.Email
+	}
+	return Enrollment{Secret: totp.Encode(secret), URI: totp.URI(f.Issuer, account, secret)}
+}
+
+// Setup issues a new secret (replacing an unconfirmed one) for an administrator.
+func (f *SecondFactor) Setup(ctx context.Context, userID uuid.UUID) (Enrollment, error) {
+	u, err := f.admin(ctx, userID)
+	if err != nil {
+		return Enrollment{}, err
 	}
 	secret, err := totp.NewSecret()
 	if err != nil {
@@ -120,78 +159,92 @@ func (f *SecondFactor) Setup(ctx context.Context, u gen.User) (Enrollment, error
 	if err != nil {
 		return Enrollment{}, err
 	}
-	if _, err := f.Q.UpsertPendingTOTP(ctx, gen.UpsertPendingTOTPParams{UserID: u.ID, SecretEnc: sealed}); err != nil {
+	if _, err := f.Store.UpsertPendingTOTP(ctx, gen.UpsertPendingTOTPParams{UserID: u.ID, SecretEnc: sealed}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Enrollment{}, ErrTwoFactorAlreadyEnabled
 		}
 		return Enrollment{}, err
 	}
-	account := u.FullName
-	if u.Email != nil {
-		account = *u.Email
-	}
-	return Enrollment{Secret: totp.Encode(secret), URI: totp.URI(f.Issuer, account, secret)}, nil
+	return f.enrollment(u, secret), nil
 }
 
 // Confirm turns 2FA on once the user proves the app shows the right codes, and returns the
-// recovery codes (shown once).
-func (f *SecondFactor) Confirm(ctx context.Context, userID uuid.UUID, code string) ([]string, error) {
-	if err := f.Failures.Check(ctx, userID); err != nil {
+// recovery codes (shown once). The current session counts as verified (it just proved a
+// code); every other session of the user is signed out, since none of them did.
+func (f *SecondFactor) Confirm(ctx context.Context, p reqctx.Principal, code string) ([]string, error) {
+	if err := f.Failures.Reserve(ctx, p.UserID); err != nil {
 		return nil, err
 	}
-	row, err := f.Q.GetUserTOTP(ctx, userID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrTwoFactorNotEnabled
+	step, err := f.checkPending(ctx, p.UserID, code)
+	if !errors.Is(err, ErrTwoFactorCodeInvalid) {
+		f.Failures.Release(ctx, p.UserID)
 	}
 	if err != nil {
 		return nil, err
-	}
-	if row.ConfirmedAt != nil {
-		return nil, ErrTwoFactorAlreadyEnabled
-	}
-	secret, err := f.Box.Open(row.SecretEnc)
-	if err != nil {
-		return nil, err
-	}
-	step, ok := totp.Verify(secret, code, f.now(), 0)
-	if !ok {
-		return nil, f.Failures.Record(ctx, userID)
 	}
 	codes, hashes := newRecoveryCodes()
-	err = postgres.WithTx(ctx, f.Pool, func(q *gen.Queries) error {
-		if _, err := q.ConfirmTOTP(ctx, gen.ConfirmTOTPParams{UserID: userID, LastStep: step}); err != nil {
+	var revoked []uuid.UUID
+	err = f.Store.InTx(ctx, func(tx TwoFactorTx) error {
+		if _, err := tx.ConfirmTOTP(ctx, gen.ConfirmTOTPParams{UserID: p.UserID, LastStep: step}); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return ErrTwoFactorAlreadyEnabled // confirmed concurrently
 			}
 			return err
 		}
-		if err := q.DeleteRecoveryCodes(ctx, userID); err != nil {
+		if err := replaceRecoveryCodes(ctx, tx, p.UserID, hashes); err != nil {
 			return err
 		}
-		return q.InsertRecoveryCodes(ctx, gen.InsertRecoveryCodesParams{UserID: userID, Hashes: hashes})
+		if _, err := tx.MarkSessionSecondFactor(ctx, gen.MarkSessionSecondFactorParams{ID: p.SessionID, UserID: p.UserID}); err != nil {
+			return err
+		}
+		revoked, err = tx.RevokeOtherUserSessions(ctx, gen.RevokeOtherUserSessionsParams{UserID: p.UserID, Keep: p.SessionID})
+		return err
 	})
 	if err != nil {
 		return nil, err
 	}
+	f.revokeAccess(ctx, revoked)
 	return codes, nil
+}
+
+func (f *SecondFactor) checkPending(ctx context.Context, userID uuid.UUID, code string) (int64, error) {
+	row, err := f.Store.GetUserTOTP(ctx, userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrTwoFactorNotEnabled
+	}
+	if err != nil {
+		return 0, err
+	}
+	if row.ConfirmedAt != nil {
+		return 0, ErrTwoFactorAlreadyEnabled
+	}
+	secret, err := f.Box.Open(row.SecretEnc)
+	if err != nil {
+		return 0, err
+	}
+	step, ok := totp.Verify(secret, code, f.now(), 0)
+	if !ok {
+		return 0, ErrTwoFactorCodeInvalid
+	}
+	return step, nil
 }
 
 // Verify checks a TOTP code or, when recovery is set, burns a recovery code. Wrong codes
 // count against the user's failure budget; once it is spent every attempt gets 429.
 func (f *SecondFactor) Verify(ctx context.Context, userID uuid.UUID, code, recovery string) error {
-	if err := f.Failures.Check(ctx, userID); err != nil {
+	if err := f.Failures.Reserve(ctx, userID); err != nil {
 		return err
 	}
 	err := f.verify(ctx, userID, code, recovery)
-	if errors.Is(err, ErrTwoFactorCodeInvalid) {
-		return f.Failures.Record(ctx, userID)
+	if !errors.Is(err, ErrTwoFactorCodeInvalid) {
+		f.Failures.Release(ctx, userID)
 	}
 	return err
 }
 
 func (f *SecondFactor) verify(ctx context.Context, userID uuid.UUID, code, recovery string) error {
 	if strings.TrimSpace(recovery) != "" {
-		n, err := f.Q.UseRecoveryCode(ctx, gen.UseRecoveryCodeParams{UserID: userID, CodeHash: recoveryHash(recovery)})
+		n, err := f.Store.UseRecoveryCode(ctx, gen.UseRecoveryCodeParams{UserID: userID, CodeHash: recoveryHash(recovery)})
 		if err != nil {
 			return err
 		}
@@ -200,7 +253,7 @@ func (f *SecondFactor) verify(ctx context.Context, userID uuid.UUID, code, recov
 		}
 		return nil
 	}
-	row, err := f.Q.GetUserTOTP(ctx, userID)
+	row, err := f.Store.GetUserTOTP(ctx, userID)
 	if errors.Is(err, pgx.ErrNoRows) || (err == nil && row.ConfirmedAt == nil) {
 		return ErrTwoFactorNotEnabled
 	}
@@ -216,7 +269,7 @@ func (f *SecondFactor) verify(ctx context.Context, userID uuid.UUID, code, recov
 		return ErrTwoFactorCodeInvalid
 	}
 	// The conditional update makes a code usable once even under concurrent requests.
-	n, err := f.Q.UseTOTPStep(ctx, gen.UseTOTPStepParams{UserID: userID, LastStep: step})
+	n, err := f.Store.UseTOTPStep(ctx, gen.UseTOTPStepParams{UserID: userID, LastStep: step})
 	if err != nil {
 		return err
 	}
@@ -226,81 +279,151 @@ func (f *SecondFactor) verify(ctx context.Context, userID uuid.UUID, code, recov
 	return nil
 }
 
-// RegenerateRecoveryCodes replaces all recovery codes; needs the password and a code.
-func (f *SecondFactor) RegenerateRecoveryCodes(ctx context.Context, u gen.User, password, code string) ([]string, error) {
-	if err := f.reauth(ctx, u, password, code); err != nil {
+// RegenerateRecoveryCodes replaces all recovery codes after re-authentication.
+func (f *SecondFactor) RegenerateRecoveryCodes(ctx context.Context, userID uuid.UUID, in Reauth) ([]string, error) {
+	if err := f.reauth(ctx, userID, in); err != nil {
 		return nil, err
 	}
 	codes, hashes := newRecoveryCodes()
-	err := postgres.WithTx(ctx, f.Pool, func(q *gen.Queries) error {
-		if err := q.DeleteRecoveryCodes(ctx, u.ID); err != nil {
-			return err
-		}
-		return q.InsertRecoveryCodes(ctx, gen.InsertRecoveryCodesParams{UserID: u.ID, Hashes: hashes})
-	})
+	err := f.Store.InTx(ctx, func(tx TwoFactorTx) error { return replaceRecoveryCodes(ctx, tx, userID, hashes) })
 	return codes, err
 }
 
-// Disable turns 2FA off; needs the password and a code. For admins with ADMIN_2FA_REQUIRED
-// this locks /admin until they enroll again.
-func (f *SecondFactor) Disable(ctx context.Context, u gen.User, password, code string) error {
-	if err := f.reauth(ctx, u, password, code); err != nil {
+// Disable turns 2FA off after re-authentication and signs out the user's other sessions.
+// For admins with ADMIN_2FA_REQUIRED this locks /admin until they enroll again.
+func (f *SecondFactor) Disable(ctx context.Context, p reqctx.Principal, in Reauth) error {
+	if err := f.reauth(ctx, p.UserID, in); err != nil {
 		return err
 	}
-	return postgres.WithTx(ctx, f.Pool, func(q *gen.Queries) error {
-		if err := q.DeleteRecoveryCodes(ctx, u.ID); err != nil {
+	var revoked []uuid.UUID
+	err := f.Store.InTx(ctx, func(tx TwoFactorTx) error {
+		if err := tx.DeleteRecoveryCodes(ctx, p.UserID); err != nil {
 			return err
 		}
-		return q.DeleteTOTP(ctx, u.ID)
+		if err := tx.DeleteTOTP(ctx, p.UserID); err != nil {
+			return err
+		}
+		var err error
+		revoked, err = tx.RevokeOtherUserSessions(ctx, gen.RevokeOtherUserSessionsParams{UserID: p.UserID, Keep: p.SessionID})
+		return err
 	})
-}
-
-// reauth: the password (when the account has one) plus a current TOTP code.
-func (f *SecondFactor) reauth(ctx context.Context, u gen.User, password, code string) error {
-	if u.PasswordHash != nil {
-		ok, err := hash.VerifyPassword(password, *u.PasswordHash)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrWrongPassword
-		}
-	}
-	return f.Verify(ctx, u.ID, code, "")
-}
-
-// FailureBudget counts wrong second-factor codes per user in Redis.
-type FailureBudget struct{ RDB *redis.Client }
-
-func failureKey(userID uuid.UUID) string { return "mfa:fail:" + userID.String() }
-
-// Check refuses (429) once the budget is spent; Redis errors refuse too (fail closed).
-func (b *FailureBudget) Check(ctx context.Context, userID uuid.UUID) error {
-	n, err := b.RDB.Get(ctx, failureKey(userID)).Int()
-	if errors.Is(err, redis.Nil) {
-		return nil
-	}
 	if err != nil {
 		return err
 	}
-	if n >= maxCodeFailures {
-		ttl, _ := b.RDB.TTL(ctx, failureKey(userID)).Result()
-		return apperr.TooManyRequests(int(max(ttl, time.Second).Seconds()) + 1)
-	}
+	f.revokeAccess(ctx, revoked)
 	return nil
 }
 
-// Record counts one wrong code and returns the error to send back.
-func (b *FailureBudget) Record(ctx context.Context, userID uuid.UUID) error {
-	key := failureKey(userID)
-	n, err := b.RDB.Incr(ctx, key).Result()
+// reauth: the password (when the account has one) and a code or a recovery code. A wrong
+// password counts against the same budget as a wrong code, and every failure answers
+// reauth_failed, so this can't be used to guess passwords or tell which part was wrong.
+func (f *SecondFactor) reauth(ctx context.Context, userID uuid.UUID, in Reauth) error {
+	u, err := f.Store.GetUserByID(ctx, userID)
 	if err != nil {
 		return err
 	}
-	if n == 1 {
-		b.RDB.Expire(ctx, key, failureWindow)
+	if err := f.Failures.Reserve(ctx, userID); err != nil {
+		return err
 	}
-	return ErrTwoFactorCodeInvalid
+	if u.PasswordHash != nil {
+		ok, err := hash.VerifyPassword(in.Password, *u.PasswordHash)
+		if err != nil {
+			f.Failures.Release(ctx, userID)
+			return err
+		}
+		if !ok {
+			return ErrReauthFailed
+		}
+	}
+	switch err := f.verify(ctx, userID, in.Code, in.Recovery); {
+	case errors.Is(err, ErrTwoFactorCodeInvalid):
+		return ErrReauthFailed
+	case err != nil:
+		f.Failures.Release(ctx, userID)
+		return err
+	}
+	f.Failures.Release(ctx, userID)
+	return nil
+}
+
+// ---- operator commands (ctl two-factor) -----------------------------------------------------
+
+// Enroll turns 2FA on for an administrator without the app round trip (the operator hands
+// over the QR code and recovery codes). Existing sessions are signed out. With force an
+// existing enrollment is replaced; without, it is refused.
+func (f *SecondFactor) Enroll(ctx context.Context, userID uuid.UUID, force bool) (Enrollment, []string, error) {
+	u, err := f.admin(ctx, userID)
+	if err != nil {
+		return Enrollment{}, nil, err
+	}
+	on, err := f.Enabled(ctx, userID)
+	if err != nil {
+		return Enrollment{}, nil, err
+	}
+	if on && !force {
+		return Enrollment{}, nil, ErrTwoFactorAlreadyEnabled
+	}
+	secret, err := totp.NewSecret()
+	if err != nil {
+		return Enrollment{}, nil, err
+	}
+	sealed, err := f.Box.Seal(secret)
+	if err != nil {
+		return Enrollment{}, nil, err
+	}
+	codes, hashes := newRecoveryCodes()
+	var revoked []uuid.UUID
+	err = f.Store.InTx(ctx, func(tx TwoFactorTx) error {
+		if err := tx.DeleteTOTP(ctx, userID); err != nil {
+			return err
+		}
+		if err := tx.InsertConfirmedTOTP(ctx, gen.InsertConfirmedTOTPParams{UserID: userID, SecretEnc: sealed}); err != nil {
+			return err
+		}
+		if err := replaceRecoveryCodes(ctx, tx, userID, hashes); err != nil {
+			return err
+		}
+		revoked, err = tx.RevokeAllUserSessions(ctx, userID)
+		return err
+	})
+	if err != nil {
+		return Enrollment{}, nil, err
+	}
+	f.revokeAccess(ctx, revoked)
+	return f.enrollment(u, secret), codes, nil
+}
+
+// Reset turns 2FA off for a user who lost both the phone and the recovery codes, and signs
+// out every session.
+func (f *SecondFactor) Reset(ctx context.Context, userID uuid.UUID) error {
+	var revoked []uuid.UUID
+	err := f.Store.InTx(ctx, func(tx TwoFactorTx) error {
+		if err := tx.DeleteRecoveryCodes(ctx, userID); err != nil {
+			return err
+		}
+		if err := tx.DeleteTOTP(ctx, userID); err != nil {
+			return err
+		}
+		var err error
+		revoked, err = tx.RevokeAllUserSessions(ctx, userID)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	f.revokeAccess(ctx, revoked)
+	return nil
+}
+
+// revokeAccess stops the access tokens of sessions revoked in the database. Those expire
+// within minutes anyway, so a Redis hiccup is logged rather than failing the change.
+func (f *SecondFactor) revokeAccess(ctx context.Context, ids []uuid.UUID) {
+	if len(ids) == 0 {
+		return
+	}
+	if err := f.Sessions.Revoke(ctx, ids...); err != nil && f.Log != nil {
+		f.Log.WarnContext(ctx, "access tokens of revoked sessions not blocked", "err", err, "sessions", len(ids))
+	}
 }
 
 // ---- sign-in challenge ---------------------------------------------------------------------
@@ -331,56 +454,14 @@ func (f *SecondFactor) CompleteChallenge(ctx context.Context, token, code, recov
 	return userID, nil
 }
 
-// ChallengeStore keeps challenges in Redis for a few minutes, with an attempt budget.
-type ChallengeStore struct{ RDB *redis.Client }
-
-func challengeKey(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return "mfa:challenge:" + hex.EncodeToString(sum[:])
-}
-
-func (c *ChallengeStore) Create(ctx context.Context, userID uuid.UUID, now time.Time) (Challenge, error) {
-	token := random.Token(32)
-	key := challengeKey(token)
-	_, err := c.RDB.TxPipelined(ctx, func(p redis.Pipeliner) error {
-		p.HSet(ctx, key, "uid", userID.String(), "attempts", 0)
-		p.Expire(ctx, key, challengeTTL)
-		return nil
-	})
-	if err != nil {
-		return Challenge{}, err
-	}
-	return Challenge{Token: token, ExpiresAt: now.Add(challengeTTL)}, nil
-}
-
-// Attempt counts one try and returns the user; too many tries end the challenge.
-func (c *ChallengeStore) Attempt(ctx context.Context, token string) (uuid.UUID, error) {
-	key := challengeKey(token)
-	uid, err := c.RDB.HGet(ctx, key, "uid").Result()
-	if errors.Is(err, redis.Nil) {
-		return uuid.Nil, ErrTwoFactorChallenge
-	}
-	if err != nil {
-		return uuid.Nil, err
-	}
-	n, err := c.RDB.HIncrBy(ctx, key, "attempts", 1).Result()
-	if err != nil {
-		return uuid.Nil, err
-	}
-	if n > challengeAttempts {
-		c.RDB.Del(ctx, key)
-		return uuid.Nil, ErrTwoFactorChallenge
-	}
-	return uuid.Parse(uid)
-}
-
-// Consume deletes the challenge; false if it was already gone (single use).
-func (c *ChallengeStore) Consume(ctx context.Context, token string) bool {
-	n, err := c.RDB.Del(ctx, challengeKey(token)).Result()
-	return err == nil && n == 1
-}
-
 // ---- recovery codes -----------------------------------------------------------------------
+
+func replaceRecoveryCodes(ctx context.Context, tx TwoFactorTx, userID uuid.UUID, hashes [][]byte) error {
+	if err := tx.DeleteRecoveryCodes(ctx, userID); err != nil {
+		return err
+	}
+	return tx.InsertRecoveryCodes(ctx, gen.InsertRecoveryCodesParams{UserID: userID, Hashes: hashes})
+}
 
 func newRecoveryCodes() (codes []string, hashes [][]byte) {
 	for range recoveryCodeCount {
@@ -397,30 +478,4 @@ func recoveryHash(code string) []byte {
 	norm := strings.NewReplacer("-", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(code)))
 	sum := sha256.Sum256([]byte(norm))
 	return sum[:]
-}
-
-// ---- admin gate -----------------------------------------------------------------------------
-
-// RequireEnrolled blocks signed-in users without 2FA (used on /admin). With AdminRequired
-// off (local development only; config refuses it in production) it lets everyone through.
-// Lookup failures fail closed.
-func (f *SecondFactor) RequireEnrolled() func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		if !f.AdminRequired {
-			return next
-		}
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			p := reqctx.MustPrincipal(r.Context())
-			ok, err := f.Enabled(r.Context(), p.UserID)
-			if err != nil {
-				response.Error(w, r, err)
-				return
-			}
-			if !ok {
-				response.Error(w, r, ErrTwoFactorSetupRequired)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
 }
