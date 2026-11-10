@@ -1,8 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
-import type { Middleware } from "openapi-fetch";
-
-import { api } from "./client";
+import type { Client, Middleware } from "openapi-fetch";
 
 // SSR loaders call the API from the web container, so without this the API would see the
 // container's address for every visitor and all of them would share one rate limit. The
@@ -18,9 +16,21 @@ const forwardClient: Middleware = {
     return request;
   },
 };
-api.use(forwardClient);
 
-/** Runs the rest of the request (loaders, actions, render) with the caller's address. */
-export function withClientAddress<T>(request: Request, next: () => Promise<T>): Promise<T> {
-  return incoming.run({ forwardedFor: request.headers.get("X-Forwarded-For") }, next);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const installed = new WeakSet<Client<any>>();
+
+/**
+ * Makes `client` pass the visitor's address on server-side calls and returns the runner
+ * for the root middleware: the rest of the request (loaders, actions, render) runs with
+ * the caller's X-Forwarded-For.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function forwardClientAddress(client: Client<any>) {
+  if (!installed.has(client)) {
+    client.use(forwardClient);
+    installed.add(client);
+  }
+  return <T>(request: Request, next: () => Promise<T>): Promise<T> =>
+    incoming.run({ forwardedFor: request.headers.get("X-Forwarded-For") }, next);
 }

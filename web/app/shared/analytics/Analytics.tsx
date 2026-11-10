@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useLocation } from "react-router";
 
+import { loadScript } from "../lib/load-script";
 import { useConsent, type CookieConsent } from "../consent/consent";
 import { useRuntime } from "../runtime/runtime";
 
@@ -25,10 +26,7 @@ function start(id: string) {
   };
   window.gtag("js", new Date());
   window.gtag("config", id, { send_page_view: false, anonymize_ip: true });
-  const s = document.createElement("script");
-  s.async = true;
-  s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`;
-  document.head.appendChild(s);
+  void loadScript(`https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(id)}`).catch(() => {});
 }
 
 /** Consent withdrawn: stop sending and drop the _ga cookies. */

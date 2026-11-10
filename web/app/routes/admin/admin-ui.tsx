@@ -1,9 +1,11 @@
 import { ShieldAlert, Search } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { errorText } from "~/shared/api/errors";
-import { useSession } from "~/shared/auth/session";
+import { signOut, useSession } from "~/shared/auth/session";
+import { localizedPath } from "~/shared/i18n/config";
+import { useLocale } from "~/shared/i18n/hooks";
 import { TwoFactorEnroll } from "~/shared/account/two-factor/Enroll";
 import { useTwoFactorStatus } from "~/shared/account/two-factor/Settings";
 import { Skeleton } from "~/shared/ui/Skeleton";
@@ -22,10 +24,25 @@ export const MIN_REASON_LENGTH = 5;
 export function AdminOnly({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const { user } = useSession();
+  const navigate = useNavigate();
+  const locale = useLocale();
   const isAdmin = user?.role === "admin";
   const twoFactor = useTwoFactorStatus(isAdmin);
   if (!isAdmin) return <EmptyState icon={<ShieldAlert className="size-6" />} title={t("admin.onlyAdmins")} />;
   if (twoFactor.isPending) return <Skeleton className="h-64 rounded-sheet" />;
+  // 2FA on, but this session signed in before it was turned on (or without the code): the
+  // API answers two_factor_session_required, so sign in again.
+  if (twoFactor.data?.enabled && !twoFactor.data.session_verified) {
+    return (
+      <div className="rounded-sheet border border-line bg-surface px-5 py-8 md:px-8">
+        <h1 className="font-display text-xl font-semibold text-ink">{t("twoFactor.sessionTitle")}</h1>
+        <p className="mt-2 max-w-prose text-ink-2">{t("twoFactor.sessionBody")}</p>
+        <Button className="mt-6" onClick={() => void signOut().then(() => navigate(`${localizedPath(locale, "/login")}?next=${encodeURIComponent("/admin")}`))}>
+          {t("twoFactor.signInAgain")}
+        </Button>
+      </div>
+    );
+  }
   // The API refuses /admin to admins without 2FA (two_factor_setup_required); enroll here.
   if (twoFactor.data?.required && !twoFactor.data.enabled) {
     return (

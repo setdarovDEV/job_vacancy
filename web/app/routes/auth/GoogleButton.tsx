@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react";
 
 import { api } from "~/shared/api/client";
-import { signedIn } from "~/shared/auth/session";
-import { challengeOf, type TwoFactorChallenge } from "./SecondFactorStep";
+import { signInResult, type TwoFactorChallenge } from "~/shared/auth/sign-in";
 import { useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
+import { loadScript } from "~/shared/lib/load-script";
 
 const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;
 
@@ -35,25 +35,18 @@ export function GoogleButton({ role, onDone, onError, onChallenge }: {
       window.google?.accounts.id.initialize({
         client_id: clientId,
         callback: async ({ credential }: { credential: string }) => {
-          const res = await api.POST("/auth/google", { body: { id_token: credential, role, locale } });
-          const challenge = challengeOf(res);
-          if (challenge) {
-            if (onChallenge) onChallenge(challenge);
+          const r = signInResult(await api.POST("/auth/google", { body: { id_token: credential, role, locale } }));
+          if (r.kind === "challenge") {
+            if (onChallenge) onChallenge(r.challenge);
             else onError(t("twoFactor.loginHint"));
-          } else if (res.data?.data) {
-            signedIn(res.data.data as never);
-            onDone(Boolean((res.data.data as { is_new_user?: boolean }).is_new_user));
-          } else onError(t("apiErrors.invalid_google_token"));
+          } else if (r.kind === "session") onDone(r.isNewUser);
+          else onError(t("apiErrors.invalid_google_token"));
         },
       });
       window.google?.accounts.id.renderButton(el, { theme: "outline", size: "large", width: el.clientWidth, text: "continue_with", locale });
     };
     if (window.google) return init();
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.async = true;
-    s.onload = init;
-    document.head.appendChild(s);
+    loadScript("https://accounts.google.com/gsi/client").then(init, () => onError(t("errors.network")));
   }, [role, locale, onDone, onError, onChallenge, t]);
   if (!clientId) return null;
   return (

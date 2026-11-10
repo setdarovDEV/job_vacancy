@@ -19,7 +19,7 @@ export interface paths {
                 query?: never;
                 header?: {
                     "X-Client-Type"?: components["parameters"]["ClientType"];
-                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Tokens solved on another host are rejected. Requests with X-Client-Type android|ios skip it and get the endpoint's own per-IP backstop instead (see x-rate-limits on each operation). */
                     "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
                 };
                 path?: never;
@@ -68,7 +68,7 @@ export interface paths {
                 query?: never;
                 header?: {
                     "X-Client-Type"?: components["parameters"]["ClientType"];
-                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Tokens solved on another host are rejected. Requests with X-Client-Type android|ios skip it and get the endpoint's own per-IP backstop instead (see x-rate-limits on each operation). */
                     "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
                 };
                 path?: never;
@@ -110,7 +110,9 @@ export interface paths {
         put?: never;
         /**
          * Second step of a sign-in answered with 202 (two_factor_required)
-         * @description Send either `code` (6 digits from the authenticator app) or `recovery_code`. A code
+         * @description Send exactly one of `code` (6 digits from the authenticator app) or `recovery_code`
+         *     (both or neither → 422). The session created here counts as having proven the second
+         *     factor (needed for /admin). A code
          *     works once (replays fail), wrong codes count against a per-user budget (10 per 15
          *     minutes, then 429) and a challenge allows 5 attempts.
          */
@@ -351,7 +353,7 @@ export interface paths {
             parameters: {
                 query?: never;
                 header?: {
-                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Tokens solved on another host are rejected. Requests with X-Client-Type android|ios skip it and get the endpoint's own per-IP backstop instead (see x-rate-limits on each operation). */
                     "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
                 };
                 path?: never;
@@ -761,7 +763,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Turn two-factor sign-in on with a code from the app; returns recovery codes */
+        /** Turn two-factor sign-in on with a code from the app; returns recovery codes, marks this session verified and signs out every other session */
         post: {
             parameters: {
                 query?: never;
@@ -816,7 +818,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Replace all recovery codes (password, if the account has one, and a current code) */
+        /** Replace all recovery codes (password, if the account has one, and a code or a recovery code) */
         post: {
             parameters: {
                 query?: never;
@@ -826,15 +828,12 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        password?: string;
-                        code: string;
-                    };
+                    "application/json": components["schemas"]["TwoFactorReauth"];
                 };
             };
             responses: {
                 200: components["responses"]["RecoveryCodes"];
-                /** @description wrong_password or two_factor_code_invalid */
+                /** @description Password or code wrong (reauth_failed, one code for both) */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -872,7 +871,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Turn two-factor sign-in off (password and a current code); admins then lose /admin until they enroll again */
+        /** Turn two-factor sign-in off (password and a code or a recovery code); signs out the user's other sessions; admins then lose /admin until they enroll again */
         post: {
             parameters: {
                 query?: never;
@@ -882,15 +881,12 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": {
-                        password?: string;
-                        code: string;
-                    };
+                    "application/json": components["schemas"]["TwoFactorReauth"];
                 };
             };
             responses: {
                 204: components["responses"]["NoContent"];
-                /** @description wrong_password or two_factor_code_invalid */
+                /** @description Password or code wrong (reauth_failed, one code for both) */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -2647,7 +2643,7 @@ export interface paths {
             parameters: {
                 query?: never;
                 header?: {
-                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Tokens solved on another host are rejected. Requests with X-Client-Type android|ios skip it and get the endpoint's own per-IP backstop instead (see x-rate-limits on each operation). */
                     "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
                 };
                 path?: never;
@@ -2657,10 +2653,11 @@ export interface paths {
                 content: {
                     "application/json": {
                         category: components["schemas"]["FeedbackCategory"];
+                        /** @description 5–2000 characters after trimming (else 422 fields.message min=5 / max=2000) */
                         message: string;
                         /** @description optional email, phone or Telegram for a reply */
                         contact?: string;
-                        /** @description the page the visitor was on */
+                        /** @description the page the visitor was on; kept only when it is an absolute http(s) URL on this site (WEB_URL host), otherwise stored as null */
                         page_url?: string;
                     };
                 };
@@ -2968,7 +2965,7 @@ export interface paths {
             parameters: {
                 query?: never;
                 header?: {
-                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Tokens solved on another host are rejected. Requests with X-Client-Type android|ios skip it and get the endpoint's own per-IP backstop instead (see x-rate-limits on each operation). */
                     "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
                 };
                 path?: never;
@@ -4784,12 +4781,20 @@ export interface components {
                 expires_in: number;
             };
         };
+        /** @description Proof of the account owner: `password` (when the account has one) and exactly one of `code` or `recovery_code` (lost phone: use a recovery code, then enroll again). Any failure answers 400 reauth_failed without saying which part was wrong; wrong passwords and codes share the per-user budget (10 per 15 minutes, then 429). */
+        TwoFactorReauth: {
+            password?: string;
+            code?: string;
+            recovery_code?: string;
+        };
         TwoFactorStatus: {
             /** @description This user must turn it on before using /admin (administrators while ADMIN_2FA_REQUIRED is on). */
             required: boolean;
             enabled: boolean;
             /** @description A secret was issued by /setup but not confirmed yet. */
             pending: boolean;
+            /** @description The current session proved the second factor (signed in with a code, or turned 2FA on in it). With 2FA on, /admin needs it; sign in again otherwise. */
+            session_verified: boolean;
             /** Format: date-time */
             confirmed_at: string | null;
             recovery_codes_left: number;
@@ -5552,7 +5557,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Signed in but not an admin (forbidden), or an admin without two-factor sign-in while ADMIN_2FA_REQUIRED is on (two_factor_setup_required: enroll under /me/two-factor first) */
+        /** @description Signed in but not an admin (forbidden); an admin without two-factor sign-in while ADMIN_2FA_REQUIRED is on (two_factor_setup_required: enroll under /me/two-factor first); or 2FA is on but this session didn't prove it (two_factor_session_required: sign in again with a code) */
         AdminOnly: {
             headers: {
                 [name: string]: unknown;
@@ -5671,7 +5676,7 @@ export interface components {
         CompanyRef: string;
         /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
         UserRef: string;
-        /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+        /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Tokens solved on another host are rejected. Requests with X-Client-Type android|ios skip it and get the endpoint's own per-IP backstop instead (see x-rate-limits on each operation). */
         TurnstileToken: string;
         /** @description page size for every admin list */
         AdminLimit: number;

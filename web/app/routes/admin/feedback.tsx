@@ -72,7 +72,7 @@ function Row({ f }: { f: Feedback }) {
         <p className="mt-2 whitespace-pre-wrap break-words text-ink">{f.message}</p>
         <dl className="mt-2 flex flex-col gap-1 text-sm text-ink-2">
           {f.contact && <div className="flex gap-2"><dt className="text-ink-3">{t("feedback.contact")}:</dt><dd className="min-w-0 break-all">{f.contact}</dd></div>}
-          {f.page_url && <div className="flex gap-2"><dt className="text-ink-3">{t("admin.feedback.page")}:</dt><dd className="min-w-0 break-all"><a href={f.page_url} className="text-lapis-ink hover:underline" target="_blank" rel="noreferrer noopener">{f.page_url}</a></dd></div>}
+          {f.page_url && <div className="flex gap-2"><dt className="text-ink-3">{t("admin.feedback.page")}:</dt><dd className="min-w-0 break-all"><PageLink url={f.page_url} /></dd></div>}
         </dl>
       </div>
       <div className="shrink-0">
@@ -84,4 +84,16 @@ function Row({ f }: { f: Feedback }) {
       </div>
     </div>
   );
+}
+
+/** A link only to pages of this site; anything else is shown as text. */
+function PageLink({ url }: { url: string }) {
+  let sameOrigin = false;
+  try {
+    sameOrigin = typeof location !== "undefined" && new URL(url).origin === location.origin;
+  } catch {
+    // not a URL
+  }
+  if (!sameOrigin) return <span>{url}</span>;
+  return <a href={url} className="text-lapis-ink hover:underline" target="_blank" rel="noreferrer noopener">{url}</a>;
 }

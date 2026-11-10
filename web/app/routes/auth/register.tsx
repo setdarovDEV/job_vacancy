@@ -7,7 +7,7 @@ import { AuthCard } from "./AuthCard";
 import { GoogleButton } from "./GoogleButton";
 import { useNext } from "./layout";
 import { api } from "~/shared/api/client";
-import { signedIn } from "~/shared/auth/session";
+import { signInResult } from "~/shared/auth/sign-in";
 import { useCaptcha } from "~/shared/captcha/Turnstile";
 import { FormError } from "~/shared/forms/FormError";
 import { PasswordInput } from "~/shared/forms/PasswordInput";
@@ -64,8 +64,8 @@ export default function Register() {
           void run(
             () => api.POST("/auth/register", { body: { ...form, role, locale }, headers: captcha.take() }),
             (res) => {
-              signedIn(res.data!.data as never);
-              afterSignup(form.email);
+              if (signInResult(res).kind === "session") afterSignup(form.email);
+              else setError(t("errors.internal_error"));
             },
           );
         }}

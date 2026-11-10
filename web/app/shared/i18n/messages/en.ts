@@ -122,6 +122,9 @@ const en: Messages = {
     max_items: "At most {{n}} items", min_items: "At least {{n}} items", not_found: "Not found", not_self: "Can't be the same one",
   },
   apiErrors: {
+    two_factor_web_only: "Administrators sign in with two-factor sign-in on the jobvacancy.uz website.",
+    reauth_failed: "The password or the code is wrong.",
+    two_factor_session_required: "Sign in again with your password and an app code.",
     captcha_required: "Please confirm you're not a robot.",
     captcha_invalid: "The check failed. Please try again.",
     captcha_unavailable: "The check is unavailable right now. Please try again shortly.",
@@ -559,6 +562,10 @@ const en: Messages = {
     },
   },
   twoFactor: {
+    sessionTitle: "Confirm with your code",
+    sessionBody: "Two-factor sign-in is on, but this session was opened without a code. Sign in again with your password and an app code to use the admin panel.",
+    signInAgain: "Sign in again",
+    lostPhone: "Lost your phone? Confirm with a recovery code, then turn it on again.",
     title: "Two-factor sign-in",
     intro: "Besides your password, you'll enter a code from an app on your phone. A stolen password alone won't get anyone in.",
     required: "Required for administrators",

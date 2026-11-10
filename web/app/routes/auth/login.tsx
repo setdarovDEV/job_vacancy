@@ -4,10 +4,10 @@ import { useNavigate } from "react-router";
 import type { Route } from "./+types/login";
 import { AuthCard } from "./AuthCard";
 import { GoogleButton } from "./GoogleButton";
-import { challengeOf, SecondFactorStep, type TwoFactorChallenge } from "./SecondFactorStep";
+import { SecondFactorStep } from "./SecondFactorStep";
 import { useNext } from "./layout";
 import { api } from "~/shared/api/client";
-import { signedIn } from "~/shared/auth/session";
+import { signInResult, type TwoFactorChallenge } from "~/shared/auth/sign-in";
 import { useCaptcha } from "~/shared/captcha/Turnstile";
 import { FormError } from "~/shared/forms/FormError";
 import { PasswordInput } from "~/shared/forms/PasswordInput";
@@ -57,11 +57,10 @@ export default function Login() {
           void run(
             () => api.POST("/auth/login", { body: { email, password }, headers: captcha.take() }),
             (res) => {
-              const c = challengeOf(res);
-              if (c) return setChallenge(c);
-              const d = res.data!.data as never as { user: { full_name: string } };
-              signedIn(res.data!.data as never);
-              done(d.user.full_name.split(" ")[0]);
+              const r = signInResult(res);
+              if (r.kind === "challenge") setChallenge(r.challenge);
+              else if (r.kind === "session") done(r.user.full_name.split(" ")[0]);
+              else setError(t("errors.internal_error"));
             },
           );
         }}

@@ -24,7 +24,8 @@ execFileSync("./bin/ctl", ["set-role", admin, "admin"], { cwd: BACKEND });
 const browser = await chromium.launch({ executablePath: process.env.CHROME ?? "/usr/bin/google-chrome", args: ["--no-sandbox"] });
 const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const p = await ctx.newPage();
-p.on("console", (m) => { if (m.type() === "error" || /hydrat/i.test(m.text())) errors.push(`[${m.type()}] ${p.url()} ${m.text().slice(0, 300)}`); });
+// The re-auth step fails on purpose (400); the browser logs that request.
+p.on("console", (m) => { if (/status of 400/.test(m.text())) return; if (m.type() === "error" || /hydrat/i.test(m.text())) errors.push(`[${m.type()}] ${p.url()} ${m.text().slice(0, 300)}`); });
 p.on("pageerror", (e) => errors.push(`[pageerror] ${p.url()} ${e.message}`));
 const shot = (name) => p.screenshot({ path: `${out}/k-${name}.png`, fullPage: true });
 const login = async () => {
@@ -91,6 +92,18 @@ await shot("2fa-login");
 await p.locator("input[inputmode=numeric]").fill(totp(secret));
 await p.waitForURL((u) => u.pathname === "/admin");
 ok("code signs in", true);
+
+// ---- re-auth: lost phone path and a single error for any failure
+await p.goto(B + "/me", { waitUntil: "networkidle" });
+await p.locator("#two-factor").getByRole("button", { name: "Yangi zaxira kodlar" }).click();
+const re = p.getByRole("dialog");
+await re.getByRole("button", { name: "Zaxira kod bilan kirish" }).click();
+await re.locator("input[type=password]").fill("WrongPass1");
+await re.getByPlaceholder("xxxxx-xxxxx").fill("aaaaa-bbbbb");
+await re.getByRole("button", { name: "Yangi zaxira kodlar" }).click();
+await re.getByText("Parol yoki kod noto'g'ri.").waitFor();
+ok("re-auth accepts a recovery code; failures say reauth_failed", true);
+await re.getByRole("button", { name: "Bekor qilish" }).click();
 
 // ---- admin feedback queue
 await p.goto(B + "/admin/feedback", { waitUntil: "networkidle" });

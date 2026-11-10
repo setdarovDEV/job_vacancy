@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { useLocale } from "../i18n/hooks";
+import { loadScript } from "../lib/load-script";
 import { useRuntime } from "../runtime/runtime";
 
 type TurnstileApi = {
@@ -12,20 +13,11 @@ declare global {
   interface Window { turnstile?: TurnstileApi }
 }
 
-let loading: Promise<TurnstileApi> | null = null;
-
 /** Cloudflare's script, fetched only on pages that show the widget. */
-function loadTurnstile(): Promise<TurnstileApi> {
-  if (window.turnstile) return Promise.resolve(window.turnstile);
-  loading ??= new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-    s.async = true;
-    s.onload = () => (window.turnstile ? resolve(window.turnstile) : reject(new Error("turnstile")));
-    s.onerror = () => { loading = null; reject(new Error("turnstile")); };
-    document.head.appendChild(s);
-  });
-  return loading;
+async function loadTurnstile(): Promise<TurnstileApi> {
+  await loadScript("https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit");
+  if (!window.turnstile) throw new Error("turnstile");
+  return window.turnstile;
 }
 
 const turnstileLang: Record<string, string> = { uz: "uz", "uz-Cyrl": "uz", ru: "ru", en: "en" };

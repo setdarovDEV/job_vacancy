@@ -4,7 +4,8 @@ import { Links, Meta, Outlet, Scripts, ScrollRestoration, useRouteLoaderData } f
 import type { Route } from "./+types/root";
 import { defaultLocale, htmlLang, localeFromPath } from "./shared/i18n/config";
 import { bootstrapSession } from "./shared/auth/session";
-import { withClientAddress } from "./shared/api/forward.server";
+import { api } from "./shared/api/client";
+import { forwardClientAddress } from "./shared/api/forward.server";
 import { getCatalog } from "./shared/catalog/catalog.server";
 import { createT, I18nProvider } from "./shared/i18n/i18n";
 import { messagesFor } from "./shared/i18n/messages.server";
@@ -18,7 +19,7 @@ import { Toaster } from "./shared/ui/Toast";
 import "./styles/app.css";
 
 // Every server-side API call made while handling this request carries the visitor's address.
-export const middleware: Route.MiddlewareFunction[] = [({ request }, next) => withClientAddress(request, next)];
+export const middleware: Route.MiddlewareFunction[] = [({ request }, next) => forwardClientAddress(api)(request, next)];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const locale = localeFromPath(new URL(request.url).pathname);

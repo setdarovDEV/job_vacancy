@@ -2,21 +2,13 @@ import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 
 import { api } from "~/shared/api/client";
-import { signedIn } from "~/shared/auth/session";
+import { signInResult, type TwoFactorChallenge } from "~/shared/auth/sign-in";
 import { CodeInput } from "~/shared/forms/CodeInput";
 import { FormError } from "~/shared/forms/FormError";
 import { useSubmit } from "~/shared/forms/useSubmit";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { Button } from "~/shared/ui/Button";
 import { Field, Input } from "~/shared/ui/Field";
-
-/** A 202 from /auth/login or /auth/google carries this instead of a session. */
-export type TwoFactorChallenge = { challenge_token: string; expires_in: number };
-
-export function challengeOf(res: { response: Response; data?: unknown }): TwoFactorChallenge | null {
-  if (res.response.status !== 202) return null;
-  return (res.data as { data?: TwoFactorChallenge } | undefined)?.data ?? null;
-}
 
 /** Second step of signing in: the app code, or a recovery code. */
 export function SecondFactorStep({ challenge, onDone, onRestart }: {
@@ -37,8 +29,9 @@ export function SecondFactorStep({ challenge, onDone, onRestart }: {
         : { challenge_token: challenge.challenge_token, code: appCode },
     }),
     (res) => {
-      signedIn(res.data!.data as never);
-      onDone((res.data!.data as { user: { full_name: string } }).user.full_name.split(" ")[0]);
+      const r = signInResult(res);
+      if (r.kind === "session") onDone(r.user.full_name.split(" ")[0]);
+      else onRestart();
     },
     (e) => {
       if (e.code !== "two_factor_challenge_invalid") return false;

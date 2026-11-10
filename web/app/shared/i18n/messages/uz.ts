@@ -173,6 +173,9 @@ const uz = {
     max_items: "Ko'pi bilan {{n}} ta", min_items: "Kamida {{n}} ta", not_found: "Topilmadi", not_self: "O'zini tanlab bo'lmaydi",
   },
   apiErrors: {
+    two_factor_web_only: "Administratorlar ikki bosqichli kirish bilan jobvacancy.uz saytida kiradi.",
+    reauth_failed: "Parol yoki kod noto'g'ri.",
+    two_factor_session_required: "Qaytadan kiring: parol va ilovadagi kod kerak.",
     captcha_required: "Robot emasligingizni tasdiqlang.",
     captcha_invalid: "Tekshiruvdan o'tilmadi. Qaytadan urinib ko'ring.",
     captcha_unavailable: "Tekshiruv vaqtincha ishlamayapti. Birozdan so'ng urinib ko'ring.",
@@ -610,6 +613,10 @@ const uz = {
     },
   },
   twoFactor: {
+    sessionTitle: "Kodni qayta tasdiqlang",
+    sessionBody: "Ikki bosqichli kirish yoqilgan, lekin bu seans kodsiz ochilgan. Boshqaruv paneli uchun parol va ilovadagi kod bilan qaytadan kiring.",
+    signInAgain: "Qaytadan kirish",
+    lostPhone: "Telefon yo'qolsa: zaxira kod bilan tasdiqlang va qayta yoqing.",
     title: "Ikki bosqichli kirish",
     intro: "Paroldan tashqari telefoningizdagi ilova kodi so'raladi. Parol o'g'irlansa ham hisobingizga hech kim kira olmaydi.",
     required: "Administratorlar uchun majburiy",
