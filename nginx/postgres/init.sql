@@ -23,12 +23,12 @@ BEGIN
         BEGIN
             ts_millis := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
             rand := gen_random_bytes(16);
-            rand := set_byte(rand, 0, (ts_millis >> 40)::int);
-            rand := set_byte(rand, 1, (ts_millis >> 32)::int);
-            rand := set_byte(rand, 2, (ts_millis >> 24)::int);
-            rand := set_byte(rand, 3, (ts_millis >> 16)::int);
-            rand := set_byte(rand, 4, (ts_millis >> 8)::int);
-            rand := set_byte(rand, 5, ts_millis::int);
+            rand := set_byte(rand, 0, ((ts_millis >> 40) & 255)::int);
+            rand := set_byte(rand, 1, ((ts_millis >> 32) & 255)::int);
+            rand := set_byte(rand, 2, ((ts_millis >> 24) & 255)::int);
+            rand := set_byte(rand, 3, ((ts_millis >> 16) & 255)::int);
+            rand := set_byte(rand, 4, ((ts_millis >> 8) & 255)::int);
+            rand := set_byte(rand, 5, (ts_millis & 255)::int);
             rand := set_byte(rand, 6, (get_byte(rand, 6) & 15) | 112); -- version 7
             rand := set_byte(rand, 8, (get_byte(rand, 8) & 63) | 128); -- variant 10
             hex := encode(rand, 'hex');
@@ -62,12 +62,12 @@ BEGIN
         BEGIN
             ts_millis := (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::bigint;
             rand := gen_random_bytes(16);
-            rand := set_byte(rand, 0, (ts_millis >> 40)::int);
-            rand := set_byte(rand, 1, (ts_millis >> 32)::int);
-            rand := set_byte(rand, 2, (ts_millis >> 24)::int);
-            rand := set_byte(rand, 3, (ts_millis >> 16)::int);
-            rand := set_byte(rand, 4, (ts_millis >> 8)::int);
-            rand := set_byte(rand, 5, ts_millis::int);
+            rand := set_byte(rand, 0, ((ts_millis >> 40) & 255)::int);
+            rand := set_byte(rand, 1, ((ts_millis >> 32) & 255)::int);
+            rand := set_byte(rand, 2, ((ts_millis >> 24) & 255)::int);
+            rand := set_byte(rand, 3, ((ts_millis >> 16) & 255)::int);
+            rand := set_byte(rand, 4, ((ts_millis >> 8) & 255)::int);
+            rand := set_byte(rand, 5, (ts_millis & 255)::int);
             rand := set_byte(rand, 6, (get_byte(rand, 6) & 15) | 112);
             rand := set_byte(rand, 8, (get_byte(rand, 8) & 63) | 128);
             hex := encode(rand, 'hex');
