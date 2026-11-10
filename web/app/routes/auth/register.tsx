@@ -8,6 +8,7 @@ import { GoogleButton } from "./GoogleButton";
 import { useNext } from "./layout";
 import { api } from "~/shared/api/client";
 import { signedIn } from "~/shared/auth/session";
+import { useCaptcha } from "~/shared/captcha/Turnstile";
 import { FormError } from "~/shared/forms/FormError";
 import { PasswordInput } from "~/shared/forms/PasswordInput";
 import { useSubmit } from "~/shared/forms/useSubmit";
@@ -32,6 +33,7 @@ export default function Register() {
   const navigate = useNavigate();
   const next = useNext();
   const { pending, error, fields, run, setError } = useSubmit();
+  const captcha = useCaptcha();
   const [params] = useSearchParams();
   const [role, setRole] = useState<Role>(params.get("role") === "employer" ? "employer" : "seeker");
   const [form, setForm] = useState({ full_name: "", email: "", password: "" });
@@ -60,7 +62,7 @@ export default function Register() {
         onSubmit={(e) => {
           e.preventDefault();
           void run(
-            () => api.POST("/auth/register", { body: { ...form, role, locale } }),
+            () => api.POST("/auth/register", { body: { ...form, role, locale }, headers: captcha.take() }),
             (res) => {
               signedIn(res.data!.data as never);
               afterSignup(form.email);
@@ -97,7 +99,8 @@ export default function Register() {
         <Field label={t("form.password")} hint={t("auth.passwordHint")} error={fields.password}>
           <PasswordInput autoComplete="new-password" required minLength={8} value={form.password} onChange={upd("password")} />
         </Field>
-        <Button type="submit" size="lg" loading={pending} className="mt-1">{t("auth.submitRegister")}</Button>
+        {captcha.widget}
+        <Button type="submit" size="lg" loading={pending} disabled={!captcha.ready} className="mt-1">{t("auth.submitRegister")}</Button>
         <p className="text-center text-xs text-ink-3">{t("auth.agree")}</p>
       </form>
       <GoogleButton role={role} onDone={(isNew) => (isNew && role === "employer" ? navigate(localizedPath(locale, "/employer")) : navigate(next ?? localizedPath(locale, "/")))} onError={setError} />

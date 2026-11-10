@@ -1,10 +1,16 @@
+import { lazy, Suspense, useState } from "react";
+
+import { setConsent } from "~/shared/consent/consent";
 import { useTranslation } from "~/shared/i18n/i18n";
 
 import { LogoMark } from "../brand/Logo";
 import { LocalizedLink } from "../i18n/hooks";
 
+const FeedbackDialog = lazy(() => import("../feedback/FeedbackDialog"));
+
 export function SiteFooter() {
   const { t } = useTranslation();
+  const [feedback, setFeedback] = useState(false);
   const links = [
     { to: "/about", key: "footer.about" },
     { to: "/contacts", key: "footer.contacts" },
@@ -25,7 +31,14 @@ export function SiteFooter() {
           {links.map((l) => (
             <LocalizedLink key={l.to} to={l.to} className="hover:text-ink">{t(l.key)}</LocalizedLink>
           ))}
+          <button type="button" className="hover:text-ink" onClick={() => setConsent(null)}>{t("footer.cookieSettings")}</button>
+          <button type="button" className="font-medium text-lapis-ink hover:underline" onClick={() => setFeedback(true)}>{t("feedback.title")}</button>
         </nav>
+        {feedback && (
+          <Suspense fallback={null}>
+            <FeedbackDialog open onOpenChange={setFeedback} />
+          </Suspense>
+        )}
       </div>
       <div className="container-page pb-10 text-xs text-ink-3">{t("footer.rights", { year: new Date().getFullYear() })}</div>
     </footer>

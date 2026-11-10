@@ -4,9 +4,11 @@ import { useNavigate } from "react-router";
 import type { Route } from "./+types/login";
 import { AuthCard } from "./AuthCard";
 import { GoogleButton } from "./GoogleButton";
+import { challengeOf, SecondFactorStep, type TwoFactorChallenge } from "./SecondFactorStep";
 import { useNext } from "./layout";
 import { api } from "~/shared/api/client";
 import { signedIn } from "~/shared/auth/session";
+import { useCaptcha } from "~/shared/captcha/Turnstile";
 import { FormError } from "~/shared/forms/FormError";
 import { PasswordInput } from "~/shared/forms/PasswordInput";
 import { useSubmit } from "~/shared/forms/useSubmit";
@@ -29,8 +31,10 @@ export default function Login() {
   const navigate = useNavigate();
   const next = useNext();
   const { pending, error, fields, run, setError } = useSubmit();
+  const captcha = useCaptcha();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [challenge, setChallenge] = useState<TwoFactorChallenge | null>(null);
 
   const done = (name?: string) => {
     if (name) toast({ tone: "success", title: t("auth.welcome", { name }) });
@@ -43,13 +47,18 @@ export default function Login() {
       subtitle={t("auth.loginSubtitle")}
       footer={<>{t("auth.noAccount")} <LocalizedLink to={`/register${next ? `?next=${encodeURIComponent(next)}` : ""}`} className="font-medium text-lapis-ink hover:underline">{t("nav.signUp")}</LocalizedLink></>}
     >
+      {challenge ? (
+        <SecondFactorStep challenge={challenge} onDone={done} onRestart={() => { setChallenge(null); setPassword(""); }} />
+      ) : (<>
       <form
         className="flex flex-col gap-4"
         onSubmit={(e) => {
           e.preventDefault();
           void run(
-            () => api.POST("/auth/login", { body: { email, password } }),
+            () => api.POST("/auth/login", { body: { email, password }, headers: captcha.take() }),
             (res) => {
+              const c = challengeOf(res);
+              if (c) return setChallenge(c);
               const d = res.data!.data as never as { user: { full_name: string } };
               signedIn(res.data!.data as never);
               done(d.user.full_name.split(" ")[0]);
@@ -65,9 +74,11 @@ export default function Login() {
           <PasswordInput autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         <LocalizedLink to="/forgot-password" className="-mt-1 self-end text-sm text-lapis-ink hover:underline">{t("auth.forgot")}</LocalizedLink>
-        <Button type="submit" size="lg" loading={pending} className="mt-1">{t("auth.submitLogin")}</Button>
+        {captcha.widget}
+        <Button type="submit" size="lg" loading={pending} disabled={!captcha.ready} className="mt-1">{t("auth.submitLogin")}</Button>
       </form>
-      <GoogleButton onDone={() => done()} onError={setError} />
+      <GoogleButton onDone={() => done()} onError={setError} onChallenge={setChallenge} />
+      </>)}
     </AuthCard>
   );
 }

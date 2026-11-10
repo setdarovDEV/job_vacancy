@@ -3,6 +3,7 @@ import { Camera, Laptop, Send, Smartphone, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { ContactVerification } from "~/shared/account/ContactVerification";
+import { TwoFactorSettings } from "~/shared/account/two-factor/Settings";
 import { api, type Schemas } from "~/shared/api/client";
 import { errorText } from "~/shared/api/errors";
 import { updateUser, useSession, withAuth } from "~/shared/auth/session";
@@ -37,6 +38,11 @@ export default function Settings() {
         <Section title={t("settings.profile")} description={t("settings.profileHint")}>
           <ProfileForm user={user} />
         </Section>
+        {user.role === "admin" && (
+          <Section id="two-factor" title={t("twoFactor.title")} description={t("twoFactor.intro")}>
+            <TwoFactorSettings />
+          </Section>
+        )}
         <Section title={t("settings.contacts")} description={t("settings.contactsHint")}>
           <ContactVerification user={user} />
         </Section>

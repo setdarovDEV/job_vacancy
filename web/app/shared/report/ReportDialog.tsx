@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { api } from "~/shared/api/client";
 import { useSession, withAuth } from "~/shared/auth/session";
+import { useCaptcha } from "~/shared/captcha/Turnstile";
 import { FormError } from "~/shared/forms/FormError";
 import { useSubmit } from "~/shared/forms/useSubmit";
 import { LocalizedLink } from "~/shared/i18n/hooks";
@@ -29,13 +30,17 @@ export default function ReportDialog({ target, open, onOpenChange }: {
   const [comment, setComment] = useState("");
   const [done, setDone] = useState<"sent" | "already" | null>(null);
   const { pending, error, fields, run } = useSubmit();
+  const captcha = useCaptcha();
   const needsComment = reason === "other" && !comment.trim();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reason || needsComment) return;
+    // Taken once: withAuth may repeat the call after a token refresh.
+    const headers = captcha.take();
     void run(
       () => withAuth(() => api.POST("/reports", {
+        headers,
         body: { target_type: target.type, target_id: target.id, reason, comment: comment.trim() || undefined },
       })),
       () => setDone("sent"),
@@ -98,7 +103,8 @@ export default function ReportDialog({ target, open, onOpenChange }: {
         </Field>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button type="submit" loading={pending} disabled={!reason || needsComment}>{t("report.submit")}</Button>
+          {captcha.widget}
+          <Button type="submit" loading={pending} disabled={!reason || needsComment || !captcha.ready}>{t("report.submit")}</Button>
         </div>
       </form>
     );

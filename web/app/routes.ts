@@ -43,6 +43,7 @@ export default [
         route("admin/users", "routes/admin/users.tsx"),
         route("admin/reports", "routes/admin/reports.tsx"),
         route("admin/skills", "routes/admin/skills.tsx"),
+        route("admin/feedback", "routes/admin/feedback.tsx"),
       ]),
       route("resumes/:id", "routes/resume.tsx"),
       route("chat/:id?", "routes/chat/index.tsx"),

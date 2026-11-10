@@ -57,6 +57,8 @@ type Service struct {
 	// ExposeDevCodes returns phone codes in the API response (test mode: no Telegram
 	// gateway token). Config refuses to start production without a token.
 	ExposeDevCodes bool
+	// MFA asks for a second factor after the password when the user has one set up.
+	MFA *SecondFactor
 }
 
 // ClientMeta describes the device a session is created from.
@@ -74,6 +76,8 @@ type Result struct {
 	RefreshToken     string
 	RefreshExpiresAt time.Time
 	IsNewUser        bool
+	// Challenge is set (and no session exists yet) when a second factor is required.
+	Challenge *Challenge
 }
 
 // A precomputed hash so unknown e-mails cost the same time as wrong passwords.
@@ -144,6 +148,44 @@ func (s *Service) Login(ctx context.Context, email, password string, meta Client
 	if err := checkStatus(u); err != nil {
 		return nil, err
 	}
+	return s.signIn(ctx, u, meta)
+}
+
+// signIn starts a session, or a second-factor challenge for users with 2FA on. Failing to
+// find out whether 2FA is on refuses the sign-in rather than skipping the factor.
+func (s *Service) signIn(ctx context.Context, u gen.User, meta ClientMeta) (*Result, error) {
+	if s.MFA != nil {
+		on, err := s.MFA.Enabled(ctx, u.ID)
+		if err != nil {
+			return nil, err
+		}
+		if on {
+			ch, err := s.MFA.StartChallenge(ctx, u.ID)
+			if err != nil {
+				return nil, err
+			}
+			return &Result{User: u, Challenge: &ch}, nil
+		}
+	}
+	return s.startSession(ctx, u, meta)
+}
+
+// CompleteSecondFactor finishes a sign-in that was answered with a challenge.
+func (s *Service) CompleteSecondFactor(ctx context.Context, token, code, recovery string, meta ClientMeta) (*Result, error) {
+	if s.MFA == nil {
+		return nil, ErrTwoFactorChallenge
+	}
+	userID, err := s.MFA.CompleteChallenge(ctx, token, code, recovery)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.Q.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkStatus(u); err != nil {
+		return nil, err
+	}
 	return s.startSession(ctx, u, meta)
 }
 
@@ -173,7 +215,7 @@ func (s *Service) googleSignIn(ctx context.Context, id *GoogleIdentity, role gen
 		if err := checkStatus(u); err != nil {
 			return nil, err
 		}
-		return s.startSession(ctx, u, meta)
+		return s.signIn(ctx, u, meta)
 	case !errors.Is(err, pgx.ErrNoRows):
 		return nil, err
 	}
@@ -206,7 +248,7 @@ func (s *Service) googleSignIn(ctx context.Context, id *GoogleIdentity, role gen
 		if err != nil {
 			return nil, err
 		}
-		return s.startSession(ctx, linked, meta)
+		return s.signIn(ctx, linked, meta)
 	case !errors.Is(err, pgx.ErrNoRows):
 		return nil, err
 	}

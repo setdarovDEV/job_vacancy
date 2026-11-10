@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Ban, Building2, ClipboardCheck, FileText, Flag, ShieldQuestion, Tags, UserX, Users, Send } from "lucide-react";
+import { Ban, Building2, ClipboardCheck, FileText, Flag, ShieldQuestion, Tags, UserX, Users, Send, MessageSquareText } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { AdminOnly } from "./admin-ui";
@@ -43,6 +43,7 @@ function Page() {
             <StatCard to="/admin/reports" icon={<Flag />} label={t("admin.stats.reports")} value={s.reports.open_targets} urgent />
             <StatCard to="/admin/companies?show=unverified" icon={<ShieldQuestion />} label={t("admin.stats.unverified")} value={s.companies.active_unverified} urgent />
             <StatCard to="/admin/skills" icon={<Tags />} label={t("admin.stats.skills")} value={s.skills.unverified} urgent />
+            <StatCard to="/admin/feedback" icon={<MessageSquareText />} label={t("admin.stats.feedback")} value={s.feedback.unhandled} urgent />
             <StatCard to="/admin/companies?show=blocked" icon={<Ban />} label={t("admin.stats.blockedCompanies")} value={s.companies.blocked} />
             <StatCard to="/admin/users?status=blocked" icon={<UserX />} label={t("admin.stats.blockedUsers")} value={s.users.blocked} />
           </div>

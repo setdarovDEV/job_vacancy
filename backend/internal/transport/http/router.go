@@ -18,6 +18,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/modules/chat"
 	"jobvacancy.uz/backend/internal/modules/company"
+	"jobvacancy.uz/backend/internal/modules/feedback"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/modules/report"
@@ -33,29 +34,34 @@ import (
 )
 
 type Deps struct {
-	Log         *slog.Logger
-	DB          *pgxpool.Pool
-	Redis       *redis.Client
-	Limiter     *ratelimit.Limiter
-	Auth        *mw.Authenticator
-	CORSOrigins []string
-	TrustProxy  bool
+	// AdminSecondFactor guards /admin: administrators need two-factor sign-in on.
+	AdminSecondFactor func(http.Handler) http.Handler
+	Log               *slog.Logger
+	DB                *pgxpool.Pool
+	Redis             *redis.Client
+	Limiter           *ratelimit.Limiter
+	Auth              *mw.Authenticator
+	CORSOrigins       []string
+	TrustProxy        bool
 
-	AuthHandler    *auth.Handler
-	UserHandler    *user.Handler
-	CatalogHandler *catalog.Handler
-	CompanyHandler *company.Handler
-	VacancyHandler *vacancy.Handler
-	ResumeHandler  *resume.Handler
-	FileHandler    *file.Handler
-	NotifyHandler  *notification.Handler
-	ChatHandler    *chat.Handler
-	SavedHandler   *savedsearch.Handler
-	WSHandler      *realtime.Handler
-	AppHandler     *application.Handler
-	AdminHandler   *admin.Handler
-	ReportHandler  *report.Handler
-	AIHandler      *ai.Handler
+	AuthHandler     *auth.Handler
+	UserHandler     *user.Handler
+	CatalogHandler  *catalog.Handler
+	CompanyHandler  *company.Handler
+	VacancyHandler  *vacancy.Handler
+	ResumeHandler   *resume.Handler
+	FileHandler     *file.Handler
+	NotifyHandler   *notification.Handler
+	ChatHandler     *chat.Handler
+	SavedHandler    *savedsearch.Handler
+	WSHandler       *realtime.Handler
+	AppHandler      *application.Handler
+	AdminHandler    *admin.Handler
+	ReportHandler   *report.Handler
+	AIHandler       *ai.Handler
+	FeedbackHandler *feedback.Handler
+	// Captcha is the Turnstile check (passthrough when not configured).
+	Captcha func(http.Handler) http.Handler
 }
 
 // Per-IP limits for unauthenticated auth endpoints (password guessing, sign-up spam).
@@ -66,6 +72,8 @@ var (
 	apiUserRule = ratelimit.Rule{Name: "api_user", Limit: 600, Window: time.Minute}
 	// Filing reports: generous for real use, a wall for report-bombing.
 	reportUserRule = ratelimit.Rule{Name: "report_user", Limit: 10, Window: time.Hour}
+	// Feedback is open to visitors: a handful per hour per address is plenty.
+	feedbackIPRule = ratelimit.Rule{Name: "feedback_ip", Limit: 5, Window: time.Hour}
 )
 
 func NewRouter(d Deps) http.Handler {
@@ -100,6 +108,10 @@ func NewRouter(d Deps) http.Handler {
 			})
 		})
 		r.Route("/search", d.VacancyHandler.SearchRoutes)
+		r.Route("/feedback", func(r chi.Router) {
+			r.Use(d.Auth.Optional, mw.RateLimit(d.Limiter, feedbackIPRule, mw.KeyByIP), d.Captcha)
+			d.FeedbackHandler.Routes(r)
+		})
 		d.NotifyHandler.WebhookRoutes(r)
 		r.Route("/ws", func(r chi.Router) { d.WSHandler.Routes(r, d.Auth) })
 
@@ -139,19 +151,20 @@ func NewRouter(d Deps) http.Handler {
 				d.ChatHandler.ApplicationRoutes(r)
 			})
 			r.Route("/reports", func(r chi.Router) {
-				r.Use(mw.RateLimit(d.Limiter, reportUserRule, mw.KeyByUser))
+				r.Use(mw.RateLimit(d.Limiter, reportUserRule, mw.KeyByUser), d.Captcha)
 				d.ReportHandler.Routes(r)
 			})
 			r.Route("/conversations", d.ChatHandler.Routes)
 			r.Route("/messages", d.ChatHandler.MessageRoutes)
 			r.Route("/admin", func(r chi.Router) {
-				r.Use(mw.RequireRole("admin"))
+				r.Use(mw.RequireRole("admin"), d.AdminSecondFactor)
 				d.AdminHandler.Routes(r)
 				r.Route("/companies", d.AdminHandler.CompanyRoutes)
 				r.Route("/users", d.AdminHandler.UserRoutes)
 				r.Route("/skills", d.AdminHandler.SkillRoutes)
 				r.Route("/vacancies", d.VacancyHandler.AdminRoutes)
 				r.Route("/reports", d.ReportHandler.AdminRoutes)
+				r.Route("/feedback", d.FeedbackHandler.AdminRoutes)
 			})
 		})
 	})

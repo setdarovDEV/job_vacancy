@@ -12,8 +12,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"jobvacancy.uz/backend/internal/pkg/totp"
 	"os"
 	"strings"
+	"time"
 
 	"log/slog"
 
@@ -43,7 +45,8 @@ const usage = `usage:
   ctl run-alerts
   ctl telegram-webhook <url>
   ctl seed-demo [--reset]
-  ctl purge-demo`
+  ctl purge-demo
+  ctl totp <base32-secret>     (development only: prints the current code)`
 
 func run(args []string) error {
 	if len(args) == 0 {
@@ -52,6 +55,18 @@ func run(args []string) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return err
+	}
+	if args[0] == "totp" && len(args) == 2 {
+		// For the e2e suites, which sign in as admins with 2FA. Never on a real server.
+		if cfg.IsProduction() {
+			return errors.New("ctl totp is disabled in production")
+		}
+		secret, err := totp.Decode(args[1])
+		if err != nil {
+			return err
+		}
+		fmt.Println(totp.Code(secret, totp.Step(time.Now())))
+		return nil
 	}
 	ctx := context.Background()
 	pool, err := postgres.NewPool(ctx, cfg.DB)

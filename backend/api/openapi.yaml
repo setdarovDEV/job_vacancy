@@ -51,6 +51,15 @@ components:
     ApplicationRef: { name: application, in: path, required: true, schema: { type: string, format: uuid } }
     CompanyRef: { name: company, in: path, required: true, schema: { type: string }, description: uuid or slug }
     UserRef: { name: user, in: path, required: true, schema: { type: string, format: uuid }, description: "user id; a malformed id answers 404 user_not_found like an unknown one" }
+    TurnstileToken:
+      name: X-Turnstile-Token
+      in: header
+      schema: { type: string, maxLength: 2048 }
+      description: >
+        Cloudflare Turnstile token from the web widget. Required from web clients while the
+        server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400
+        captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with
+        X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes).
     AdminLimit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 30 }, description: page size for every admin list }
     SkillRef: { name: skill, in: path, required: true, schema: { type: integer, minimum: 1 }, description: "skill id; a malformed id answers 404 skill_not_found like an unknown one" }
     ReportTargetType: { name: target_type, in: path, required: true, schema: { type: string, enum: [vacancy, company] } }
@@ -89,6 +98,38 @@ components:
         has_password: { type: boolean }
         google_linked: { type: boolean }
         created_at: { type: string, format: date-time }
+    TwoFactorChallenge:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [two_factor_required, challenge_token, expires_in]
+          properties:
+            two_factor_required: { type: boolean, const: true }
+            challenge_token: { type: string, description: "Send it to POST /auth/two-factor/verify with a code; single use, 5 attempts." }
+            expires_in: { type: integer, description: seconds }
+    TwoFactorStatus:
+      type: object
+      required: [required, enabled, pending, confirmed_at, recovery_codes_left]
+      properties:
+        required: { type: boolean, description: "This user must turn it on before using /admin (administrators while ADMIN_2FA_REQUIRED is on)." }
+        enabled: { type: boolean }
+        pending: { type: boolean, description: "A secret was issued by /setup but not confirmed yet." }
+        confirmed_at: { type: [string, "null"], format: date-time }
+        recovery_codes_left: { type: integer }
+    RecoveryCodes:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [recovery_codes]
+          properties:
+            recovery_codes:
+              type: array
+              items: { type: string, examples: ["k3x9a-7pm2q"] }
+              description: "Shown once. Each works one time instead of an app code; case, dashes and spaces are ignored."
     Auth:
       type: object
       properties:
@@ -263,7 +304,7 @@ components:
         *_last_7d counters use the same window and rules as AdminActivity for days = 7
         (7 calendar days in Asia/Tashkent ending today; signups are seekers and employers,
         applications are the ones seekers sent), so they match its current totals.
-      required: [users, companies, vacancies, applications, reports, skills]
+      required: [users, companies, vacancies, applications, reports, skills, feedback]
       properties:
         users:
           type: object
@@ -300,6 +341,31 @@ components:
           required: [unverified]
           properties:
             unverified: { type: integer, description: user-added skills nobody has reviewed yet (not offered in autocomplete) }
+        feedback:
+          type: object
+          required: [unhandled]
+          properties:
+            unhandled: { type: integer, description: feedback messages nobody has marked handled }
+    FeedbackCategory: { type: string, enum: [bug, idea, other] }
+    Feedback:
+      type: object
+      required: [id, category, message, contact, page_url, user, handled_at, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        category: { $ref: "#/components/schemas/FeedbackCategory" }
+        message: { type: string }
+        contact: { type: [string, "null"] }
+        page_url: { type: [string, "null"] }
+        user:
+          type: [object, "null"]
+          description: the signed-in sender, if any
+          required: [id, name, email]
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: [string, "null"] }
+            email: { type: [string, "null"] }
+        handled_at: { type: [string, "null"], format: date-time }
+        created_at: { type: string, format: date-time }
     Notification:
       type: object
       description: >
@@ -689,11 +755,26 @@ components:
       content:
         application/json:
           schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/Company" } } }
+    TwoFactorChallenge:
+      description: "Password accepted, but the account uses two-factor sign-in: no session yet. Complete it with POST /auth/two-factor/verify."
+      content: { application/json: { schema: { $ref: "#/components/schemas/TwoFactorChallenge" } } }
+    RecoveryCodes:
+      description: New recovery codes (shown once)
+      content: { application/json: { schema: { $ref: "#/components/schemas/RecoveryCodes" } } }
+    FeedbackItem:
+      description: The feedback message
+      content: { application/json: { schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/Feedback" } } } } }
+    Captcha:
+      description: "Turnstile check missing or failed (captcha_required, captcha_invalid)"
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    CaptchaUnavailable:
+      description: Cloudflare Turnstile could not be reached (captcha_unavailable); try again later
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     Unauthorized:
       description: Missing, invalid, expired or revoked access token (unauthorized)
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     AdminOnly:
-      description: Signed in but not an admin (forbidden)
+      description: "Signed in but not an admin (forbidden), or an admin without two-factor sign-in while ADMIN_2FA_REQUIRED is on (two_factor_setup_required: enroll under /me/two-factor first)"
       content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
     InvalidCursor:
       description: cursor is not one this API issued (invalid_cursor)
@@ -739,7 +820,7 @@ paths:
     post:
       tags: [auth]
       summary: Sign up with email and password (sends a verification code by email)
-      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      parameters: [{ $ref: "#/components/parameters/ClientType" }, { $ref: "#/components/parameters/TurnstileToken" }]
       requestBody:
         required: true
         content:
@@ -754,14 +835,16 @@ paths:
                 role: { type: string, enum: [seeker, employer] }
                 locale: { $ref: "#/components/schemas/Locale" }
       responses:
+        "400": { $ref: "#/components/responses/Captcha" }
         "201": { $ref: "#/components/responses/Auth" }
         "409": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/CaptchaUnavailable" }
   /auth/login:
     post:
       tags: [auth]
       summary: Sign in with email and password
-      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      parameters: [{ $ref: "#/components/parameters/ClientType" }, { $ref: "#/components/parameters/TurnstileToken" }]
       requestBody:
         required: true
         content:
@@ -773,9 +856,39 @@ paths:
                 email: { type: string, format: email }
                 password: { type: string }
       responses:
+        "400": { $ref: "#/components/responses/Captcha" }
         "200": { $ref: "#/components/responses/Auth" }
+        "202": { $ref: "#/components/responses/TwoFactorChallenge" }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/CaptchaUnavailable" }
+  /auth/two-factor/verify:
+    post:
+      tags: [auth]
+      summary: Second step of a sign-in answered with 202 (two_factor_required)
+      description: |
+        Send either `code` (6 digits from the authenticator app) or `recovery_code`. A code
+        works once (replays fail), wrong codes count against a per-user budget (10 per 15
+        minutes, then 429) and a challenge allows 5 attempts.
+      parameters: [{ $ref: "#/components/parameters/ClientType" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [challenge_token]
+              properties:
+                challenge_token: { type: string }
+                code: { type: string, pattern: "^[0-9]{6}$" }
+                recovery_code: { type: string, maxLength: 32 }
+      responses:
+        "200": { $ref: "#/components/responses/Auth" }
+        "400": { description: "Wrong or already used code (two_factor_code_invalid)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: "Challenge expired, used or out of attempts (two_factor_challenge_invalid): sign in again", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
   /auth/google:
     post:
@@ -795,6 +908,7 @@ paths:
                 locale: { $ref: "#/components/schemas/Locale" }
       responses:
         "200": { $ref: "#/components/responses/Auth" }
+        "202": { $ref: "#/components/responses/TwoFactorChallenge" }
         "401": { $ref: "#/components/responses/Error" }
   /auth/refresh:
     post:
@@ -856,12 +970,16 @@ paths:
     post:
       tags: [auth]
       summary: Email a password reset code (always 204, never reveals if the email exists)
+      parameters: [{ $ref: "#/components/parameters/TurnstileToken" }]
       requestBody:
         required: true
         content:
           application/json:
             schema: { type: object, required: [email], properties: { email: { type: string, format: email } } }
-      responses: { "204": { $ref: "#/components/responses/NoContent" } }
+      responses:
+        "400": { $ref: "#/components/responses/Captcha" }
+        "204": { $ref: "#/components/responses/NoContent" }
+        "503": { $ref: "#/components/responses/CaptchaUnavailable" }
   /auth/password/reset:
     post:
       tags: [auth]
@@ -974,6 +1092,102 @@ paths:
       responses:
         "204": { $ref: "#/components/responses/NoContent" }
         "400": { $ref: "#/components/responses/Error" }
+  /me/two-factor:
+    get:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Two-factor sign-in status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/TwoFactorStatus" } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /me/two-factor/setup:
+    post:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Issue a TOTP secret (administrators only); replaces an unconfirmed one
+      responses:
+        "200":
+          description: Secret for the authenticator app (QR from otpauth_uri)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [secret, otpauth_uri]
+                    properties:
+                      secret: { type: string, description: base32 for manual entry }
+                      otpauth_uri: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "Not an administrator (two_factor_admins_only)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: "Already on (two_factor_already_enabled)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+  /me/two-factor/confirm:
+    post:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Turn two-factor sign-in on with a code from the app; returns recovery codes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [code], properties: { code: { type: string, pattern: "^[0-9]{6}$" } } }
+      responses:
+        "200": { $ref: "#/components/responses/RecoveryCodes" }
+        "400": { description: "Wrong code (two_factor_code_invalid)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: "No pending setup (two_factor_not_enabled) or already on (two_factor_already_enabled)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /me/two-factor/recovery-codes:
+    post:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Replace all recovery codes (password, if the account has one, and a current code)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                password: { type: string }
+                code: { type: string, pattern: "^[0-9]{6}$" }
+      responses:
+        "200": { $ref: "#/components/responses/RecoveryCodes" }
+        "400": { description: "wrong_password or two_factor_code_invalid", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: "Not on (two_factor_not_enabled)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+  /me/two-factor/disable:
+    post:
+      tags: [me]
+      security: [{ bearer: [] }]
+      summary: Turn two-factor sign-in off (password and a current code); admins then lose /admin until they enroll again
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                password: { type: string }
+                code: { type: string, pattern: "^[0-9]{6}$" }
+      responses:
+        "204": { $ref: "#/components/responses/NoContent" }
+        "400": { description: "wrong_password or two_factor_code_invalid", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { description: "Not on (two_factor_not_enabled)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
   /me/sessions:
     get:
       tags: [me]
@@ -1607,6 +1821,90 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { description: "Not published (invalid_status_transition)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "422": { $ref: "#/components/responses/Error" }
+  /feedback:
+    post:
+      tags: [feedback]
+      security: [{ bearer: [] }, {}]
+      summary: Send feedback to the team ("Fikr bildirish"; 5 per hour per IP)
+      description: >
+        Open to everyone; when signed in the message is linked to the account. Administrators
+        read it in GET /admin/feedback; a team Telegram chat is notified when configured.
+      parameters: [{ $ref: "#/components/parameters/TurnstileToken" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, message]
+              properties:
+                category: { $ref: "#/components/schemas/FeedbackCategory" }
+                message: { type: string, minLength: 5, maxLength: 2000 }
+                contact: { type: string, maxLength: 200, description: "optional email, phone or Telegram for a reply" }
+                page_url: { type: string, maxLength: 500, description: the page the visitor was on }
+      responses:
+        "201":
+          description: Received
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id, created_at]
+                    properties:
+                      id: { type: string, format: uuid }
+                      created_at: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/Captcha" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/CaptchaUnavailable" }
+  /admin/feedback:
+    get:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Feedback messages, newest first
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [open, handled], default: open }, description: "anything else → 422 fields.status" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { $ref: "#/components/parameters/AdminLimit" }
+      responses:
+        "200":
+          description: Page of feedback
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { type: array, items: { $ref: "#/components/schemas/Feedback" } }
+                  meta: { $ref: "#/components/schemas/PageMeta" }
+        "400": { $ref: "#/components/responses/InvalidCursor" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "422": { $ref: "#/components/responses/Error" }
+  /admin/feedback/{feedback}/handled:
+    parameters: [{ name: feedback, in: path, required: true, schema: { type: string, format: uuid }, description: "a malformed id answers 404 feedback_not_found like an unknown one" }]
+    put:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Mark handled (repeating it is harmless)
+      responses:
+        "200": { $ref: "#/components/responses/FeedbackItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [admin]
+      security: [{ bearer: [] }]
+      summary: Back to open (repeating it is harmless)
+      responses:
+        "200": { $ref: "#/components/responses/FeedbackItem" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/AdminOnly" }
+        "404": { $ref: "#/components/responses/Error" }
   /admin/reports:
     get:
       tags: [admin]
@@ -1674,6 +1972,7 @@ paths:
       description: >
         A second report on the same target while the first is still open answers 409
         already_reported; clients show "already reported" for it (there's no lookup endpoint).
+      parameters: [{ $ref: "#/components/parameters/TurnstileToken" }]
       requestBody:
         required: true
         content:
@@ -1687,6 +1986,7 @@ paths:
                 reason: { $ref: "#/components/schemas/ReportReason" }
                 comment: { type: string, maxLength: 1000, description: "required when reason is other" }
       responses:
+        "400": { $ref: "#/components/responses/Captcha" }
         "201":
           description: Filed
           content: { application/json: { schema: { type: object, required: [data], properties: { data: { $ref: "#/components/schemas/Report" } } } } }
@@ -1696,6 +1996,7 @@ paths:
         "409": { description: "You already have an open report on it (already_reported)", content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/CaptchaUnavailable" }
 
   /resumes:
     get:

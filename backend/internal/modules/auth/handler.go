@@ -31,17 +31,30 @@ type CookieConfig struct {
 type Handler struct {
 	Svc    *Service
 	Cookie CookieConfig
+	// Captcha guards register, login and forgot-password (Turnstile); nil = off.
+	Captcha func(http.Handler) http.Handler
+}
+
+func (h *Handler) captcha() func(http.Handler) http.Handler {
+	if h.Captcha == nil {
+		return func(next http.Handler) http.Handler { return next }
+	}
+	return h.Captcha
 }
 
 // PublicRoutes are mounted under /auth (rate-limited by the router).
 func (h *Handler) PublicRoutes(r chi.Router) {
-	r.Post("/register", h.register)
-	r.Post("/login", h.login)
+	// Google sign-in already proves a person (Google's own checks), refresh/logout carry a
+	// cookie; the endpoints a bot would hammer get the CAPTCHA.
+	guarded := r.With(h.captcha())
+	guarded.Post("/register", h.register)
+	guarded.Post("/login", h.login)
 	r.Post("/google", h.google)
 	r.Post("/refresh", h.refresh)
 	r.Post("/logout", h.logout)
-	r.Post("/password/forgot", h.forgotPassword)
+	guarded.Post("/password/forgot", h.forgotPassword)
 	r.Post("/password/reset", h.resetPassword)
+	r.Post("/two-factor/verify", h.verifySecondFactor)
 }
 
 // ProtectedRoutes are mounted under /auth behind RequireAuth.
@@ -58,6 +71,13 @@ func (h *Handler) MeRoutes(r chi.Router) {
 	r.Get("/sessions", h.listSessions)
 	r.Delete("/sessions/{id}", h.revokeSession)
 	r.Put("/password", h.changePassword)
+	r.Route("/two-factor", func(r chi.Router) {
+		r.Get("/", h.twoFactorStatus)
+		r.Post("/setup", h.twoFactorSetup)
+		r.Post("/confirm", h.twoFactorConfirm)
+		r.Post("/recovery-codes", h.twoFactorRecoveryCodes)
+		r.Post("/disable", h.twoFactorDisable)
+	})
 }
 
 // ---- DTOs ------------------------------------------------------------------------------
@@ -336,6 +356,16 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) writeAuth(w http.ResponseWriter, r *http.Request, res *Result, err error, status int) {
 	if err != nil {
 		response.Error(w, r, err)
+		return
+	}
+	if res.Challenge != nil {
+		// Password accepted; the session starts after POST /auth/two-factor/verify.
+		w.Header().Set("Cache-Control", "no-store")
+		response.JSON(w, http.StatusAccepted, twoFactorChallengeResponse{
+			TwoFactorRequired: true,
+			ChallengeToken:    res.Challenge.Token,
+			ExpiresIn:         max(0, int(time.Until(res.Challenge.ExpiresAt).Seconds())),
+		})
 		return
 	}
 	out := authResponse{

@@ -19,6 +19,8 @@ export interface paths {
                 query?: never;
                 header?: {
                     "X-Client-Type"?: components["parameters"]["ClientType"];
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
                 };
                 path?: never;
                 cookie?: never;
@@ -39,8 +41,10 @@ export interface paths {
             };
             responses: {
                 201: components["responses"]["Auth"];
+                400: components["responses"]["Captcha"];
                 409: components["responses"]["Error"];
                 422: components["responses"]["Error"];
+                503: components["responses"]["CaptchaUnavailable"];
             };
         };
         delete?: never;
@@ -64,6 +68,8 @@ export interface paths {
                 query?: never;
                 header?: {
                     "X-Client-Type"?: components["parameters"]["ClientType"];
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
                 };
                 path?: never;
                 cookie?: never;
@@ -79,8 +85,75 @@ export interface paths {
             };
             responses: {
                 200: components["responses"]["Auth"];
+                202: components["responses"]["TwoFactorChallenge"];
+                400: components["responses"]["Captcha"];
                 401: components["responses"]["Error"];
                 403: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                503: components["responses"]["CaptchaUnavailable"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/two-factor/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Second step of a sign-in answered with 202 (two_factor_required)
+         * @description Send either `code` (6 digits from the authenticator app) or `recovery_code`. A code
+         *     works once (replays fail), wrong codes count against a per-user budget (10 per 15
+         *     minutes, then 429) and a challenge allows 5 attempts.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    "X-Client-Type"?: components["parameters"]["ClientType"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        challenge_token: string;
+                        code?: string;
+                        recovery_code?: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["Auth"];
+                /** @description Wrong or already used code (two_factor_code_invalid) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Challenge expired, used or out of attempts (two_factor_challenge_invalid): sign in again */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                403: components["responses"]["Error"];
+                422: components["responses"]["Error"];
                 429: components["responses"]["Error"];
             };
         };
@@ -124,6 +197,7 @@ export interface paths {
             };
             responses: {
                 200: components["responses"]["Auth"];
+                202: components["responses"]["TwoFactorChallenge"];
                 401: components["responses"]["Error"];
             };
         };
@@ -152,7 +226,13 @@ export interface paths {
          *     - web: `refresh_race` (401). A parallel tab already rotated the cookie; retry once with
          *       the cookie it set.
          *     - mobile: the previous token gets a fresh pair (a lost response is recoverable) and the
-         *       token from the lost response stops working. Clients must not refresh in parallel.
+         *       token from the lost response stops working. Clients must not refresh in parallel;
+         *       `refresh_race` can still reach a mobile client in the rare case of two retries
+         *       colliding, and the client should retry once.
+         *
+         *     Trade-off: for those 30 seconds a copied previous token is honoured instead of
+         *     revoking the session (re-rotations are logged with the session id for auditing);
+         *     outside the window, reuse revokes the session as before.
          *
          *     Errors and what clients should do:
          *     - `invalid_refresh_token` (401): unknown, expired or revoked. Sign out locally.
@@ -270,7 +350,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -284,6 +367,8 @@ export interface paths {
             };
             responses: {
                 204: components["responses"]["NoContent"];
+                400: components["responses"]["Captcha"];
+                503: components["responses"]["CaptchaUnavailable"];
             };
         };
         delete?: never;
@@ -561,6 +646,273 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/two-factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Two-factor sign-in status */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Status */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["TwoFactorStatus"];
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/two-factor/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Issue a TOTP secret (administrators only); replaces an unconfirmed one */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Secret for the authenticator app (QR from otpauth_uri) */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** @description base32 for manual entry */
+                                secret: string;
+                                otpauth_uri: string;
+                            };
+                        };
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Not an administrator (two_factor_admins_only) */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                /** @description Already on (two_factor_already_enabled) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/two-factor/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn two-factor sign-in on with a code from the app; returns recovery codes */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        code: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["RecoveryCodes"];
+                /** @description Wrong code (two_factor_code_invalid) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description No pending setup (two_factor_not_enabled) or already on (two_factor_already_enabled) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/two-factor/recovery-codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Replace all recovery codes (password, if the account has one, and a current code) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        password?: string;
+                        code: string;
+                    };
+                };
+            };
+            responses: {
+                200: components["responses"]["RecoveryCodes"];
+                /** @description wrong_password or two_factor_code_invalid */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Not on (two_factor_not_enabled) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/two-factor/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn two-factor sign-in off (password and a current code); admins then lose /admin until they enroll again */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        password?: string;
+                        code: string;
+                    };
+                };
+            };
+            responses: {
+                204: components["responses"]["NoContent"];
+                /** @description wrong_password or two_factor_code_invalid */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                /** @description Not on (two_factor_not_enabled) */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Error"];
+                    };
+                };
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -2278,6 +2630,174 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send feedback to the team ("Fikr bildirish"; 5 per hour per IP)
+         * @description Open to everyone; when signed in the message is linked to the account. Administrators read it in GET /admin/feedback; a team Telegram chat is notified when configured.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
+                };
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        category: components["schemas"]["FeedbackCategory"];
+                        message: string;
+                        /** @description optional email, phone or Telegram for a reply */
+                        contact?: string;
+                        /** @description the page the visitor was on */
+                        page_url?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Received */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: {
+                                /** Format: uuid */
+                                id: string;
+                                /** Format: date-time */
+                                created_at: string;
+                            };
+                        };
+                    };
+                };
+                400: components["responses"]["Captcha"];
+                422: components["responses"]["Error"];
+                429: components["responses"]["Error"];
+                503: components["responses"]["CaptchaUnavailable"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Feedback messages, newest first */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description anything else → 422 fields.status */
+                    status?: "open" | "handled";
+                    cursor?: components["parameters"]["Cursor"];
+                    /** @description page size for every admin list */
+                    limit?: components["parameters"]["AdminLimit"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Page of feedback */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            data: components["schemas"]["Feedback"][];
+                            meta: components["schemas"]["PageMeta"];
+                        };
+                    };
+                };
+                400: components["responses"]["InvalidCursor"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/feedback/{feedback}/handled": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description a malformed id answers 404 feedback_not_found like an unknown one */
+                feedback: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark handled (repeating it is harmless) */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description a malformed id answers 404 feedback_not_found like an unknown one */
+                    feedback: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["FeedbackItem"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        /** Back to open (repeating it is harmless) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description a malformed id answers 404 feedback_not_found like an unknown one */
+                    feedback: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: components["responses"]["FeedbackItem"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["AdminOnly"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/reports": {
         parameters: {
             query?: never;
@@ -2447,7 +2967,10 @@ export interface paths {
         post: {
             parameters: {
                 query?: never;
-                header?: never;
+                header?: {
+                    /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+                    "X-Turnstile-Token"?: components["parameters"]["TurnstileToken"];
+                };
                 path?: never;
                 cookie?: never;
             };
@@ -2479,6 +3002,7 @@ export interface paths {
                         };
                     };
                 };
+                400: components["responses"]["Captcha"];
                 401: components["responses"]["Unauthorized"];
                 /** @description Your own company or its vacancy (cannot_report_own_company) */
                 403: {
@@ -2501,6 +3025,7 @@ export interface paths {
                 };
                 422: components["responses"]["Error"];
                 429: components["responses"]["Error"];
+                503: components["responses"]["CaptchaUnavailable"];
             };
         };
         delete?: never;
@@ -4249,6 +4774,32 @@ export interface components {
             /** Format: date-time */
             created_at: string;
         };
+        TwoFactorChallenge: {
+            data: {
+                /** @constant */
+                two_factor_required: true;
+                /** @description Send it to POST /auth/two-factor/verify with a code; single use, 5 attempts. */
+                challenge_token: string;
+                /** @description seconds */
+                expires_in: number;
+            };
+        };
+        TwoFactorStatus: {
+            /** @description This user must turn it on before using /admin (administrators while ADMIN_2FA_REQUIRED is on). */
+            required: boolean;
+            enabled: boolean;
+            /** @description A secret was issued by /setup but not confirmed yet. */
+            pending: boolean;
+            /** Format: date-time */
+            confirmed_at: string | null;
+            recovery_codes_left: number;
+        };
+        RecoveryCodes: {
+            data: {
+                /** @description Shown once. Each works one time instead of an app code; case, dashes and spaces are ignored. */
+                recovery_codes: string[];
+            };
+        };
         Auth: {
             data?: {
                 user?: components["schemas"]["User"];
@@ -4441,6 +4992,31 @@ export interface components {
                 /** @description user-added skills nobody has reviewed yet (not offered in autocomplete) */
                 unverified: number;
             };
+            feedback: {
+                /** @description feedback messages nobody has marked handled */
+                unhandled: number;
+            };
+        };
+        /** @enum {string} */
+        FeedbackCategory: "bug" | "idea" | "other";
+        Feedback: {
+            /** Format: uuid */
+            id: string;
+            category: components["schemas"]["FeedbackCategory"];
+            message: string;
+            contact: string | null;
+            page_url: string | null;
+            /** @description the signed-in sender, if any */
+            user: {
+                /** Format: uuid */
+                id: string;
+                name: string | null;
+                email: string | null;
+            } | null;
+            /** Format: date-time */
+            handled_at: string | null;
+            /** Format: date-time */
+            created_at: string;
         };
         /** @description In-app notification. `payload` carries what the type needs: application.new (application_id, vacancy_title, candidate_name); application.status (application_id, vacancy_title, company_name, status); application.invited (application_id, vacancy_title, company_name); vacancy.approved (vacancy_id, vacancy_title); vacancy.rejected and vacancy.taken_down (vacancy_id, vacancy_title, reason); search.alert (search_id, search_name, count, preview); report.resolved and report.dismissed (target_type, target_name). */
         Notification: {
@@ -4920,6 +5496,53 @@ export interface components {
                 };
             };
         };
+        /** @description Password accepted, but the account uses two-factor sign-in: no session yet. Complete it with POST /auth/two-factor/verify. */
+        TwoFactorChallenge: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["TwoFactorChallenge"];
+            };
+        };
+        /** @description New recovery codes (shown once) */
+        RecoveryCodes: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["RecoveryCodes"];
+            };
+        };
+        /** @description The feedback message */
+        FeedbackItem: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": {
+                    data: components["schemas"]["Feedback"];
+                };
+            };
+        };
+        /** @description Turnstile check missing or failed (captcha_required, captcha_invalid) */
+        Captcha: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Cloudflare Turnstile could not be reached (captcha_unavailable); try again later */
+        CaptchaUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Missing, invalid, expired or revoked access token (unauthorized) */
         Unauthorized: {
             headers: {
@@ -4929,7 +5552,7 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Signed in but not an admin (forbidden) */
+        /** @description Signed in but not an admin (forbidden), or an admin without two-factor sign-in while ADMIN_2FA_REQUIRED is on (two_factor_setup_required: enroll under /me/two-factor first) */
         AdminOnly: {
             headers: {
                 [name: string]: unknown;
@@ -5048,6 +5671,8 @@ export interface components {
         CompanyRef: string;
         /** @description user id; a malformed id answers 404 user_not_found like an unknown one */
         UserRef: string;
+        /** @description Cloudflare Turnstile token from the web widget. Required from web clients while the server has TURNSTILE_SECRET_KEY set (missing → 400 captcha_required, rejected → 400 captcha_invalid, Cloudflare unreachable → 503 captcha_unavailable). Requests with X-Client-Type android|ios skip it but share a stricter per-IP limit (10 per 10 minutes). */
+        TurnstileToken: string;
         /** @description page size for every admin list */
         AdminLimit: number;
         /** @description skill id; a malformed id answers 404 skill_not_found like an unknown one */

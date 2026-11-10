@@ -717,6 +717,67 @@ func AllExperienceLevelValues() []ExperienceLevel {
 	}
 }
 
+type FeedbackCategory string
+
+const (
+	FeedbackCategoryBug   FeedbackCategory = "bug"
+	FeedbackCategoryIdea  FeedbackCategory = "idea"
+	FeedbackCategoryOther FeedbackCategory = "other"
+)
+
+func (e *FeedbackCategory) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = FeedbackCategory(s)
+	case string:
+		*e = FeedbackCategory(s)
+	default:
+		return fmt.Errorf("unsupported scan type for FeedbackCategory: %T", src)
+	}
+	return nil
+}
+
+type NullFeedbackCategory struct {
+	FeedbackCategory FeedbackCategory
+	Valid            bool // Valid is true if FeedbackCategory is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullFeedbackCategory) Scan(value interface{}) error {
+	if value == nil {
+		ns.FeedbackCategory, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.FeedbackCategory.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullFeedbackCategory) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.FeedbackCategory), nil
+}
+
+func (e FeedbackCategory) Valid() bool {
+	switch e {
+	case FeedbackCategoryBug,
+		FeedbackCategoryIdea,
+		FeedbackCategoryOther:
+		return true
+	}
+	return false
+}
+
+func AllFeedbackCategoryValues() []FeedbackCategory {
+	return []FeedbackCategory{
+		FeedbackCategoryBug,
+		FeedbackCategoryIdea,
+		FeedbackCategoryOther,
+	}
+}
+
 type FilePurpose string
 
 const (
@@ -1719,6 +1780,19 @@ type DeviceToken struct {
 	LastSeenAt time.Time
 }
 
+type Feedback struct {
+	ID        uuid.UUID
+	UserID    *uuid.UUID
+	Category  FeedbackCategory
+	Message   string
+	Contact   *string
+	PageUrl   *string
+	Ip        *netip.Addr
+	HandledAt *time.Time
+	HandledBy *uuid.UUID
+	CreatedAt time.Time
+}
+
 type File struct {
 	ID          uuid.UUID
 	OwnerID     uuid.UUID
@@ -1919,6 +1993,12 @@ type User struct {
 	NotifyTelegram  bool
 }
 
+type UserRecoveryCode struct {
+	UserID   uuid.UUID
+	CodeHash []byte
+	UsedAt   *time.Time
+}
+
 type UserSession struct {
 	ID              uuid.UUID
 	UserID          uuid.UUID
@@ -1931,6 +2011,14 @@ type UserSession struct {
 	LastUsedAt      time.Time
 	ExpiresAt       time.Time
 	RevokedAt       *time.Time
+}
+
+type UserTotp struct {
+	UserID      uuid.UUID
+	SecretEnc   []byte
+	ConfirmedAt *time.Time
+	LastStep    int64
+	CreatedAt   time.Time
 }
 
 type Vacancy struct {

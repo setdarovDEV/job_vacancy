@@ -36,6 +36,10 @@ type StatsDTO struct {
 		// User-added skills nobody has reviewed yet (not offered in autocomplete).
 		Unverified int32 `json:"unverified"`
 	} `json:"skills"`
+	Feedback struct {
+		// Messages from "Fikr bildirish" nobody has marked handled.
+		Unhandled int32 `json:"unhandled"`
+	} `json:"feedback"`
 }
 
 func statsDTO(r gen.AdminStatsRow) StatsDTO {
@@ -46,6 +50,7 @@ func statsDTO(r gen.AdminStatsRow) StatsDTO {
 	d.Applications.SentLast7d = r.ApplicationsSentLast7d
 	d.Reports.OpenTargets = r.ReportsOpenTargets
 	d.Skills.Unverified = r.SkillsUnverified
+	d.Feedback.Unhandled = r.FeedbackUnhandled
 	return d
 }
 

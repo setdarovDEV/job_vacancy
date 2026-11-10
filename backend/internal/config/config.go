@@ -26,6 +26,19 @@ type Config struct {
 	S3       S3
 	AI       AI
 	Log      Log
+	Sentry   Sentry
+	Captcha  Captcha
+}
+
+// Sentry error tracking; off while DSN is empty.
+type Sentry struct {
+	DSN     string `env:"SENTRY_DSN"`
+	Release string `env:"SENTRY_RELEASE"` // e.g. the deployed image tag
+}
+
+// Captcha is Cloudflare Turnstile; off while the secret is empty.
+type Captcha struct {
+	TurnstileSecret string `env:"TURNSTILE_SECRET_KEY"`
 }
 
 type HTTP struct {
@@ -63,6 +76,12 @@ type Auth struct {
 	CookieSecure bool   `env:"AUTH_COOKIE_SECURE" envDefault:"false"`
 	// Google OAuth client IDs whose ID tokens we accept (web, android, ios).
 	GoogleClientIDs []string `env:"GOOGLE_CLIENT_IDS" envSeparator:","`
+	// Key that seals TOTP secrets at rest (>= 32 characters). Empty: derived from JWT_SECRET,
+	// which then must never change, or every enrolled admin has to enroll again.
+	TOTPEncKey string `env:"TOTP_ENC_KEY"`
+	// Admins must have two-factor sign-in on to use /admin. Only for local development can
+	// it be turned off (the e2e suites sign in as freshly made admins).
+	Admin2FARequired bool `env:"ADMIN_2FA_REQUIRED" envDefault:"true"`
 }
 
 type SMTP struct {
@@ -84,6 +103,8 @@ type Telegram struct {
 	BotUsername string `env:"TELEGRAM_BOT_USERNAME" envDefault:"jobvacancy_uz_bot"`
 	// Random string Telegram echoes back on every webhook call.
 	WebhookSecret string `env:"TELEGRAM_WEBHOOK_SECRET" envDefault:"dev-webhook-secret"`
+	// Team chat that receives new feedback (needs the bot token); 0 = off.
+	FeedbackChatID int64 `env:"FEEDBACK_TELEGRAM_CHAT_ID"`
 }
 
 // S3 is any S3-compatible object store (MinIO in dev and on the VPS).
@@ -133,9 +154,15 @@ func (c *Config) validate() error {
 	if len(c.Auth.JWTSecret) < 32 {
 		return errors.New("JWT_SECRET must be at least 32 characters")
 	}
+	if c.Auth.TOTPEncKey != "" && len(c.Auth.TOTPEncKey) < 32 {
+		return errors.New("TOTP_ENC_KEY must be at least 32 characters")
+	}
 	if c.IsProduction() {
 		if !c.Auth.CookieSecure {
 			return errors.New("AUTH_COOKIE_SECURE must be true in production")
+		}
+		if !c.Auth.Admin2FARequired {
+			return errors.New("ADMIN_2FA_REQUIRED cannot be turned off in production")
 		}
 	}
 	return nil

@@ -4,6 +4,9 @@ import { useSearchParams } from "react-router";
 
 import { errorText } from "~/shared/api/errors";
 import { useSession } from "~/shared/auth/session";
+import { TwoFactorEnroll } from "~/shared/account/two-factor/Enroll";
+import { useTwoFactorStatus } from "~/shared/account/two-factor/Settings";
+import { Skeleton } from "~/shared/ui/Skeleton";
 import { useTranslation } from "~/shared/i18n/i18n";
 import { ApiFailure } from "~/shared/query/query";
 import { Button } from "~/shared/ui/Button";
@@ -19,8 +22,21 @@ export const MIN_REASON_LENGTH = 5;
 export function AdminOnly({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
   const { user } = useSession();
-  if (user?.role === "admin") return <>{children}</>;
-  return <EmptyState icon={<ShieldAlert className="size-6" />} title={t("admin.onlyAdmins")} />;
+  const isAdmin = user?.role === "admin";
+  const twoFactor = useTwoFactorStatus(isAdmin);
+  if (!isAdmin) return <EmptyState icon={<ShieldAlert className="size-6" />} title={t("admin.onlyAdmins")} />;
+  if (twoFactor.isPending) return <Skeleton className="h-64 rounded-sheet" />;
+  // The API refuses /admin to admins without 2FA (two_factor_setup_required); enroll here.
+  if (twoFactor.data?.required && !twoFactor.data.enabled) {
+    return (
+      <div className="rounded-sheet border border-line bg-surface px-5 py-8 md:px-8">
+        <h1 className="font-display text-xl font-semibold text-ink">{t("twoFactor.enrollTitle")}</h1>
+        <p className="mt-2 max-w-prose text-ink-2">{t("twoFactor.enrollBody")} {t("twoFactor.intro")}</p>
+        <div className="mt-6"><TwoFactorEnroll /></div>
+      </div>
+    );
+  }
+  return <>{children}</>;
 }
 
 /** Filters kept in the URL (shareable, survive reload); empty values are dropped. */

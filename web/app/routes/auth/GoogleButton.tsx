@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { api } from "~/shared/api/client";
 import { signedIn } from "~/shared/auth/session";
+import { challengeOf, type TwoFactorChallenge } from "./SecondFactorStep";
 import { useLocale } from "~/shared/i18n/hooks";
 import { useTranslation } from "~/shared/i18n/i18n";
 
@@ -17,7 +18,13 @@ declare global {
  * Google Identity Services button. Rendered only when VITE_GOOGLE_CLIENT_ID is set; the
  * script loads when the button mounts, not on every page.
  */
-export function GoogleButton({ role, onDone, onError }: { role?: "seeker" | "employer"; onDone: (isNew: boolean) => void; onError: (msg: string) => void }) {
+export function GoogleButton({ role, onDone, onError, onChallenge }: {
+  role?: "seeker" | "employer";
+  onDone: (isNew: boolean) => void;
+  onError: (msg: string) => void;
+  /** The account has two-factor sign-in on: continue with the code step. */
+  onChallenge?: (c: TwoFactorChallenge) => void;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const locale = useLocale();
   const { t } = useTranslation();
@@ -29,7 +36,11 @@ export function GoogleButton({ role, onDone, onError }: { role?: "seeker" | "emp
         client_id: clientId,
         callback: async ({ credential }: { credential: string }) => {
           const res = await api.POST("/auth/google", { body: { id_token: credential, role, locale } });
-          if (res.data?.data) {
+          const challenge = challengeOf(res);
+          if (challenge) {
+            if (onChallenge) onChallenge(challenge);
+            else onError(t("twoFactor.loginHint"));
+          } else if (res.data?.data) {
             signedIn(res.data.data as never);
             onDone(Boolean((res.data.data as { is_new_user?: boolean }).is_new_user));
           } else onError(t("apiErrors.invalid_google_token"));
@@ -43,7 +54,7 @@ export function GoogleButton({ role, onDone, onError }: { role?: "seeker" | "emp
     s.async = true;
     s.onload = init;
     document.head.appendChild(s);
-  }, [role, locale, onDone, onError, t]);
+  }, [role, locale, onDone, onError, onChallenge, t]);
   if (!clientId) return null;
   return (
     <>

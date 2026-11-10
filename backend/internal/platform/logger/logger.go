@@ -7,7 +7,8 @@ import (
 	"strings"
 )
 
-func New(level, format string) *slog.Logger {
+// New builds the logger; wrap decorates the handler (e.g. errtrack.Wrap for Sentry).
+func New(level, format string, wrap ...func(slog.Handler) slog.Handler) *slog.Logger {
 	var lvl slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -26,6 +27,9 @@ func New(level, format string) *slog.Logger {
 		h = slog.NewJSONHandler(os.Stdout, opts)
 	} else {
 		h = slog.NewTextHandler(os.Stdout, opts)
+	}
+	for _, w := range wrap {
+		h = w(h)
 	}
 	l := slog.New(h)
 	slog.SetDefault(l)

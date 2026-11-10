@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 
 import { AuthCard } from "./AuthCard";
 import { api } from "~/shared/api/client";
+import { useCaptcha } from "~/shared/captcha/Turnstile";
 import { CodeInput } from "~/shared/forms/CodeInput";
 import { FormError } from "~/shared/forms/FormError";
 import { PasswordInput } from "~/shared/forms/PasswordInput";
@@ -23,6 +24,7 @@ export default function ForgotPassword() {
   const locale = useLocale();
   const navigate = useNavigate();
   const { pending, error, fields, run } = useSubmit();
+  const captcha = useCaptcha();
   const [step, setStep] = useState<"email" | "reset">("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -34,13 +36,14 @@ export default function ForgotPassword() {
         footer={<LocalizedLink to="/login" className="font-medium text-lapis-ink hover:underline">{t("common.back")}</LocalizedLink>}>
         <form className="flex flex-col gap-4" onSubmit={(e) => {
           e.preventDefault();
-          void run(() => api.POST("/auth/password/forgot", { body: { email } }), () => setStep("reset"));
+          void run(() => api.POST("/auth/password/forgot", { body: { email }, headers: captcha.take() }), () => setStep("reset"));
         }}>
           <FormError>{error}</FormError>
           <Field label={t("form.email")} error={fields.email}>
             <Input type="email" autoComplete="email" required autoFocus value={email} onChange={(e) => setEmail(e.target.value)} />
           </Field>
-          <Button type="submit" size="lg" loading={pending}>{t("auth.sendCode")}</Button>
+          {captcha.widget}
+          <Button type="submit" size="lg" loading={pending} disabled={!captcha.ready}>{t("auth.sendCode")}</Button>
         </form>
       </AuthCard>
     );

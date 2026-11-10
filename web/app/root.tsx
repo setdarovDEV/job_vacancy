@@ -4,14 +4,21 @@ import { Links, Meta, Outlet, Scripts, ScrollRestoration, useRouteLoaderData } f
 import type { Route } from "./+types/root";
 import { defaultLocale, htmlLang, localeFromPath } from "./shared/i18n/config";
 import { bootstrapSession } from "./shared/auth/session";
+import { withClientAddress } from "./shared/api/forward.server";
 import { getCatalog } from "./shared/catalog/catalog.server";
 import { createT, I18nProvider } from "./shared/i18n/i18n";
 import { messagesFor } from "./shared/i18n/messages.server";
+import { Analytics } from "./shared/analytics/Analytics";
+import { reportError, startMonitoring } from "./shared/monitoring/monitoring";
+import { publicRuntime } from "./shared/runtime/runtime.server";
 import { siteNoindex } from "./shared/seo/indexing.server";
 import { parseTheme } from "./shared/theme/theme";
 import { CookieBanner, readCookieConsent } from "./shared/ui/CookieBanner";
 import { Toaster } from "./shared/ui/Toast";
 import "./styles/app.css";
+
+// Every server-side API call made while handling this request carries the visitor's address.
+export const middleware: Route.MiddlewareFunction[] = [({ request }, next) => withClientAddress(request, next)];
 
 export async function loader({ request }: Route.LoaderArgs) {
   const locale = localeFromPath(new URL(request.url).pathname);
@@ -25,6 +32,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     hasSession: /(?:^|;\s*)jv_auth=1/.test(cookie ?? ""),
     messages: messagesFor(locale),
     noindex: siteNoindex,
+    runtime: publicRuntime,
   };
 }
 
@@ -59,19 +67,22 @@ export function Layout({ children }: { children: React.ReactNode }) {
 // Only what every page needs lives here. Data-heavy areas (dashboards, chat) bring their
 // own providers, so the public pages stay light.
 export default function App({ loaderData }: Route.ComponentProps) {
-  const { locale, messages, cookieConsent } = loaderData;
+  const { locale, messages, cookieConsent, runtime } = loaderData;
   useEffect(() => bootstrapSession(), []);
+  useEffect(() => startMonitoring(runtime), [runtime]);
   return (
     <I18nProvider messages={messages} locale={locale}>
       <Outlet />
       <CookieBanner initial={cookieConsent} />
+      <Analytics initialConsent={cookieConsent} />
       <Toaster closeLabel={createT(messages, locale)("common.close")} />
     </I18nProvider>
   );
 }
 
 // Last resort (e.g. the root loader itself failed): no translations are available here.
-export function ErrorBoundary() {
+export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {
+  useEffect(() => reportError(error), [error]);
   return (
     <main className="container-page grid min-h-dvh place-content-center gap-3 text-center">
       <h1 className="font-display text-2xl font-semibold">Job Vacancy</h1>

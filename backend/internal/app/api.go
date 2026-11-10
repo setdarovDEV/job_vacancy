@@ -19,6 +19,7 @@ import (
 	"jobvacancy.uz/backend/internal/modules/catalog"
 	"jobvacancy.uz/backend/internal/modules/chat"
 	"jobvacancy.uz/backend/internal/modules/company"
+	"jobvacancy.uz/backend/internal/modules/feedback"
 	"jobvacancy.uz/backend/internal/modules/file"
 	"jobvacancy.uz/backend/internal/modules/notification"
 	"jobvacancy.uz/backend/internal/modules/report"
@@ -28,12 +29,14 @@ import (
 	"jobvacancy.uz/backend/internal/modules/vacancy"
 	"jobvacancy.uz/backend/internal/pkg/otp"
 	"jobvacancy.uz/backend/internal/pkg/ratelimit"
+	"jobvacancy.uz/backend/internal/pkg/sealbox"
 	"jobvacancy.uz/backend/internal/pkg/token"
 	"jobvacancy.uz/backend/internal/platform/metrics"
 	"jobvacancy.uz/backend/internal/platform/postgres"
 	"jobvacancy.uz/backend/internal/platform/redis"
 	"jobvacancy.uz/backend/internal/platform/storage"
 	"jobvacancy.uz/backend/internal/platform/telegram"
+	"jobvacancy.uz/backend/internal/platform/turnstile"
 	"jobvacancy.uz/backend/internal/realtime"
 	httpapi "jobvacancy.uz/backend/internal/transport/http"
 	mw "jobvacancy.uz/backend/internal/transport/http/middleware"
@@ -85,6 +88,20 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	revoked := auth.NewRevocationStore(rdb, cfg.Auth.AccessTokenTTL)
 	limiter := ratelimit.New(rdb)
 
+	totpKey := cfg.Auth.TOTPEncKey
+	if totpKey == "" {
+		totpKey = cfg.Auth.JWTSecret
+	}
+	totpBox, err := sealbox.New([]byte(totpKey), "totp")
+	if err != nil {
+		return err
+	}
+	secondFactor := &auth.SecondFactor{
+		Pool: pool, Q: q, Box: totpBox, Challenges: &auth.ChallengeStore{RDB: rdb},
+		Failures: &auth.FailureBudget{RDB: rdb}, Issuer: cfg.AppName,
+		AdminRequired: cfg.Auth.Admin2FARequired,
+	}
+
 	authSvc := &auth.Service{
 		Q:              q,
 		Tokens:         tokens,
@@ -97,6 +114,7 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 		RefreshTTL:     cfg.Auth.RefreshTokenTTL,
 		Log:            log,
 		ExposeDevCodes: cfg.Telegram.GatewayToken == "" && !cfg.IsProduction(),
+		MFA:            secondFactor,
 	}
 
 	var bot telegram.Bot = telegram.LogBot{Log: log}
@@ -107,6 +125,18 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	}
 	publisher := &realtime.Publisher{RDB: rdb}
 	notifySvc := &notification.Service{Q: q, Publisher: publisher, Jobs: enq, Log: log}
+
+	// Turnstile on the endpoints bots like (off without TURNSTILE_SECRET_KEY).
+	var verifier mw.CaptchaVerifier
+	if cfg.Captcha.TurnstileSecret != "" {
+		verifier = turnstile.New(cfg.Captcha.TurnstileSecret)
+	}
+	captcha := mw.Captcha(verifier, limiter, log)
+
+	feedbackSvc := &feedback.Service{Store: q, Log: log}
+	if cfg.Telegram.BotToken != "" && cfg.Telegram.FeedbackChatID != 0 {
+		feedbackSvc.Notify = feedback.TelegramNotifier{Bot: bot, ChatID: cfg.Telegram.FeedbackChatID, WebURL: cfg.WebURL, Log: log}
+	}
 
 	catalogSvc := &catalog.Service{Q: q, Log: log}
 	// Skill renames/merges/deletes enqueue their search refresh in the same transaction.
@@ -146,14 +176,17 @@ func RunAPI(ctx context.Context, cfg *config.Config, log *slog.Logger) error {
 	aiSvc := &ai.Service{Q: q, Provider: aiProvider, Model: cfg.AI.Model, MaxTokens: cfg.AI.MaxTokens, Log: log}
 
 	handler := httpapi.NewRouter(httpapi.Deps{
-		Log:         log,
-		DB:          pool,
-		Redis:       rdb,
-		Limiter:     limiter,
-		Auth:        &mw.Authenticator{Tokens: tokens, Revoked: revoked},
-		CORSOrigins: cfg.HTTP.CORSOrigins,
-		TrustProxy:  cfg.HTTP.TrustProxy,
-		AuthHandler: &auth.Handler{Svc: authSvc, Cookie: auth.CookieConfig{
+		Log:               log,
+		DB:                pool,
+		Redis:             rdb,
+		Limiter:           limiter,
+		Auth:              &mw.Authenticator{Tokens: tokens, Revoked: revoked},
+		CORSOrigins:       cfg.HTTP.CORSOrigins,
+		TrustProxy:        cfg.HTTP.TrustProxy,
+		AdminSecondFactor: secondFactor.RequireEnrolled(),
+		Captcha:           captcha,
+		FeedbackHandler:   &feedback.Handler{Svc: feedbackSvc},
+		AuthHandler: &auth.Handler{Svc: authSvc, Captcha: captcha, Cookie: auth.CookieConfig{
 			Domain: cfg.Auth.CookieDomain, Secure: cfg.Auth.CookieSecure,
 		}},
 		UserHandler:    &user.Handler{Q: q},

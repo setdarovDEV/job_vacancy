@@ -1,66 +1,20 @@
-import { useEffect, useState } from "react";
+import { parseConsent, setConsent, useConsent, type CookieConsent } from "../consent/consent";
 import { useTranslation } from "../i18n/i18n";
 import { LocalizedLink } from "../i18n/hooks";
 import { Button } from "./Button";
 
-export type CookieConsent = "essential" | "all" | null;
-
-const COOKIE_NAME = "jv_cookie_consent";
-const ONE_YEAR = 60 * 60 * 24 * 365;
-
-function parseConsent(cookie: string | null): CookieConsent {
-  if (!cookie) return null;
-  const match = cookie.match(new RegExp(`(?:^|;)\\s*${COOKIE_NAME}=([^;]+)`));
-  const value = match?.[1];
-  if (value === "all" || value === "essential") return value;
-  return null;
-}
-
-function setConsent(value: CookieConsent) {
-  if (typeof document === "undefined") return;
-  const secure = location.protocol === "https:" ? "; Secure" : "";
-  const expires = value ? `; Max-Age=${ONE_YEAR}` : "; Max-Age=0";
-  document.cookie = `${COOKIE_NAME}=${value ?? ""}; Path=/; SameSite=Lax${secure}${expires}`;
-  try {
-    if (value) localStorage.setItem(COOKIE_NAME, value);
-    else localStorage.removeItem(COOKIE_NAME);
-  } catch {
-    // ignore storage errors
-  }
-}
+export type { CookieConsent };
 
 export function readCookieConsent(cookie: string | null): CookieConsent {
   return parseConsent(cookie);
 }
 
+/** Asks once; "Cookie settings" in the footer clears the choice and brings it back. */
 export function CookieBanner({ initial }: { initial: CookieConsent }) {
   const { t } = useTranslation();
-  const [consent, setLocalConsent] = useState<CookieConsent>(initial);
-
-  // Sync with client-side cookie/localStorage on mount in case the user
-  // already interacted on another tab or after the SSR shell was rendered.
-  useEffect(() => {
-    const client = parseConsent(document.cookie);
-    if (client) setLocalConsent(client);
-    else {
-      try {
-        const ls = localStorage.getItem(COOKIE_NAME);
-        if (ls === "all" || ls === "essential") {
-          setConsent(ls);
-          setLocalConsent(ls);
-        }
-      } catch {
-        // ignore
-      }
-    }
-  }, []);
-
+  const consent = useConsent(initial);
   if (consent) return null;
-
-  const accept = (value: CookieConsent) => {
-    setConsent(value);
-    setLocalConsent(value);
-  };
+  const accept = (value: CookieConsent) => setConsent(value);
 
   return (
     <div

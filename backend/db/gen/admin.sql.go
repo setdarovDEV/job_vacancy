@@ -583,7 +583,8 @@ SELECT
     (SELECT count(*) FROM vacancies WHERE status = 'moderation')::int                                           AS vacancies_pending_moderation,
     (SELECT count(*) FROM applications WHERE source = 'apply' AND created_at >= stats_period_start(7))::int    AS applications_sent_last_7d,
     (SELECT count(DISTINCT target_id) FROM reports WHERE status = 'open')::int                                  AS reports_open_targets,
-    (SELECT count(*) FROM skills WHERE NOT is_verified)::int                                                    AS skills_unverified
+    (SELECT count(*) FROM skills WHERE NOT is_verified)::int                                                    AS skills_unverified,
+    (SELECT count(*) FROM feedback WHERE handled_at IS NULL)::int                                               AS feedback_unhandled
 `
 
 type AdminStatsRow struct {
@@ -598,6 +599,7 @@ type AdminStatsRow struct {
 	ApplicationsSentLast7d     int32
 	ReportsOpenTargets         int32
 	SkillsUnverified           int32
+	FeedbackUnhandled          int32
 }
 
 // Platform administration (mounted under /admin, admins only).
@@ -620,6 +622,7 @@ func (q *Queries) AdminStats(ctx context.Context) (AdminStatsRow, error) {
 		&i.ApplicationsSentLast7d,
 		&i.ReportsOpenTargets,
 		&i.SkillsUnverified,
+		&i.FeedbackUnhandled,
 	)
 	return i, err
 }
