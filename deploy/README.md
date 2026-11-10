@@ -56,3 +56,26 @@ Required GitHub secrets for deploy:
 ## Backups
 
 The `backup` service uses `docker-volume-backup` to upload `pgdata`, `miniodata` and `redisdata` snapshots to any S3-compatible store daily at 03:00. Configure `BACKUP_S3_*` variables in `.env`.
+
+## Shared host (2.29.150.64) operations
+
+The production host also runs other projects. Its Caddy owns ports 80/443; jobvacancy only
+touches its own containers, `/etc/caddy/jobvacancy-uz.caddy` and `/srv/jobvacancy-maintenance`.
+
+| Task | Command (as root on the host) |
+|---|---|
+| Deploy | automatic on push to `main` (`.github/workflows/deploy.yml` → `scripts/deploy.sh`) |
+| Caddy site + maintenance page | `bash /opt/jobvacancy/deploy/caddy/install.sh` (validates, then graceful reload) |
+| Planned maintenance | `bash /opt/jobvacancy/deploy/caddy/maintenance.sh on` / `off` |
+| Backup now | `systemctl start jobvacancy-backup.service` (nightly at 03:30 Tashkent) |
+| Prove a backup restores | `bash /opt/jobvacancy/deploy/backup/restore-test.sh` (throwaway container, compares row counts) |
+| Demo data | `ctl seed-demo` / `ctl purge-demo` (see backend/test/e2e/README.md) |
+
+Backups live in `/var/backups/jobvacancy/<UTC stamp>/` (14 days): `db.dump` (pg_dump -Fc),
+`globals.sql`, file-store volume archives and `SHA256SUMS`. To copy them off the host, put
+`OFFSITE_CMD=...` in `/etc/jobvacancy-backup.env` (it gets the run directory as `$1`).
+Restore for real: stop api/worker, `pg_restore --clean --if-exists -d <db> db.dump` inside the
+postgres container, start them again.
+
+While the site holds demo data, `SITE_NOINDEX=1` in `nginx/.env` keeps it out of search engines;
+remove it (and run `ctl purge-demo`) for the real launch.

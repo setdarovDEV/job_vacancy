@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the jobvacancy backup every night
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 Asia/Tashkent
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

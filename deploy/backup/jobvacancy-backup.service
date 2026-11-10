@@ -1,0 +1,11 @@
+[Unit]
+Description=jobvacancy nightly backup (Postgres + file store)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/jobvacancy-backup.env
+ExecStart=/usr/bin/bash /opt/jobvacancy/deploy/backup/backup.sh
+Nice=10
+IOSchedulingClass=idle

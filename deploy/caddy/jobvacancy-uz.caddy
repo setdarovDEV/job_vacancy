@@ -1,0 +1,66 @@
+# jobvacancy.uz on the shared host's Caddy. Source of truth for /etc/caddy/jobvacancy-uz.caddy
+# (imported from /etc/caddy/Caddyfile; the other sites there are not ours). Install with
+# deploy/caddy/install.sh, which validates the whole Caddyfile before a graceful reload.
+
+www.jobvacancy.uz {
+    redir https://jobvacancy.uz{uri} permanent
+}
+
+jobvacancy.uz {
+    encode zstd gzip
+
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Chat records voice messages and shares location; nothing else needs devices.
+        Permissions-Policy "camera=(), microphone=(self), geolocation=(self), payment=(), usb=()"
+        -Server
+    }
+
+    # Planned maintenance: `deploy/caddy/maintenance.sh on|off` creates/removes this flag file.
+    @maintenance file /srv/jobvacancy-maintenance/enabled
+    handle @maintenance {
+        header Retry-After "300"
+        root * /srv/jobvacancy-maintenance
+        rewrite * /index.html
+        file_server {
+            status 503
+        }
+    }
+
+    @media path /media/*
+    handle @media {
+        uri strip_prefix /media
+        rewrite * /jv-public{uri}
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle_path /jv-public/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle_path /jv-private/* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    # API and its WebSocket (/api/v1/ws); Caddy upgrades WebSockets on its own.
+    handle /api/v1/* {
+        reverse_proxy 127.0.0.1:8090
+    }
+
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+
+    # Backend down or restarting: the same maintenance page instead of a bare 502.
+    handle_errors 502 503 504 {
+        header Retry-After "60"
+        root * /srv/jobvacancy-maintenance
+        rewrite * /index.html
+        file_server {
+            status {err.status_code}
+        }
+    }
+}
