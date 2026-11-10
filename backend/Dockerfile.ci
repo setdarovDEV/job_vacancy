@@ -1,0 +1,8 @@
+# CI image: the binaries are compiled on the GitHub runner (with its Go build cache) and only
+# copied here, so an image build takes seconds instead of a full in-Docker compile.
+# Local builds keep using the self-contained Dockerfile.
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY dist/ /app/
+USER nonroot:nonroot
+EXPOSE 8090
+ENTRYPOINT ["/app/api"]

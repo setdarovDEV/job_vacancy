@@ -48,3 +48,4 @@ ruvector.db
 mobile/android/app/google-services.json
 mobile/ios/Runner/GoogleService-Info.plist
 .claude/
+backend/dist/
