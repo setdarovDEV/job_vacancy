@@ -4,6 +4,8 @@
 //	ctl reindex-search
 //	ctl run-alerts
 //	ctl telegram-webhook <https://jobvacancy.uz/api/v1/telegram/webhook>
+//	ctl seed-demo [--reset]   realistic demo data (all demo emails end with @demo.uz)
+//	ctl purge-demo            remove exactly that demo data
 package main
 
 import (
@@ -39,7 +41,9 @@ const usage = `usage:
   ctl set-role <email> <seeker|employer|admin>
   ctl reindex-search
   ctl run-alerts
-  ctl telegram-webhook <url>`
+  ctl telegram-webhook <url>
+  ctl seed-demo [--reset]
+  ctl purge-demo`
 
 func run(args []string) error {
 	if len(args) == 0 {
@@ -74,6 +78,20 @@ func run(args []string) error {
 		checked, alerted, err := svc.RunAlerts(ctx)
 		fmt.Printf("checked %d saved searches, alerted %d\n", checked, alerted)
 		return err
+	case args[0] == "seed-demo" && (len(args) == 1 || (len(args) == 2 && args[1] == "--reset")):
+		rdb, err := redis.New(ctx, cfg.Redis.URL)
+		if err != nil {
+			return err
+		}
+		defer rdb.Close()
+		return seedDemo(ctx, pool, rdb, len(args) == 2)
+	case args[0] == "purge-demo" && len(args) == 1:
+		rdb, err := redis.New(ctx, cfg.Redis.URL)
+		if err != nil {
+			return err
+		}
+		defer rdb.Close()
+		return purgeDemo(ctx, pool, rdb)
 	case args[0] == "telegram-webhook" && len(args) == 2:
 		if cfg.Telegram.BotToken == "" {
 			return errors.New("TELEGRAM_BOT_TOKEN is not set")
