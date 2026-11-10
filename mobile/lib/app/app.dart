@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/l10n/l10n.dart';
+import '../core/notifications/push_notification_service.dart';
 import '../core/preferences.dart';
-import 'router.dart';
 import '../core/theme/app_theme.dart';
+import 'push_token_registrar.dart';
+import 'router.dart';
 
 class JobVacancyApp extends ConsumerWidget {
   const JobVacancyApp({super.key});
@@ -12,6 +16,9 @@ class JobVacancyApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final chosen = ref.watch(languageProvider);
+    // Keep push token registration alive for the lifetime of the app.
+    ref.watch(pushTokenRegistrarProvider);
+    unawaited(ref.read(pushNotificationServiceProvider).initialize());
     return MaterialApp.router(
       title: 'Job Vacancy',
       debugShowCheckedModeBanner: false,

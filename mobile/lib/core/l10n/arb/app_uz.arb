@@ -1,5 +1,54 @@
 {
   "@@locale": "uz",
+  "@authResendIn": {
+    "placeholders": {
+      "s": {
+        "type": "String"
+      }
+    }
+  },
+  "@authResetBody": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "@authVerifyBody": {
+    "placeholders": {
+      "email": {
+        "type": "String"
+      }
+    }
+  },
+  "@authWelcome": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@errorsRateLimited": {
+    "placeholders": {
+      "seconds": {
+        "type": "String"
+      }
+    }
+  },
+  "@settingsPhoneCodeSent": {
+    "placeholders": {
+      "phone": {
+        "type": "String"
+      }
+    }
+  },
+  "@settingsTelegramOn": {
+    "placeholders": {
+      "bot": {
+        "type": "String"
+      }
+    }
+  },
   "accountCandidates": "Nomzodlar qidirish",
   "accountDashboard": "Kabinet",
   "accountMenu": "Hisob menyusi",
@@ -20,6 +69,54 @@
   "appUnverified": "Tasdiqlanmagan",
   "appWelcomeBody": "Toshkentdan Nukusgacha, kassirdan dasturchigacha. Vakansiyalar har kuni yangilanadi.",
   "appWelcomeTitle": "Ish va xodimlar bir joyda",
+  "applicationContactNotVerified": "Aloqani tasdiqlang",
+  "applicationContactNotVerifiedHint": "Ariza yuborish uchun email yoki telefon raqamingizni tasdiqlang",
+  "applicationCoverLetter": "Shaxsiy xat",
+  "applicationHistory": "Holat tarixi",
+  "applicationSelectResume": "Rezyumeni tanlang",
+  "applicationStatusHired": "Qabul qilindi",
+  "applicationStatusInterview": "Suhbat",
+  "applicationStatusInvited": "Taklif",
+  "applicationStatusRejected": "Rad etildi",
+  "applicationStatusSent": "Yuborildi",
+  "applicationStatusViewed": "Ko'rildi",
+  "applicationStatusWithdrawn": "Qaytarib olingan",
+  "applicationSubmitted": "Ariza yuborildi",
+  "applicationWithdrawBody": "Bu arizani qaytarib olmoqchimisiz?",
+  "applicationWithdrawTitle": "Arizani qaytarib olish",
+  "applicationWithdrawn": "Ariza qaytarib olindi",
+  "applicationsEmpty": "Hali ariza yubormagansiz",
+  "chatAttachCamera": "Kamera",
+  "chatAttachFile": "Fayl",
+  "chatAttachGallery": "Galereya",
+  "chatAttachLocation": "Joylashuv",
+  "chatAttachTitle": "Qo\u2018shish",
+  "chatEmpty": "Hali xabar yo\u2018q",
+  "chatErrorSend": "Xabarni yuborib bo\u2018lmadi. Qayta urinib ko\u2018ring.",
+  "chatFile": "Fayl",
+  "chatImage": "Rasm",
+  "chatInputHint": "Xabar yozing…",
+  "chatLoadOlder": "Avvalgi xabarlarni yuklash",
+  "chatLocation": "Joylashuv",
+  "chatLocationSoon": "Joylashuvni ulashish tez kunda ishga tushadi.",
+  "chatMessageDeleted": "Xabar o\u2018chirildi",
+  "chatNoOlder": "Avvalgi xabarlar yo\u2018q",
+  "chatOpenMap": "Xaritada ochish",
+  "chatSend": "Yuborish",
+  "chatTyping": "yozmoqda…",
+  "chatUnread": "O\u2018qilmagan",
+  "chatVoice": "Ovozli xabar",
+  "chatDeleted": "O'chirilgan",
+  "chatNoMessages": "Hali suhbat boshlanmagan",
+  "chatRecording": "Ovoz yozilmoqda...",
+  "chatLocationServiceDisabled": "Joylashuv xizmati o'chiq",
+  "chatLocationPermissionDenied": "Joylashuv ruxsati berilmagan",
+  "chatMicrophonePermissionDenied": "Mikrofon ruxsati berilmagan",
+  "applyCoverLetterHint": "Nima uchun bu vakansiya sizga mos",
+  "applyCreateResume": "Rezyume yaratish",
+  "applyNoResumes": "Ariza yuborish uchun rezyume kerak",
+  "applySubmit": "Yuborish",
+  "applyTitle": "Ariza yuborish",
   "authAgree": "Hisob ochib, foydalanish shartlari va maxfiylik siyosatiga rozilik bildirasiz.",
   "authCode": "Tasdiqlash kodi",
   "authCodeSent": "Yangi kod yuborildi",
@@ -40,21 +137,7 @@
   "authRegisterTitle": "Ro'yxatdan o'tish",
   "authResend": "Kodni qayta yuborish",
   "authResendIn": "Qayta yuborish: {s} s",
-  "@authResendIn": {
-    "placeholders": {
-      "s": {
-        "type": "String"
-      }
-    }
-  },
   "authResetBody": "{email} manziliga yuborilgan kodni va yangi parolni kiriting.",
-  "@authResetBody": {
-    "placeholders": {
-      "email": {
-        "type": "String"
-      }
-    }
-  },
   "authResetDone": "Parol yangilandi. Yangi parol bilan kiring.",
   "authResetSubmit": "Parolni saqlash",
   "authResetTitle": "Yangi parol o'rnating",
@@ -69,25 +152,12 @@
   "authSubmitRegister": "Hisob ochish",
   "authVerified": "Email tasdiqlandi",
   "authVerifyBody": "{email} manziliga 6 xonali kod yubordik. Kod 15 daqiqa amal qiladi.",
-  "@authVerifyBody": {
-    "placeholders": {
-      "email": {
-        "type": "String"
-      }
-    }
-  },
   "authVerifySubmit": "Tasdiqlash",
   "authVerifyTitle": "Emailingizni tasdiqlang",
   "authWelcome": "Xush kelibsiz, {name}!",
-  "@authWelcome": {
-    "placeholders": {
-      "name": {
-        "type": "String"
-      }
-    }
-  },
   "brandName": "Job Vacancy",
   "brandTagline": "O'zbekistondagi ishlar va xodimlar",
+  "commonAll": "Barchasi",
   "commonApply": "Ariza yuborish",
   "commonBack": "Orqaga",
   "commonCancel": "Bekor qilish",
@@ -95,6 +165,7 @@
   "commonClose": "Yopish",
   "commonDelete": "O'chirish",
   "commonDone": "Tayyor",
+  "commonDownload": "Yuklab olish",
   "commonEdit": "Tahrirlash",
   "commonFeatured": "TOP",
   "commonFilters": "Filtrlar",
@@ -110,20 +181,28 @@
   "commonShowAll": "Hammasini ko'rish",
   "commonSoon": "Tez kunda",
   "commonVerified": "Tasdiqlangan",
+  "commonWithdraw": "Qaytarib olish",
+  "companyAbout": "Kompaniya haqida",
+  "companyFounded": "Tashkil etilgan",
+  "companySize": "Xodimlar soni",
   "errorsInternalError": "Serverda xatolik yuz berdi. Birozdan keyin qayta urinib ko'ring.",
   "errorsNetwork": "Server bilan aloqa yo'q. Internetni tekshirib, qayta urinib ko'ring.",
   "errorsNotFound": "Sahifa topilmadi",
   "errorsNotFoundBody": "Havola eskirgan yoki manzilda xato bor.",
   "errorsRateLimited": "So'rovlar juda ko'p. {seconds} soniyadan keyin qayta urinib ko'ring.",
-  "@errorsRateLimited": {
-    "placeholders": {
-      "seconds": {
-        "type": "String"
-      }
-    }
-  },
   "errorsToHome": "Bosh sahifaga",
   "errorsUnauthorized": "Davom etish uchun tizimga kiring.",
+  "filterCategory": "Kategoriya",
+  "filterDistrict": "Tuman",
+  "filterEmploymentType": "Bandlik turi",
+  "filterExperience": "Tajriba",
+  "filterRegion": "Hudud",
+  "filterSalary": "Ish haqi",
+  "filterSalaryFrom": "Dan",
+  "filterSchedule": "Ish jadvali",
+  "filterSort": "Saralash",
+  "filterWithSalary": "Faqat ish haqi ko'rsatilgan",
+  "filterWorkFormat": "Ish shakli",
   "formEmail": "Email",
   "formHidePassword": "Parolni yashirish",
   "formPassword": "Parol",
@@ -136,6 +215,18 @@
   "navMenu": "Menyu",
   "navMessages": "Xabarlar",
   "navPostVacancy": "Vakansiya joylash",
+  "notificationsTitle": "Bildirishnomalar",
+  "notificationsEmpty": "Hali bildirishnoma yo'q",
+  "notificationsMarkAllRead": "Hammasini o'qilgan deb belgilash",
+  "notificationApplicationNew": "Yangi ariza",
+  "notificationApplicationStatus": "Ariza holati o'zgardi",
+  "notificationApplicationInvited": "Siz taklif qilindingiz",
+  "notificationVacancyApproved": "Vakansiya tasdiqlandi",
+  "notificationVacancyRejected": "Vakansiya rad etildi",
+  "notificationVacancyTakenDown": "Vakansiya olib tashlandi",
+  "notificationSearchAlert": "Qidiruvingiz bo'yicha yangi vakansiyalar",
+  "notificationReportResolved": "Shikoyat ko'rib chiqildi",
+  "notificationReportDismissed": "Shikoyat rad etildi",
   "navProfile": "Profil",
   "navSaved": "Saqlanganlar",
   "navSignIn": "Kirish",
@@ -143,6 +234,94 @@
   "navSignUp": "Ro'yxatdan o'tish",
   "navSkipToContent": "Asosiy qismga o'tish",
   "navVacancies": "Vakansiyalar",
+  "reportComment": "Izoh",
+  "reportCommentHint": "Boshqa sabab bo'lsa, iltimos, tavsiflab bering",
+  "reportReasonFraud": "Firibgarlik",
+  "reportReasonMisleading": "Noto'g'ri ma'lumot",
+  "reportReasonOffensive": "Haqoratli yoki noqonuniy",
+  "reportReasonOther": "Boshqa",
+  "reportReasonSpam": "Spam",
+  "reportSent": "Shikoyat yuborildi",
+  "reportSubmit": "Shikoyat qilish",
+  "reportTitle": "Shikoyat qilish",
+  "resumeAbout": "O'zingiz haqingizda",
+  "resumeAboutHint": "Qisqacha tajriba va maqsadlaringiz haqida yozing",
+  "resumeAddEducation": "Ta'lim qo'shish",
+  "resumeAddExperience": "Ish tajribasi qo'shish",
+  "resumeAddLanguage": "Til qo'shish",
+  "resumeChangeVisibility": "Ko'rinishni o'zgartirish",
+  "resumeCreateFirst": "Birinchi rezyume yaratish",
+  "resumeCurrency": "Valyuta",
+  "resumeDeleteBody": "Bu rezyumeni o'chirmoqchimisiz?",
+  "resumeDeleteTitle": "Rezyumeni o'chirish",
+  "resumeEditEducation": "Ta'limni tahrirlash",
+  "resumeEditExperience": "Tajribani tahrirlash",
+  "resumeEditResume": "Rezyumeni tahrirlash",
+  "resumeEducationEndYear": "Tugatgan yil",
+  "resumeEducationField": "Yo'nalish",
+  "resumeEducationInstitution": "O'quv yurti",
+  "resumeEducationLevel": "Ta'lim darajasi",
+  "resumeEducationLevelBachelor": "Bakalavr",
+  "resumeEducationLevelIncompleteHigher": "Tugallanmagan oliy",
+  "resumeEducationLevelMaster": "Magistr",
+  "resumeEducationLevelPhd": "PhD",
+  "resumeEducationLevelSecondary": "O'rta",
+  "resumeEducationLevelVocational": "O'rta maxsus",
+  "resumeEducationStartYear": "Boshlagan yil",
+  "resumeEducations": "Ta'lim",
+  "resumeEmploymentTypes": "Bandlik turlari",
+  "resumeExperienceCompany": "Kompaniya",
+  "resumeExperienceCurrent": "Hozirgi ish joyi",
+  "resumeExperienceDescription": "Vazifalar",
+  "resumeExperienceEnd": "Tugash",
+  "resumeExperiencePosition": "Lavozim",
+  "resumeExperienceStart": "Boshlash",
+  "resumeExperiences": "Ish tajribasi",
+  "resumeLanguageCode": "Til kodi",
+  "resumeLanguageLevel": "Daraja",
+  "resumeLanguageLevelA1": "A1 — Boshlang'ich",
+  "resumeLanguageLevelA2": "A2 — O'rta-boshlang'ich",
+  "resumeLanguageLevelB1": "B1 — O'rta",
+  "resumeLanguageLevelB2": "B2 — O'rtadan yuqori",
+  "resumeLanguageLevelC1": "C1 — Yuqori",
+  "resumeLanguageLevelC2": "C2 — Ega bo'luvchi",
+  "resumeLanguageLevelNative": "Ona tili",
+  "resumeLanguages": "Tillar",
+  "resumeMaxSkills": "Ko'pi bilan 30 ta ko'nikma kiritish mumkin",
+  "resumeMyResumes": "Rezyumelarim",
+  "resumeNewResume": "Yangi rezyume",
+  "resumeNoEducations": "Hali ta'lim qo'shilmagan",
+  "resumeNoExperiences": "Hali ish tajribasi qo'shilmagan",
+  "resumeNoLanguages": "Hali til qo'shilmagan",
+  "resumeNoResumes": "Hali rezyume yo'q",
+  "resumeNoResumesHint": "Birinchi rezyumeni yarating va vakansiyalarga ariza yuboring",
+  "resumeRelocate": "Ko'chishga tayyorman",
+  "resumeSalary": "Kutilayotgan ish haqi",
+  "resumeSkills": "Ko'nikmalar",
+  "resumeSkillsHint": "Masalan, Flutter, ingliz tili",
+  "resumeTitle": "Kutilayotgan lavozim",
+  "resumeUpdated": "Rezyume saqlandi",
+  "resumeVisibilityAppliedOnly": "Faqat ariza yuborilgan kompaniyalar",
+  "resumeVisibilityHidden": "Faqat men uchun",
+  "resumeVisibilityHintAppliedOnly": "Siz ariza yuborgan kompaniyalar ko'radi",
+  "resumeVisibilityHintHidden": "Hech kim qidiruvda ko'rmaydi",
+  "resumeVisibilityHintPublic": "Ish beruvchilar qidiruvda ko'radi",
+  "resumeVisibilityLabel": "Ko'rinish",
+  "resumeVisibilityPublic": "Ommaviy",
+  "resumeWorkFormats": "Ish shakllari",
+  "savedGuestBody": "Kirish va qiziqarli vakansiyalarni saqlab qo'ying.",
+  "savedGuestTitle": "Saqlangan vakansiyalar",
+  "savedSearchCreated": "Qidiruv saqlandi",
+  "savedSearchDeleteBody": "Bu saqlangan qidiruvni o'chirmoqchimisiz?",
+  "savedSearchDeleteTitle": "Qidiruvni o'chirish",
+  "savedSearchName": "Nomi",
+  "savedSearchNameHint": "Masalan, Dasturchi Toshkent",
+  "savedSearchNotify": "Yangi vakansiyalar haqida xabar berilsin",
+  "savedSearchTitle": "Qidiruvni saqlash",
+  "savedSearchesEmpty": "Hali saqlangan qidiruv yo'q",
+  "savedSearchesTitle": "Saqlangan qidiruvlar",
+  "savedVacanciesEmpty": "Hali saqlangan vakansiya yo'q",
+  "savedVacanciesTitle": "Saqlangan vakansiyalar",
   "settingsByEmail": "Email",
   "settingsByEmailHint": "Arizalar holati, takliflar va yangi vakansiyalar",
   "settingsByTelegram": "Telegram",
@@ -161,13 +340,6 @@
   "settingsPasswordNone": "Siz Google orqali kirasiz. Email bilan ham kirish uchun parol o'rnating.",
   "settingsPhone": "Telefon raqami",
   "settingsPhoneCodeSent": "{phone} raqamiga Telegram orqali kod yubordik.",
-  "@settingsPhoneCodeSent": {
-    "placeholders": {
-      "phone": {
-        "type": "String"
-      }
-    }
-  },
   "settingsPhoneHint": "Kod SMS emas, Telegram'dagi «Verification Codes» chatiga keladi.",
   "settingsPhoneVerified": "Telefon raqami tasdiqlandi",
   "settingsProfile": "Profil",
@@ -181,21 +353,58 @@
   "settingsTelegramLinked": "Telegram ulandi",
   "settingsTelegramOff": "Avval Telegram'ni ulang",
   "settingsTelegramOn": "{bot} boti orqali",
-  "@settingsTelegramOn": {
-    "placeholders": {
-      "bot": {
-        "type": "String"
-      }
-    }
-  },
   "settingsTelegramUnlink": "Telegram'ni uzish",
   "settingsTelegramWaiting": "Telegram'da «Start» ni bosing…",
   "settingsThisDevice": "Shu qurilma",
   "settingsUploadFailed": "Rasmni yuklab bo'lmadi. Qayta urinib ko'ring.",
   "settingsUploadPhoto": "Rasm yuklash",
   "settingsVerify": "Tasdiqlash",
+  "sortNewest": "Eng yangi",
+  "sortRelevance": "Moslik",
   "themeDark": "Qorong'i",
   "themeLabel": "Mavzu",
   "themeLight": "Yorug'",
-  "themeSystem": "Avtomatik"
+  "themeSystem": "Avtomatik",
+  "vacancyAddress": "Manzil",
+  "vacancyApplications": "Arizalar",
+  "vacancyApplySoon": "Ariza yuborish tez kunda ishga tushadi",
+  "vacancyDescription": "Vakansiya tavsifi",
+  "vacancyEmploymentType": "Bandlik turi",
+  "vacancyExp1_3": "1-3 yil",
+  "vacancyExp3_6": "3-6 yil",
+  "vacancyExp6Plus": "6 yildan ortiq",
+  "vacancyExpNone": "Tajribasiz",
+  "vacancyExperience": "Tajriba",
+  "vacancyFullTime": "To'liq stavka",
+  "vacancyHybrid": "Gibrid",
+  "vacancyInternship": "Amaliyot",
+  "vacancyNegotiable": "Kelishiladi",
+  "vacancyOffice": "Ofis",
+  "vacancyOpenVacancies": "Ochiq vakansiyalar",
+  "vacancyPartTime": "Yarim stavka",
+  "vacancyProject": "Loyiha",
+  "vacancyRemote": "Uydan",
+  "vacancyReport": "Shikoyat qilish",
+  "vacancySalary": "Ish haqi",
+  "vacancySchedule": "Ish jadvali",
+  "vacancyScheduleFlexible": "Moslashuvchan",
+  "vacancyScheduleFullDay": "To'liq kun",
+  "vacancyScheduleRotation": "Shift",
+  "vacancyScheduleShift": "Smena",
+  "vacancyShare": "Ulashish",
+  "vacancySkills": "Ko'nikmalar",
+  "vacancyViews": "Ko'rishlar",
+  "vacancyVolunteer": "Volontyor",
+  "vacancyWorkFormat": "Ish shakli",
+  "cookieBannerTitle": "Cookie'lardan foydalanamiz",
+  "cookieBannerBody": "Saytimiz ishlashi, xavfsizligi va qulayligi uchun cookie va shunga o'xshash texnologiyalardan foydalanamiz.",
+  "cookieBannerPolicy": "Cookie siyosati",
+  "cookieBannerAcceptAll": "Roziman",
+  "cookieBannerEssentialOnly": "Faqat zaruriy",
+  "profileLegal": "Huquqiy ma'lumot",
+  "profilePrivacyPolicy": "Maxfiylik siyosati",
+  "profileTermsOfUse": "Foydalanish shartlari",
+  "profileCookiePolicy": "Cookie siyosati",
+  "profilePublicOffer": "Ommaviy oferta",
+  "profileContentRules": "Kontent qoidalari"
 }

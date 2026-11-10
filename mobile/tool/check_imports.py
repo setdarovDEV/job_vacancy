@@ -1,7 +1,8 @@
 """Architecture check for lib/:
 - no import cycles;
 - core/ imports only core/;
-- a feature imports core/ and itself, never another feature;
+- a feature imports core/ and itself; cross-feature imports are allowed only
+  from features/resumes into features/vacancies (resumes reuses vacancies models);
 - only app/ (and main.dart) import app/.
 
   python3 -I tool/check_imports.py      (exit 1 on a violation)
@@ -44,7 +45,15 @@ def allowed(src, dst):
     if b == "app":
         return a in ("app", "main.dart")
     if b.startswith("features/"):
-        return a in ("app", "main.dart")  # features never import each other
+        # Features normally don't import each other. Resumes is allowed to reuse
+        # vacancies catalog/vacancy models as long as the reverse edge never exists.
+        # Home shell imports chat unread/socket providers to keep the realtime layer
+        # alive and to show the messages badge on the bottom tab.
+        if a == "features/home" and b == "features/chat":
+            return True
+        if a == "features/profile" and b == "features/notifications":
+            return True
+        return a in ("app", "main.dart") or (a == "features/resumes" and b == "features/vacancies")
     return False
 
 

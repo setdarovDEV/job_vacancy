@@ -1,9 +1,14 @@
+import 'package:jobvacancy/core/api/api_client.dart';
 import 'package:jobvacancy/core/api/api_exception.dart';
 import 'package:jobvacancy/core/auth/refresh_api.dart';
 import 'package:jobvacancy/core/auth/session_api.dart';
 import 'package:jobvacancy/core/models/auth_result.dart';
 import 'package:jobvacancy/core/models/user.dart';
+import 'package:jobvacancy/core/notifications/local_notification_service.dart';
+import 'package:jobvacancy/core/notifications/push_notification_service.dart';
 import 'package:jobvacancy/features/auth/data/account_api.dart';
+import 'package:jobvacancy/features/notifications/data/api/notifications_api.dart';
+import 'package:jobvacancy/features/notifications/data/models/notification.dart';
 
 User testUser({UserRole role = UserRole.seeker, bool emailVerified = false, bool phoneVerified = false}) => User(
   id: 'u1',
@@ -110,4 +115,36 @@ class FakeRefreshApi implements RefreshApi {
     if (a is ApiException) throw a;
     return a as AuthResult;
   }
+}
+
+/// No-op notifications API for widget tests.
+class FakeNotificationsApi implements NotificationsApi {
+  final Calls calls;
+  FakeNotificationsApi(this.calls);
+
+  @override
+  Future<Page<AppNotification>> list({bool? unread, String? cursor, int limit = 20}) async =>
+      const Page<AppNotification>([], null, meta: {'has_more': false});
+
+  @override
+  Future<int> unreadCount() async => 0;
+
+  @override
+  Future<void> markRead({List<int>? ids}) async => calls.add('markRead $ids');
+
+  @override
+  Future<void> registerDeviceToken({required String token, required String platform}) async =>
+      calls.add('registerDeviceToken $token $platform');
+
+  @override
+  Future<void> deleteDeviceToken(String token) async => calls.add('deleteDeviceToken $token');
+}
+
+/// No-op local notification service for widget tests.
+class FakeLocalNotificationService implements LocalNotificationService {
+  @override
+  Future<void> initialize() async {}
+
+  @override
+  Future<void> show(PushMessage message) async {}
 }

@@ -70,6 +70,150 @@ class AppLocalizationsUz extends AppLocalizations {
   String get appWelcomeTitle => 'Ish va xodimlar bir joyda';
 
   @override
+  String get applicationContactNotVerified => 'Aloqani tasdiqlang';
+
+  @override
+  String get applicationContactNotVerifiedHint => 'Ariza yuborish uchun email yoki telefon raqamingizni tasdiqlang';
+
+  @override
+  String get applicationCoverLetter => 'Shaxsiy xat';
+
+  @override
+  String get applicationHistory => 'Holat tarixi';
+
+  @override
+  String get applicationSelectResume => 'Rezyumeni tanlang';
+
+  @override
+  String get applicationStatusHired => 'Qabul qilindi';
+
+  @override
+  String get applicationStatusInterview => 'Suhbat';
+
+  @override
+  String get applicationStatusInvited => 'Taklif';
+
+  @override
+  String get applicationStatusRejected => 'Rad etildi';
+
+  @override
+  String get applicationStatusSent => 'Yuborildi';
+
+  @override
+  String get applicationStatusViewed => 'Ko\'rildi';
+
+  @override
+  String get applicationStatusWithdrawn => 'Qaytarib olingan';
+
+  @override
+  String get applicationSubmitted => 'Ariza yuborildi';
+
+  @override
+  String get applicationWithdrawBody => 'Bu arizani qaytarib olmoqchimisiz?';
+
+  @override
+  String get applicationWithdrawTitle => 'Arizani qaytarib olish';
+
+  @override
+  String get applicationWithdrawn => 'Ariza qaytarib olindi';
+
+  @override
+  String get applicationsEmpty => 'Hali ariza yubormagansiz';
+
+  @override
+  String get chatAttachCamera => 'Kamera';
+
+  @override
+  String get chatAttachFile => 'Fayl';
+
+  @override
+  String get chatAttachGallery => 'Galereya';
+
+  @override
+  String get chatAttachLocation => 'Joylashuv';
+
+  @override
+  String get chatAttachTitle => 'Qo‘shish';
+
+  @override
+  String get chatEmpty => 'Hali xabar yo‘q';
+
+  @override
+  String get chatErrorSend => 'Xabarni yuborib bo‘lmadi. Qayta urinib ko‘ring.';
+
+  @override
+  String get chatFile => 'Fayl';
+
+  @override
+  String get chatImage => 'Rasm';
+
+  @override
+  String get chatInputHint => 'Xabar yozing…';
+
+  @override
+  String get chatLoadOlder => 'Avvalgi xabarlarni yuklash';
+
+  @override
+  String get chatLocation => 'Joylashuv';
+
+  @override
+  String get chatLocationSoon => 'Joylashuvni ulashish tez kunda ishga tushadi.';
+
+  @override
+  String get chatMessageDeleted => 'Xabar o‘chirildi';
+
+  @override
+  String get chatNoOlder => 'Avvalgi xabarlar yo‘q';
+
+  @override
+  String get chatOpenMap => 'Xaritada ochish';
+
+  @override
+  String get chatSend => 'Yuborish';
+
+  @override
+  String get chatTyping => 'yozmoqda…';
+
+  @override
+  String get chatUnread => 'O‘qilmagan';
+
+  @override
+  String get chatVoice => 'Ovozli xabar';
+
+  @override
+  String get chatDeleted => 'O\'chirilgan';
+
+  @override
+  String get chatNoMessages => 'Hali suhbat boshlanmagan';
+
+  @override
+  String get chatRecording => 'Ovoz yozilmoqda...';
+
+  @override
+  String get chatLocationServiceDisabled => 'Joylashuv xizmati o\'chiq';
+
+  @override
+  String get chatLocationPermissionDenied => 'Joylashuv ruxsati berilmagan';
+
+  @override
+  String get chatMicrophonePermissionDenied => 'Mikrofon ruxsati berilmagan';
+
+  @override
+  String get applyCoverLetterHint => 'Nima uchun bu vakansiya sizga mos';
+
+  @override
+  String get applyCreateResume => 'Rezyume yaratish';
+
+  @override
+  String get applyNoResumes => 'Ariza yuborish uchun rezyume kerak';
+
+  @override
+  String get applySubmit => 'Yuborish';
+
+  @override
+  String get applyTitle => 'Ariza yuborish';
+
+  @override
   String get authAgree => 'Hisob ochib, foydalanish shartlari va maxfiylik siyosatiga rozilik bildirasiz.';
 
   @override
@@ -198,6 +342,9 @@ class AppLocalizationsUz extends AppLocalizations {
   String get brandTagline => 'O\'zbekistondagi ishlar va xodimlar';
 
   @override
+  String get commonAll => 'Barchasi';
+
+  @override
   String get commonApply => 'Ariza yuborish';
 
   @override
@@ -217,6 +364,9 @@ class AppLocalizationsUz extends AppLocalizations {
 
   @override
   String get commonDone => 'Tayyor';
+
+  @override
+  String get commonDownload => 'Yuklab olish';
 
   @override
   String get commonEdit => 'Tahrirlash';
@@ -264,6 +414,18 @@ class AppLocalizationsUz extends AppLocalizations {
   String get commonVerified => 'Tasdiqlangan';
 
   @override
+  String get commonWithdraw => 'Qaytarib olish';
+
+  @override
+  String get companyAbout => 'Kompaniya haqida';
+
+  @override
+  String get companyFounded => 'Tashkil etilgan';
+
+  @override
+  String get companySize => 'Xodimlar soni';
+
+  @override
   String get errorsInternalError => 'Serverda xatolik yuz berdi. Birozdan keyin qayta urinib ko\'ring.';
 
   @override
@@ -285,6 +447,39 @@ class AppLocalizationsUz extends AppLocalizations {
 
   @override
   String get errorsUnauthorized => 'Davom etish uchun tizimga kiring.';
+
+  @override
+  String get filterCategory => 'Kategoriya';
+
+  @override
+  String get filterDistrict => 'Tuman';
+
+  @override
+  String get filterEmploymentType => 'Bandlik turi';
+
+  @override
+  String get filterExperience => 'Tajriba';
+
+  @override
+  String get filterRegion => 'Hudud';
+
+  @override
+  String get filterSalary => 'Ish haqi';
+
+  @override
+  String get filterSalaryFrom => 'Dan';
+
+  @override
+  String get filterSchedule => 'Ish jadvali';
+
+  @override
+  String get filterSort => 'Saralash';
+
+  @override
+  String get filterWithSalary => 'Faqat ish haqi ko\'rsatilgan';
+
+  @override
+  String get filterWorkFormat => 'Ish shakli';
 
   @override
   String get formEmail => 'Email';
@@ -323,6 +518,42 @@ class AppLocalizationsUz extends AppLocalizations {
   String get navPostVacancy => 'Vakansiya joylash';
 
   @override
+  String get notificationsTitle => 'Bildirishnomalar';
+
+  @override
+  String get notificationsEmpty => 'Hali bildirishnoma yo\'q';
+
+  @override
+  String get notificationsMarkAllRead => 'Hammasini o\'qilgan deb belgilash';
+
+  @override
+  String get notificationApplicationNew => 'Yangi ariza';
+
+  @override
+  String get notificationApplicationStatus => 'Ariza holati o\'zgardi';
+
+  @override
+  String get notificationApplicationInvited => 'Siz taklif qilindingiz';
+
+  @override
+  String get notificationVacancyApproved => 'Vakansiya tasdiqlandi';
+
+  @override
+  String get notificationVacancyRejected => 'Vakansiya rad etildi';
+
+  @override
+  String get notificationVacancyTakenDown => 'Vakansiya olib tashlandi';
+
+  @override
+  String get notificationSearchAlert => 'Qidiruvingiz bo\'yicha yangi vakansiyalar';
+
+  @override
+  String get notificationReportResolved => 'Shikoyat ko\'rib chiqildi';
+
+  @override
+  String get notificationReportDismissed => 'Shikoyat rad etildi';
+
+  @override
   String get navProfile => 'Profil';
 
   @override
@@ -342,6 +573,270 @@ class AppLocalizationsUz extends AppLocalizations {
 
   @override
   String get navVacancies => 'Vakansiyalar';
+
+  @override
+  String get reportComment => 'Izoh';
+
+  @override
+  String get reportCommentHint => 'Boshqa sabab bo\'lsa, iltimos, tavsiflab bering';
+
+  @override
+  String get reportReasonFraud => 'Firibgarlik';
+
+  @override
+  String get reportReasonMisleading => 'Noto\'g\'ri ma\'lumot';
+
+  @override
+  String get reportReasonOffensive => 'Haqoratli yoki noqonuniy';
+
+  @override
+  String get reportReasonOther => 'Boshqa';
+
+  @override
+  String get reportReasonSpam => 'Spam';
+
+  @override
+  String get reportSent => 'Shikoyat yuborildi';
+
+  @override
+  String get reportSubmit => 'Shikoyat qilish';
+
+  @override
+  String get reportTitle => 'Shikoyat qilish';
+
+  @override
+  String get resumeAbout => 'O\'zingiz haqingizda';
+
+  @override
+  String get resumeAboutHint => 'Qisqacha tajriba va maqsadlaringiz haqida yozing';
+
+  @override
+  String get resumeAddEducation => 'Ta\'lim qo\'shish';
+
+  @override
+  String get resumeAddExperience => 'Ish tajribasi qo\'shish';
+
+  @override
+  String get resumeAddLanguage => 'Til qo\'shish';
+
+  @override
+  String get resumeChangeVisibility => 'Ko\'rinishni o\'zgartirish';
+
+  @override
+  String get resumeCreateFirst => 'Birinchi rezyume yaratish';
+
+  @override
+  String get resumeCurrency => 'Valyuta';
+
+  @override
+  String get resumeDeleteBody => 'Bu rezyumeni o\'chirmoqchimisiz?';
+
+  @override
+  String get resumeDeleteTitle => 'Rezyumeni o\'chirish';
+
+  @override
+  String get resumeEditEducation => 'Ta\'limni tahrirlash';
+
+  @override
+  String get resumeEditExperience => 'Tajribani tahrirlash';
+
+  @override
+  String get resumeEditResume => 'Rezyumeni tahrirlash';
+
+  @override
+  String get resumeEducationEndYear => 'Tugatgan yil';
+
+  @override
+  String get resumeEducationField => 'Yo\'nalish';
+
+  @override
+  String get resumeEducationInstitution => 'O\'quv yurti';
+
+  @override
+  String get resumeEducationLevel => 'Ta\'lim darajasi';
+
+  @override
+  String get resumeEducationLevelBachelor => 'Bakalavr';
+
+  @override
+  String get resumeEducationLevelIncompleteHigher => 'Tugallanmagan oliy';
+
+  @override
+  String get resumeEducationLevelMaster => 'Magistr';
+
+  @override
+  String get resumeEducationLevelPhd => 'PhD';
+
+  @override
+  String get resumeEducationLevelSecondary => 'O\'rta';
+
+  @override
+  String get resumeEducationLevelVocational => 'O\'rta maxsus';
+
+  @override
+  String get resumeEducationStartYear => 'Boshlagan yil';
+
+  @override
+  String get resumeEducations => 'Ta\'lim';
+
+  @override
+  String get resumeEmploymentTypes => 'Bandlik turlari';
+
+  @override
+  String get resumeExperienceCompany => 'Kompaniya';
+
+  @override
+  String get resumeExperienceCurrent => 'Hozirgi ish joyi';
+
+  @override
+  String get resumeExperienceDescription => 'Vazifalar';
+
+  @override
+  String get resumeExperienceEnd => 'Tugash';
+
+  @override
+  String get resumeExperiencePosition => 'Lavozim';
+
+  @override
+  String get resumeExperienceStart => 'Boshlash';
+
+  @override
+  String get resumeExperiences => 'Ish tajribasi';
+
+  @override
+  String get resumeLanguageCode => 'Til kodi';
+
+  @override
+  String get resumeLanguageLevel => 'Daraja';
+
+  @override
+  String get resumeLanguageLevelA1 => 'A1 — Boshlang\'ich';
+
+  @override
+  String get resumeLanguageLevelA2 => 'A2 — O\'rta-boshlang\'ich';
+
+  @override
+  String get resumeLanguageLevelB1 => 'B1 — O\'rta';
+
+  @override
+  String get resumeLanguageLevelB2 => 'B2 — O\'rtadan yuqori';
+
+  @override
+  String get resumeLanguageLevelC1 => 'C1 — Yuqori';
+
+  @override
+  String get resumeLanguageLevelC2 => 'C2 — Ega bo\'luvchi';
+
+  @override
+  String get resumeLanguageLevelNative => 'Ona tili';
+
+  @override
+  String get resumeLanguages => 'Tillar';
+
+  @override
+  String get resumeMaxSkills => 'Ko\'pi bilan 30 ta ko\'nikma kiritish mumkin';
+
+  @override
+  String get resumeMyResumes => 'Rezyumelarim';
+
+  @override
+  String get resumeNewResume => 'Yangi rezyume';
+
+  @override
+  String get resumeNoEducations => 'Hali ta\'lim qo\'shilmagan';
+
+  @override
+  String get resumeNoExperiences => 'Hali ish tajribasi qo\'shilmagan';
+
+  @override
+  String get resumeNoLanguages => 'Hali til qo\'shilmagan';
+
+  @override
+  String get resumeNoResumes => 'Hali rezyume yo\'q';
+
+  @override
+  String get resumeNoResumesHint => 'Birinchi rezyumeni yarating va vakansiyalarga ariza yuboring';
+
+  @override
+  String get resumeRelocate => 'Ko\'chishga tayyorman';
+
+  @override
+  String get resumeSalary => 'Kutilayotgan ish haqi';
+
+  @override
+  String get resumeSkills => 'Ko\'nikmalar';
+
+  @override
+  String get resumeSkillsHint => 'Masalan, Flutter, ingliz tili';
+
+  @override
+  String get resumeTitle => 'Kutilayotgan lavozim';
+
+  @override
+  String get resumeUpdated => 'Rezyume saqlandi';
+
+  @override
+  String get resumeVisibilityAppliedOnly => 'Faqat ariza yuborilgan kompaniyalar';
+
+  @override
+  String get resumeVisibilityHidden => 'Faqat men uchun';
+
+  @override
+  String get resumeVisibilityHintAppliedOnly => 'Siz ariza yuborgan kompaniyalar ko\'radi';
+
+  @override
+  String get resumeVisibilityHintHidden => 'Hech kim qidiruvda ko\'rmaydi';
+
+  @override
+  String get resumeVisibilityHintPublic => 'Ish beruvchilar qidiruvda ko\'radi';
+
+  @override
+  String get resumeVisibilityLabel => 'Ko\'rinish';
+
+  @override
+  String get resumeVisibilityPublic => 'Ommaviy';
+
+  @override
+  String get resumeWorkFormats => 'Ish shakllari';
+
+  @override
+  String get savedGuestBody => 'Kirish va qiziqarli vakansiyalarni saqlab qo\'ying.';
+
+  @override
+  String get savedGuestTitle => 'Saqlangan vakansiyalar';
+
+  @override
+  String get savedSearchCreated => 'Qidiruv saqlandi';
+
+  @override
+  String get savedSearchDeleteBody => 'Bu saqlangan qidiruvni o\'chirmoqchimisiz?';
+
+  @override
+  String get savedSearchDeleteTitle => 'Qidiruvni o\'chirish';
+
+  @override
+  String get savedSearchName => 'Nomi';
+
+  @override
+  String get savedSearchNameHint => 'Masalan, Dasturchi Toshkent';
+
+  @override
+  String get savedSearchNotify => 'Yangi vakansiyalar haqida xabar berilsin';
+
+  @override
+  String get savedSearchTitle => 'Qidiruvni saqlash';
+
+  @override
+  String get savedSearchesEmpty => 'Hali saqlangan qidiruv yo\'q';
+
+  @override
+  String get savedSearchesTitle => 'Saqlangan qidiruvlar';
+
+  @override
+  String get savedVacanciesEmpty => 'Hali saqlangan vakansiya yo\'q';
+
+  @override
+  String get savedVacanciesTitle => 'Saqlangan vakansiyalar';
 
   @override
   String get settingsByEmail => 'Email';
@@ -459,6 +954,12 @@ class AppLocalizationsUz extends AppLocalizations {
   String get settingsVerify => 'Tasdiqlash';
 
   @override
+  String get sortNewest => 'Eng yangi';
+
+  @override
+  String get sortRelevance => 'Moslik';
+
+  @override
   String get themeDark => 'Qorong\'i';
 
   @override
@@ -469,6 +970,133 @@ class AppLocalizationsUz extends AppLocalizations {
 
   @override
   String get themeSystem => 'Avtomatik';
+
+  @override
+  String get vacancyAddress => 'Manzil';
+
+  @override
+  String get vacancyApplications => 'Arizalar';
+
+  @override
+  String get vacancyApplySoon => 'Ariza yuborish tez kunda ishga tushadi';
+
+  @override
+  String get vacancyDescription => 'Vakansiya tavsifi';
+
+  @override
+  String get vacancyEmploymentType => 'Bandlik turi';
+
+  @override
+  String get vacancyExp1_3 => '1-3 yil';
+
+  @override
+  String get vacancyExp3_6 => '3-6 yil';
+
+  @override
+  String get vacancyExp6Plus => '6 yildan ortiq';
+
+  @override
+  String get vacancyExpNone => 'Tajribasiz';
+
+  @override
+  String get vacancyExperience => 'Tajriba';
+
+  @override
+  String get vacancyFullTime => 'To\'liq stavka';
+
+  @override
+  String get vacancyHybrid => 'Gibrid';
+
+  @override
+  String get vacancyInternship => 'Amaliyot';
+
+  @override
+  String get vacancyNegotiable => 'Kelishiladi';
+
+  @override
+  String get vacancyOffice => 'Ofis';
+
+  @override
+  String get vacancyOpenVacancies => 'Ochiq vakansiyalar';
+
+  @override
+  String get vacancyPartTime => 'Yarim stavka';
+
+  @override
+  String get vacancyProject => 'Loyiha';
+
+  @override
+  String get vacancyRemote => 'Uydan';
+
+  @override
+  String get vacancyReport => 'Shikoyat qilish';
+
+  @override
+  String get vacancySalary => 'Ish haqi';
+
+  @override
+  String get vacancySchedule => 'Ish jadvali';
+
+  @override
+  String get vacancyScheduleFlexible => 'Moslashuvchan';
+
+  @override
+  String get vacancyScheduleFullDay => 'To\'liq kun';
+
+  @override
+  String get vacancyScheduleRotation => 'Shift';
+
+  @override
+  String get vacancyScheduleShift => 'Smena';
+
+  @override
+  String get vacancyShare => 'Ulashish';
+
+  @override
+  String get vacancySkills => 'Ko\'nikmalar';
+
+  @override
+  String get vacancyViews => 'Ko\'rishlar';
+
+  @override
+  String get vacancyVolunteer => 'Volontyor';
+
+  @override
+  String get vacancyWorkFormat => 'Ish shakli';
+
+  @override
+  String get cookieBannerTitle => 'Cookie\'lardan foydalanamiz';
+
+  @override
+  String get cookieBannerBody =>
+      'Saytimiz ishlashi, xavfsizligi va qulayligi uchun cookie va shunga o\'xshash texnologiyalardan foydalanamiz.';
+
+  @override
+  String get cookieBannerPolicy => 'Cookie siyosati';
+
+  @override
+  String get cookieBannerAcceptAll => 'Roziman';
+
+  @override
+  String get cookieBannerEssentialOnly => 'Faqat zaruriy';
+
+  @override
+  String get profileLegal => 'Huquqiy ma\'lumot';
+
+  @override
+  String get profilePrivacyPolicy => 'Maxfiylik siyosati';
+
+  @override
+  String get profileTermsOfUse => 'Foydalanish shartlari';
+
+  @override
+  String get profileCookiePolicy => 'Cookie siyosati';
+
+  @override
+  String get profilePublicOffer => 'Ommaviy oferta';
+
+  @override
+  String get profileContentRules => 'Kontent qoidalari';
 }
 
 /// The translations for Uzbek, using the Cyrillic script (`uz_Cyrl`).
@@ -535,6 +1163,150 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
 
   @override
   String get appWelcomeTitle => 'Иш ва ходимлар бир жойда';
+
+  @override
+  String get applicationContactNotVerified => 'Алоқани тасдиқланг';
+
+  @override
+  String get applicationContactNotVerifiedHint => 'Ариза юбориш учун email ёки телефон рақамингизни тасдиқланг';
+
+  @override
+  String get applicationCoverLetter => 'Шахсий хат';
+
+  @override
+  String get applicationHistory => 'Ҳолат тарихи';
+
+  @override
+  String get applicationSelectResume => 'Резюмени танланг';
+
+  @override
+  String get applicationStatusHired => 'Қабул қилинди';
+
+  @override
+  String get applicationStatusInterview => 'Суҳбат';
+
+  @override
+  String get applicationStatusInvited => 'Таклиф';
+
+  @override
+  String get applicationStatusRejected => 'Рад этилди';
+
+  @override
+  String get applicationStatusSent => 'Юборилди';
+
+  @override
+  String get applicationStatusViewed => 'Кўрилди';
+
+  @override
+  String get applicationStatusWithdrawn => 'Қайтариб олинган';
+
+  @override
+  String get applicationSubmitted => 'Ариза юборилди';
+
+  @override
+  String get applicationWithdrawBody => 'Бу аризани қайтариб олмоқчимисиз?';
+
+  @override
+  String get applicationWithdrawTitle => 'Аризани қайтариб олиш';
+
+  @override
+  String get applicationWithdrawn => 'Ариза қайтариб олинди';
+
+  @override
+  String get applicationsEmpty => 'Ҳали ариза юбормагансиз';
+
+  @override
+  String get chatAttachCamera => 'Камера';
+
+  @override
+  String get chatAttachFile => 'Файл';
+
+  @override
+  String get chatAttachGallery => 'Галерея';
+
+  @override
+  String get chatAttachLocation => 'Жойлашув';
+
+  @override
+  String get chatAttachTitle => 'Қўшиш';
+
+  @override
+  String get chatEmpty => 'Ҳали хабар йўқ';
+
+  @override
+  String get chatErrorSend => 'Хабарни юбориб бўлмади. Қайта уриниб кўринг.';
+
+  @override
+  String get chatFile => 'Файл';
+
+  @override
+  String get chatImage => 'Расм';
+
+  @override
+  String get chatInputHint => 'Хабар ёзинг…';
+
+  @override
+  String get chatLoadOlder => 'Аввалги хабарларни юклаш';
+
+  @override
+  String get chatLocation => 'Жойлашув';
+
+  @override
+  String get chatLocationSoon => 'Жойлашувни улашиш тез кунда ишга тушади.';
+
+  @override
+  String get chatMessageDeleted => 'Хабар ўчирилди';
+
+  @override
+  String get chatNoOlder => 'Аввалги хабарлар йўқ';
+
+  @override
+  String get chatOpenMap => 'Харитада очиш';
+
+  @override
+  String get chatSend => 'Юбориш';
+
+  @override
+  String get chatTyping => 'ёзмоқда…';
+
+  @override
+  String get chatUnread => 'Ўқилмаган';
+
+  @override
+  String get chatVoice => 'Овозли хабар';
+
+  @override
+  String get chatDeleted => 'Ўчирилган';
+
+  @override
+  String get chatNoMessages => 'Ҳали суҳбат бошланмаган';
+
+  @override
+  String get chatRecording => 'Овоз ёзилмоқда...';
+
+  @override
+  String get chatLocationServiceDisabled => 'Жойлашув хизмати ўчиқ';
+
+  @override
+  String get chatLocationPermissionDenied => 'Жойлашув рухсати берилмаган';
+
+  @override
+  String get chatMicrophonePermissionDenied => 'Микрофон рухсати берилмаган';
+
+  @override
+  String get applyCoverLetterHint => 'Нима учун бу вакансия сизга мос';
+
+  @override
+  String get applyCreateResume => 'Резюме яратиш';
+
+  @override
+  String get applyNoResumes => 'Ариза юбориш учун резюме керак';
+
+  @override
+  String get applySubmit => 'Юбориш';
+
+  @override
+  String get applyTitle => 'Ариза юбориш';
 
   @override
   String get authAgree => 'Ҳисоб очиб, фойдаланиш шартлари ва махфийлик сиёсатига розилик билдирасиз.';
@@ -665,6 +1437,9 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
   String get brandTagline => 'Ўзбекистондаги ишлар ва ходимлар';
 
   @override
+  String get commonAll => 'Барчаси';
+
+  @override
   String get commonApply => 'Ариза юбориш';
 
   @override
@@ -684,6 +1459,9 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
 
   @override
   String get commonDone => 'Тайёр';
+
+  @override
+  String get commonDownload => 'Юклаб олиш';
 
   @override
   String get commonEdit => 'Таҳрирлаш';
@@ -731,6 +1509,18 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
   String get commonVerified => 'Тасдиқланган';
 
   @override
+  String get commonWithdraw => 'Қайтариб олиш';
+
+  @override
+  String get companyAbout => 'Компания ҳақида';
+
+  @override
+  String get companyFounded => 'Ташкил этилган';
+
+  @override
+  String get companySize => 'Ходимлар сони';
+
+  @override
   String get errorsInternalError => 'Серверда хатолик юз берди. Бироздан кейин қайта уриниб кўринг.';
 
   @override
@@ -752,6 +1542,39 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
 
   @override
   String get errorsUnauthorized => 'Давом этиш учун тизимга киринг.';
+
+  @override
+  String get filterCategory => 'Категория';
+
+  @override
+  String get filterDistrict => 'Туман';
+
+  @override
+  String get filterEmploymentType => 'Бандлик тури';
+
+  @override
+  String get filterExperience => 'Тажриба';
+
+  @override
+  String get filterRegion => 'Ҳудуд';
+
+  @override
+  String get filterSalary => 'Иш ҳақи';
+
+  @override
+  String get filterSalaryFrom => 'Дан';
+
+  @override
+  String get filterSchedule => 'Иш жадвали';
+
+  @override
+  String get filterSort => 'Саралаш';
+
+  @override
+  String get filterWithSalary => 'Фақат иш ҳақи кўрсатилган';
+
+  @override
+  String get filterWorkFormat => 'Иш шакли';
 
   @override
   String get formEmail => 'Email';
@@ -790,6 +1613,42 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
   String get navPostVacancy => 'Вакансия жойлаш';
 
   @override
+  String get notificationsTitle => 'Бидиришномалар';
+
+  @override
+  String get notificationsEmpty => 'Ҳали бидиришнома йўқ';
+
+  @override
+  String get notificationsMarkAllRead => 'Ҳаммасини ўқилган деб белгилаш';
+
+  @override
+  String get notificationApplicationNew => 'Янги ариза';
+
+  @override
+  String get notificationApplicationStatus => 'Ариза ҳолати ўзгарди';
+
+  @override
+  String get notificationApplicationInvited => 'Сиз таклиф қилиндингиз';
+
+  @override
+  String get notificationVacancyApproved => 'Вакансия тасдиқланди';
+
+  @override
+  String get notificationVacancyRejected => 'Вакансия рад этилди';
+
+  @override
+  String get notificationVacancyTakenDown => 'Вакансия олиб ташланди';
+
+  @override
+  String get notificationSearchAlert => 'Қидирувингиз бўйича янги вакансиялар';
+
+  @override
+  String get notificationReportResolved => 'Шикоят кўриб чиқилди';
+
+  @override
+  String get notificationReportDismissed => 'Шикоят рад этилди';
+
+  @override
   String get navProfile => 'Профил';
 
   @override
@@ -809,6 +1668,270 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
 
   @override
   String get navVacancies => 'Вакансиялар';
+
+  @override
+  String get reportComment => 'Изоҳ';
+
+  @override
+  String get reportCommentHint => 'Бошқа сабаб бўлса, илтимос, тавсифлаб беринг';
+
+  @override
+  String get reportReasonFraud => 'Фирибгарлик';
+
+  @override
+  String get reportReasonMisleading => 'Нотўғри маълумот';
+
+  @override
+  String get reportReasonOffensive => 'Ҳақоратли ёки ноқонуний';
+
+  @override
+  String get reportReasonOther => 'Бошқа';
+
+  @override
+  String get reportReasonSpam => 'Спам';
+
+  @override
+  String get reportSent => 'Шикоят юборилди';
+
+  @override
+  String get reportSubmit => 'Шикоят қилиш';
+
+  @override
+  String get reportTitle => 'Шикоят қилиш';
+
+  @override
+  String get resumeAbout => 'Ўзингиз ҳақингизда';
+
+  @override
+  String get resumeAboutHint => 'Қисқача тажриба ва мақсадларингиз ҳақида ёзинг';
+
+  @override
+  String get resumeAddEducation => 'Таълим қўшиш';
+
+  @override
+  String get resumeAddExperience => 'Иш тажрибаси қўшиш';
+
+  @override
+  String get resumeAddLanguage => 'Тил қўшиш';
+
+  @override
+  String get resumeChangeVisibility => 'Кўринишни ўзгартириш';
+
+  @override
+  String get resumeCreateFirst => 'Биринчи резюме яратиш';
+
+  @override
+  String get resumeCurrency => 'Валюта';
+
+  @override
+  String get resumeDeleteBody => 'Бу резюмени ўчирмоқчимисиз?';
+
+  @override
+  String get resumeDeleteTitle => 'Резюмени ўчириш';
+
+  @override
+  String get resumeEditEducation => 'Таълимни таҳрирлаш';
+
+  @override
+  String get resumeEditExperience => 'Тажрибани таҳрирлаш';
+
+  @override
+  String get resumeEditResume => 'Резюмени таҳрирлаш';
+
+  @override
+  String get resumeEducationEndYear => 'Тугатган йил';
+
+  @override
+  String get resumeEducationField => 'Йўналиш';
+
+  @override
+  String get resumeEducationInstitution => 'Ўқув юрти';
+
+  @override
+  String get resumeEducationLevel => 'Таълим даражаси';
+
+  @override
+  String get resumeEducationLevelBachelor => 'Бакалавр';
+
+  @override
+  String get resumeEducationLevelIncompleteHigher => 'Тугалланмаган олий';
+
+  @override
+  String get resumeEducationLevelMaster => 'Магистр';
+
+  @override
+  String get resumeEducationLevelPhd => 'PhD';
+
+  @override
+  String get resumeEducationLevelSecondary => 'Ўрта';
+
+  @override
+  String get resumeEducationLevelVocational => 'Ўрта махсус';
+
+  @override
+  String get resumeEducationStartYear => 'Бошлаган йил';
+
+  @override
+  String get resumeEducations => 'Таълим';
+
+  @override
+  String get resumeEmploymentTypes => 'Бандлик турлари';
+
+  @override
+  String get resumeExperienceCompany => 'Компания';
+
+  @override
+  String get resumeExperienceCurrent => 'Ҳозирги иш жойи';
+
+  @override
+  String get resumeExperienceDescription => 'Вазифалар';
+
+  @override
+  String get resumeExperienceEnd => 'Тугаш';
+
+  @override
+  String get resumeExperiencePosition => 'Лавозим';
+
+  @override
+  String get resumeExperienceStart => 'Бошлаш';
+
+  @override
+  String get resumeExperiences => 'Иш тажрибаси';
+
+  @override
+  String get resumeLanguageCode => 'Тил коди';
+
+  @override
+  String get resumeLanguageLevel => 'Даража';
+
+  @override
+  String get resumeLanguageLevelA1 => 'A1 — Бошланғич';
+
+  @override
+  String get resumeLanguageLevelA2 => 'A2 — Ўрта-бошланғич';
+
+  @override
+  String get resumeLanguageLevelB1 => 'B1 — Ўрта';
+
+  @override
+  String get resumeLanguageLevelB2 => 'B2 — Ўртадан юқори';
+
+  @override
+  String get resumeLanguageLevelC1 => 'C1 — Юқори';
+
+  @override
+  String get resumeLanguageLevelC2 => 'C2 — Эга бўлувчи';
+
+  @override
+  String get resumeLanguageLevelNative => 'Она тили';
+
+  @override
+  String get resumeLanguages => 'Тиллар';
+
+  @override
+  String get resumeMaxSkills => 'Кўпи билан 30 та кўникма киритиш мумкин';
+
+  @override
+  String get resumeMyResumes => 'Резюмеларим';
+
+  @override
+  String get resumeNewResume => 'Янги резюме';
+
+  @override
+  String get resumeNoEducations => 'Ҳали таълим қўшилмаган';
+
+  @override
+  String get resumeNoExperiences => 'Ҳали иш тажрибаси қўшилмаган';
+
+  @override
+  String get resumeNoLanguages => 'Ҳали тил қўшилмаган';
+
+  @override
+  String get resumeNoResumes => 'Ҳали резюме йўқ';
+
+  @override
+  String get resumeNoResumesHint => 'Биринчи резюмени яратинг ва вакансияларга ариза юборинг';
+
+  @override
+  String get resumeRelocate => 'Кўчишга тайёрман';
+
+  @override
+  String get resumeSalary => 'Кутилаётган иш ҳақи';
+
+  @override
+  String get resumeSkills => 'Кўникмалар';
+
+  @override
+  String get resumeSkillsHint => 'Масалан, Flutter, инглиз тили';
+
+  @override
+  String get resumeTitle => 'Кутилаётган лавозим';
+
+  @override
+  String get resumeUpdated => 'Резюме сақланди';
+
+  @override
+  String get resumeVisibilityAppliedOnly => 'Фақат ариза юборилган компаниялар';
+
+  @override
+  String get resumeVisibilityHidden => 'Фақат мен учун';
+
+  @override
+  String get resumeVisibilityHintAppliedOnly => 'Сиз ариза юборган компаниялар кўради';
+
+  @override
+  String get resumeVisibilityHintHidden => 'Ҳеч ким қидирувда кўрмайди';
+
+  @override
+  String get resumeVisibilityHintPublic => 'Иш берувчилар қидирувда кўради';
+
+  @override
+  String get resumeVisibilityLabel => 'Кўриниш';
+
+  @override
+  String get resumeVisibilityPublic => 'Оммавий';
+
+  @override
+  String get resumeWorkFormats => 'Иш шакллари';
+
+  @override
+  String get savedGuestBody => 'Кириш ва қизиқарли вакансияларни сақлаб қолинг.';
+
+  @override
+  String get savedGuestTitle => 'Сақланган вакансиялар';
+
+  @override
+  String get savedSearchCreated => 'Қидирув сақланди';
+
+  @override
+  String get savedSearchDeleteBody => 'Бу сақланган қидирувни ўчирмоқчимисиз?';
+
+  @override
+  String get savedSearchDeleteTitle => 'Қидирувни ўчириш';
+
+  @override
+  String get savedSearchName => 'Номи';
+
+  @override
+  String get savedSearchNameHint => 'Масалан, Дастурчи Тошкент';
+
+  @override
+  String get savedSearchNotify => 'Янги вакансиялар ҳақида хабар берилсин';
+
+  @override
+  String get savedSearchTitle => 'Қидирувни сақлаш';
+
+  @override
+  String get savedSearchesEmpty => 'Ҳали сақланган қидирув йўқ';
+
+  @override
+  String get savedSearchesTitle => 'Сақланган қидирувлар';
+
+  @override
+  String get savedVacanciesEmpty => 'Ҳали сақланган вакансия йўқ';
+
+  @override
+  String get savedVacanciesTitle => 'Сақланган вакансиялар';
 
   @override
   String get settingsByEmail => 'Email';
@@ -926,6 +2049,12 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
   String get settingsVerify => 'Тасдиқлаш';
 
   @override
+  String get sortNewest => 'Энг янги';
+
+  @override
+  String get sortRelevance => 'Мослик';
+
+  @override
   String get themeDark => 'Қоронғи';
 
   @override
@@ -936,4 +2065,131 @@ class AppLocalizationsUzCyrl extends AppLocalizationsUz {
 
   @override
   String get themeSystem => 'Автоматик';
+
+  @override
+  String get vacancyAddress => 'Манзил';
+
+  @override
+  String get vacancyApplications => 'Аризалар';
+
+  @override
+  String get vacancyApplySoon => 'Ариза юбориш тез кунда ишга тушади';
+
+  @override
+  String get vacancyDescription => 'Вакансия тавсифи';
+
+  @override
+  String get vacancyEmploymentType => 'Бандлик тури';
+
+  @override
+  String get vacancyExp1_3 => '1-3 йил';
+
+  @override
+  String get vacancyExp3_6 => '3-6 йил';
+
+  @override
+  String get vacancyExp6Plus => '6 йилдан ортиқ';
+
+  @override
+  String get vacancyExpNone => 'Тажрибасиз';
+
+  @override
+  String get vacancyExperience => 'Тажриба';
+
+  @override
+  String get vacancyFullTime => 'Тўлиқ ставка';
+
+  @override
+  String get vacancyHybrid => 'Гибрид';
+
+  @override
+  String get vacancyInternship => 'Амалийот';
+
+  @override
+  String get vacancyNegotiable => 'Келишилади';
+
+  @override
+  String get vacancyOffice => 'Офис';
+
+  @override
+  String get vacancyOpenVacancies => 'Очиқ вакансиялар';
+
+  @override
+  String get vacancyPartTime => 'Ярим ставка';
+
+  @override
+  String get vacancyProject => 'Лоиҳа';
+
+  @override
+  String get vacancyRemote => 'Уйдан';
+
+  @override
+  String get vacancyReport => 'Шикоят қилиш';
+
+  @override
+  String get vacancySalary => 'Иш ҳақи';
+
+  @override
+  String get vacancySchedule => 'Иш жадвали';
+
+  @override
+  String get vacancyScheduleFlexible => 'Мослашувчан';
+
+  @override
+  String get vacancyScheduleFullDay => 'Тўлиқ кун';
+
+  @override
+  String get vacancyScheduleRotation => 'Вахта';
+
+  @override
+  String get vacancyScheduleShift => 'Смена';
+
+  @override
+  String get vacancyShare => 'Улашиш';
+
+  @override
+  String get vacancySkills => 'Кўникмалар';
+
+  @override
+  String get vacancyViews => 'Кўришлар';
+
+  @override
+  String get vacancyVolunteer => 'Волонтёр';
+
+  @override
+  String get vacancyWorkFormat => 'Иш шакли';
+
+  @override
+  String get cookieBannerTitle => 'Cookie\'лардан фойдаланамиз';
+
+  @override
+  String get cookieBannerBody =>
+      'Сайтимиз ишлаши, хавфсизлиги ва қулайлиги учун cookie ва шунга ўхшаш технологиялардан фойдаланамиз.';
+
+  @override
+  String get cookieBannerPolicy => 'Cookie сиёсати';
+
+  @override
+  String get cookieBannerAcceptAll => 'Розиман';
+
+  @override
+  String get cookieBannerEssentialOnly => 'Фақат зарурий';
+
+  @override
+  String get profileLegal => 'Ҳуқуқий маълумот';
+
+  @override
+  String get profilePrivacyPolicy => 'Махфийлик сиёсати';
+
+  @override
+  String get profileTermsOfUse => 'Фойдаланиш шартлари';
+
+  @override
+  String get profileCookiePolicy => 'Cookie сиёсати';
+
+  @override
+  String get profilePublicOffer => 'Оммавий оферта';
+
+  @override
+  String get profileContentRules => 'Контент қоидалари';
 }

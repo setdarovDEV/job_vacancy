@@ -6,15 +6,18 @@ import 'api_exception.dart';
 /// Turns the `data` of a success envelope into a model.
 typedef Decode<T> = T Function(Object? data);
 
-/// One page of a cursor-paginated list (`{"data": [...], "meta": {"next_cursor"}}`).
+/// One page of a cursor-paginated list (`{"data": [...], "meta": {...}}`).
 class Page<T> {
-  const Page(this.items, this.nextCursor);
+  const Page(this.items, this.nextCursor, {this.meta});
   final List<T> items;
 
   /// Pass back as `cursor` for the next page; null on the last page.
   final String? nextCursor;
 
-  bool get hasMore => nextCursor != null;
+  /// Raw meta object when the endpoint uses non-cursor pagination (e.g. `next_before`).
+  final Map<String, Object?>? meta;
+
+  bool get hasMore => nextCursor != null || (meta?['next_before'] as int?) != null;
 }
 
 /// Thin layer over Dio that speaks the API's envelope. Every outcome is either a decoded
@@ -29,6 +32,10 @@ class ApiClient {
   ApiClient(this._dio);
 
   final Dio _dio;
+
+  /// The underlying Dio instance, for requests that need a non-JSON response type
+  /// (e.g. downloading a PDF with [ResponseType.bytes]).
+  Dio get dio => _dio;
 
   /// Request option read by the auth layer: send without an access token.
   static const anonymousKey = 'jv.anonymous';
@@ -48,7 +55,7 @@ class ApiClient {
       final body = res.data! as Map<String, Object?>;
       final items = (body['data']! as List<Object?>).map((e) => item(e! as Map<String, Object?>)).toList();
       final meta = body['meta'] as Map<String, Object?>?;
-      return Page(items, meta?['next_cursor'] as String?);
+      return Page(items, meta?['next_cursor'] as String?, meta: meta);
     });
   }
 

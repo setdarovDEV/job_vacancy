@@ -7,9 +7,13 @@ import '../core/preferences.dart';
 import '../core/router/redirect.dart';
 import '../core/router/routes.dart';
 import '../features/auth/auth_routes.dart';
+import '../features/chat/chat_routes.dart' show chatRoutes, messagesRoute;
 import '../features/home/home_routes.dart';
 import '../features/home/shell.dart';
+import '../features/notifications/notifications_routes.dart';
 import '../features/profile/profile_routes.dart';
+import '../features/resumes/resumes_routes.dart' show applicationsRoute, resumeRoutes;
+import '../features/vacancies/vacancies_routes.dart';
 
 /// The app's navigation: features contribute their routes, the redirect rules live in
 /// core/router, and this is the only place that knows both.
@@ -34,6 +38,10 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       splashRoute,
       ...authRoutes,
+      ...vacancyTopRoutes,
+      ...resumeRoutes,
+      ...chatRoutes,
+      ...notificationsRoutes,
       StatefulShellRoute.indexedStack(
         builder: (_, _, shell) => AppShell(shell: shell),
         branches: [jobsRoute, savedRoute, applicationsRoute, messagesRoute, profileRoute].map(branch).toList(),

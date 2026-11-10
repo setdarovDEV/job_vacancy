@@ -6,8 +6,11 @@ import 'package:jobvacancy/app/app.dart';
 import 'package:jobvacancy/core/auth/refresh_api.dart';
 import 'package:jobvacancy/core/auth/session_api.dart';
 import 'package:jobvacancy/core/auth/session_store.dart';
+import 'package:jobvacancy/core/notifications/local_notification_service.dart';
+import 'package:jobvacancy/core/notifications/push_notification_service.dart';
 import 'package:jobvacancy/core/preferences.dart';
 import 'package:jobvacancy/features/auth/data/account_api.dart';
+import 'package:jobvacancy/features/notifications/data/api/notifications_api.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'fakes.dart';
@@ -19,6 +22,7 @@ class FakeBackend {
   late final account = FakeAccountApi(calls, session);
   final refresh = FakeRefreshApi();
   final store = MemorySessionStore();
+  late final notifications = FakeNotificationsApi(calls);
 }
 
 /// Pumps the whole app (router, screens, session) against [b], in Uzbek, with the
@@ -38,6 +42,9 @@ Future<void> pumpApp(WidgetTester tester, FakeBackend b, {bool onboarded = true}
         sessionApiProvider.overrideWithValue(b.session),
         accountApiProvider.overrideWithValue(b.account),
         refreshApiProvider.overrideWithValue(b.refresh),
+        pushNotificationServiceProvider.overrideWithValue(NoopPushNotificationService()),
+        localNotificationServiceProvider.overrideWithValue(FakeLocalNotificationService()),
+        notificationsApiProvider.overrideWithValue(b.notifications),
       ],
       child: const JobVacancyApp(),
     ),

@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:url_launcher/url_launcher.dart';
+
 import '../../core/api/api_exception.dart';
+import '../../core/config/app_config.dart';
 import '../../core/l10n/l10n.dart';
 import '../../core/models/user.dart';
 import '../../core/preferences.dart';
@@ -10,6 +13,7 @@ import '../../core/auth/session.dart';
 import '../../core/router/routes.dart';
 import '../../core/theme/tokens.dart';
 import '../../core/widgets/submit.dart';
+import '../../features/notifications/providers/unread_notifications_count_provider.dart';
 
 /// Profile tab: who is signed in, contact confirmation, language, theme, sign out.
 class ProfileScreen extends ConsumerWidget {
@@ -28,6 +32,8 @@ class ProfileScreen extends ConsumerWidget {
           if (user == null) const _GuestCard() else _UserCard(user: user),
           const SizedBox(height: AppSpace.lg),
           const _PreferencesCard(),
+          const SizedBox(height: AppSpace.lg),
+          const _LegalCard(),
           if (user != null) ...[const SizedBox(height: AppSpace.lg), const _SignOutCard()],
         ],
       ),
@@ -80,13 +86,15 @@ class _GuestCard extends StatelessWidget {
   }
 }
 
-class _UserCard extends StatelessWidget {
+class _UserCard extends ConsumerWidget {
   const _UserCard({required this.user});
   final User user;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l = context.l10n;
+    final unreadAsync = ref.watch(unreadNotificationsCountProvider);
+    final unread = unreadAsync.value ?? 0;
     final c = context.colors;
     final initials = user.fullName
         .trim()
@@ -140,6 +148,19 @@ class _UserCard extends StatelessWidget {
           title: Text(user.phone ?? '—'),
           subtitle: Text(l.settingsPhone),
           trailing: status(user.phoneVerified, () => context.push(Routes.verifyPhone)),
+        ),
+        ListTile(
+          leading: const Icon(Icons.notifications_outlined),
+          title: Text(l.notificationsTitle),
+          trailing: Badge(
+            isLabelVisible: unread > 0,
+            label: Text('$unread'),
+            child: const Icon(Icons.chevron_right),
+          ),
+          onTap: () {
+            context.push(Routes.notifications);
+            ref.read(unreadNotificationsCountProvider.notifier).refresh().ignore();
+          },
         ),
       ],
     );
@@ -230,6 +251,39 @@ class _PreferencesCard extends ConsumerWidget {
   }
 }
 
+class _LegalCard extends ConsumerWidget {
+  const _LegalCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l = context.l10n;
+    final webUrl = ref.watch(appConfigProvider).webUrl;
+    final links = [
+      (l.profilePrivacyPolicy, '$webUrl/privacy'),
+      (l.profileTermsOfUse, '$webUrl/terms'),
+      (l.profileCookiePolicy, '$webUrl/cookie-policy'),
+      (l.profilePublicOffer, '$webUrl/public-offer'),
+      (l.profileContentRules, '$webUrl/content-rules'),
+    ];
+    return _Section(
+      children: [
+        for (final (label, url) in links)
+          ListTile(
+            leading: const Icon(Icons.description_outlined),
+            title: Text(label),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () async {
+              final uri = Uri.parse(url);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+          ),
+      ],
+    );
+  }
+}
+
 class _SignOutCard extends ConsumerWidget {
   const _SignOutCard();
 
@@ -239,6 +293,12 @@ class _SignOutCard extends ConsumerWidget {
     final c = context.colors;
     return _Section(
       children: [
+        ListTile(
+          leading: const Icon(Icons.description_outlined),
+          title: Text(l.accountMyResumes),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => context.push(Routes.resumes),
+        ),
         ListTile(
           key: const Key('profile-sign-out'),
           leading: Icon(Icons.logout, color: c.anorInk),

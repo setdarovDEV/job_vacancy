@@ -19,6 +19,20 @@ abstract final class Routes {
   static const messages = '/messages';
   static const profile = '/profile';
 
+  static const vacancy = '/vacancy';
+  static const company = '/company';
+  static const chat = '/chat';
+  static String chatDetail(String id) => '$chat/$id';
+  static const notifications = '/notifications';
+
+  // Resumes & applications (seeker)
+  static const resumes = '/resumes';
+  static const resumeNew = '$resumes/new';
+  static String resumeEdit(String id) => '$resumes/$id/edit';
+  static const apply = '/apply';
+  static String applyToVacancy(String slug) => '$apply/$slug';
+  static String applicationDetail(String id) => '$applications/$id';
+
   /// Screens for signed-out visitors; a signed-in user is sent home from them.
   static const signedOutOnly = {welcome, login, register, forgot, reset};
 

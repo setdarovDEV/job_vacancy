@@ -9,7 +9,9 @@ part of 'auth_result.dart';
 _AuthResult _$AuthResultFromJson(Map<String, dynamic> json) => _AuthResult(
   user: User.fromJson(json['user'] as Map<String, dynamic>),
   accessToken: json['access_token'] as String,
-  accessTokenExpiresAt: DateTime.parse(json['access_token_expires_at'] as String),
+  accessTokenExpiresAt: DateTime.parse(
+    json['access_token_expires_at'] as String,
+  ),
   accessTokenExpiresIn: (json['access_token_expires_in'] as num?)?.toInt(),
   refreshToken: json['refresh_token'] as String,
   refreshTokenExpiresAt: json['refresh_token_expires_at'] == null
@@ -18,7 +20,9 @@ _AuthResult _$AuthResultFromJson(Map<String, dynamic> json) => _AuthResult(
   isNewUser: json['is_new_user'] as bool? ?? false,
 );
 
-Map<String, dynamic> _$AuthResultToJson(_AuthResult instance) => <String, dynamic>{
+Map<String, dynamic> _$AuthResultToJson(
+  _AuthResult instance,
+) => <String, dynamic>{
   'user': instance.user.toJson(),
   'access_token': instance.accessToken,
   'access_token_expires_at': instance.accessTokenExpiresAt.toIso8601String(),
@@ -30,7 +34,9 @@ Map<String, dynamic> _$AuthResultToJson(_AuthResult instance) => <String, dynami
 
 _Tokens _$TokensFromJson(Map<String, dynamic> json) => _Tokens(
   accessToken: json['access_token'] as String,
-  accessTokenExpiresAt: DateTime.parse(json['access_token_expires_at'] as String),
+  accessTokenExpiresAt: DateTime.parse(
+    json['access_token_expires_at'] as String,
+  ),
   refreshToken: json['refresh_token'] as String,
 );
 
