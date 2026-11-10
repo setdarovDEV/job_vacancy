@@ -24,6 +24,8 @@ services:
     image: ghcr.io/setdarovdev/jobvacancy-web:${IMAGE_TAG:?set IMAGE_TAG}
     pull_policy: missing
     environment:
+      # The SSR server calls the API over the compose network (web/app/shared/api/client.ts).
+      API_URL: http://api:8090/api/v1
       # 1 hides the site from search engines (robots.txt, noindex, empty sitemap), e.g. while
       # it holds demo data. Set in nginx/.env on the server.
       SITE_NOINDEX: ${SITE_NOINDEX:-}

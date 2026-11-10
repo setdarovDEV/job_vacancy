@@ -197,7 +197,7 @@ services:
       - "127.0.0.1:3000:3000"
     environment:
       NODE_ENV: production
-      API_BASE_URL: http://api:8090
+      API_URL: http://api:8090/api/v1 # read by web/app/shared/api/client.ts during SSR
     depends_on:
       - api
     networks:
