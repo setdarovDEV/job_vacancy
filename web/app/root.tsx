@@ -8,6 +8,7 @@ import { getCatalog } from "./shared/catalog/catalog.server";
 import { createT, I18nProvider } from "./shared/i18n/i18n";
 import { messagesFor } from "./shared/i18n/messages.server";
 import { parseTheme } from "./shared/theme/theme";
+import { CookieBanner, readCookieConsent } from "./shared/ui/CookieBanner";
 import { Toaster } from "./shared/ui/Toast";
 import "./styles/app.css";
 
@@ -18,6 +19,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     catalog: await getCatalog(),
     locale,
     theme: parseTheme(cookie),
+    cookieConsent: readCookieConsent(cookie),
     // Readable marker set by the client after sign-in: render the signed-in header shell.
     hasSession: /(?:^|;\s*)jv_auth=1/.test(cookie ?? ""),
     messages: messagesFor(locale),
@@ -54,11 +56,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
 // Only what every page needs lives here. Data-heavy areas (dashboards, chat) bring their
 // own providers, so the public pages stay light.
 export default function App({ loaderData }: Route.ComponentProps) {
-  const { locale, messages } = loaderData;
+  const { locale, messages, cookieConsent } = loaderData;
   useEffect(() => bootstrapSession(), []);
   return (
     <I18nProvider messages={messages} locale={locale}>
       <Outlet />
+      <CookieBanner initial={cookieConsent} />
       <Toaster closeLabel={createT(messages, locale)("common.close")} />
     </I18nProvider>
   );

@@ -68,7 +68,16 @@ const ru: Messages = {
   },
   footer: {
     about: "О проекте", contacts: "Контакты", privacy: "Политика конфиденциальности",
-    terms: "Условия использования", rights: "© {{year}} Job Vacancy",
+    terms: "Условия использования", cookiePolicy: "Политика cookie",
+    publicOffer: "Публичная оферта", contentRules: "Правила контента",
+    rights: "© {{year}} Job Vacancy",
+  },
+  cookieBanner: {
+    title: "Мы используем cookie",
+    body: "Мы используем cookie и похожие технологии для работы, безопасности и удобства сайта.",
+    policy: "Политика cookie",
+    acceptAll: "Согласен",
+    essentialOnly: "Только необходимые",
   },
   account: {
     dashboard: "Кабинет", myVacancies: "Мои вакансии", myResumes: "Мои резюме", settings: "Настройки",

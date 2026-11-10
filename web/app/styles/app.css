@@ -21,6 +21,8 @@
   --paper: #eef2fa;
   /* Glass: translucent panels over the tinted backdrop (see body::before). */
   --surface: rgb(255 255 255 / 0.62);
+  /* Opaque surface for layers that sit over content without a blur (cookie bar). */
+  --surface-solid: #ffffff;
   --sunken: rgb(27 58 140 / 0.055);
   --ink: #151a33;
   --ink-2: #4b5272;
@@ -65,6 +67,7 @@
     color-scheme: dark;
     --paper: #0a0f22;
     --surface: rgb(30 38 74 / 0.5);
+    --surface-solid: #141a33;
     --sunken: rgb(255 255 255 / 0.055);
     --ink: #edf0fa;
     --ink-2: #aab1ce;
@@ -103,6 +106,7 @@
   color-scheme: dark;
   --paper: #0a0f22;
   --surface: rgb(30 38 74 / 0.5);
+  --surface-solid: #141a33;
   --sunken: rgb(255 255 255 / 0.055);
   --ink: #edf0fa;
   --ink-2: #aab1ce;
@@ -139,6 +143,7 @@
 @theme inline {
   --color-paper: var(--paper);
   --color-surface: var(--surface);
+  --color-surface-solid: var(--surface-solid);
   --color-sunken: var(--sunken);
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);

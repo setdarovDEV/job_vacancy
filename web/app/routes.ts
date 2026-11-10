@@ -16,7 +16,7 @@ export default [
     route("companies", "routes/companies.tsx"),
     route("companies/:slug", "routes/company.tsx"),
     route("employers", "routes/employers.tsx"),
-    ...["about", "contacts", "privacy", "terms"].map((p) => route(p, "routes/page.tsx", { id: `page-${p}` })),
+    ...["about", "contacts", "privacy", "terms", "cookie-policy", "public-offer", "content-rules"].map((p) => route(p, "routes/page.tsx", { id: `page-${p}` })),
     layout("routes/private.tsx", [
       layout("routes/account/layout.tsx", [
         route("me", "routes/account/settings.tsx"),

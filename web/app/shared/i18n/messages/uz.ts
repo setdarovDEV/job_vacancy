@@ -117,7 +117,17 @@ const uz = {
     contacts: "Aloqa",
     privacy: "Maxfiylik siyosati",
     terms: "Foydalanish shartlari",
+    cookiePolicy: "Cookie siyosati",
+    publicOffer: "Ommaviy oferta",
+    contentRules: "Kontent qoidalari",
     rights: "© {{year}} Job Vacancy",
+  },
+  cookieBanner: {
+    title: "Cookie'lardan foydalanamiz",
+    body: "Saytimiz ishlashi, xavfsizligi va qulayligi uchun cookie va shunga o'xshash texnologiyalardan foydalanamiz.",
+    policy: "Cookie siyosati",
+    acceptAll: "Roziman",
+    essentialOnly: "Faqat zaruriy",
   },
   account: {
     dashboard: "Kabinet", myVacancies: "Vakansiyalarim", myResumes: "Rezyumelarim", settings: "Sozlamalar",

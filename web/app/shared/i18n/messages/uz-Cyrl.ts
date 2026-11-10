@@ -67,7 +67,16 @@ const uzCyrl: Messages = {
   },
   footer: {
     about: "Лойиҳа ҳақида", contacts: "Алоқа", privacy: "Махфийлик сиёсати",
-    terms: "Фойдаланиш шартлари", rights: "© {{year}} Job Vacancy",
+    terms: "Фойдаланиш шартлари", cookiePolicy: "Cookie сиёсати",
+    publicOffer: "Оммавий оферта", contentRules: "Контент қоидалари",
+    rights: "© {{year}} Job Vacancy",
+  },
+  cookieBanner: {
+    title: "Cookie'лардан фойдаланамиз",
+    body: "Сайтимиз ишлаши, хавфсизлиги ва қулайлиги учун cookie ва шунга ўхшаш технологиялардан фойдаланамиз.",
+    policy: "Cookie сиёсати",
+    acceptAll: "Розиман",
+    essentialOnly: "Фақат зарурий",
   },
   account: {
     dashboard: "Кабинет", myVacancies: "Вакансияларим", myResumes: "Резюмеларим", settings: "Созламалар",

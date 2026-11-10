@@ -6,10 +6,11 @@ import { localeFromPath } from "~/shared/i18n/config";
 import { seo } from "~/shared/seo/seo";
 
 export function loader({ request }: Route.LoaderArgs) {
-  const url = new URL(request.url);
-  const slug = url.pathname.split("/").pop() as Slug;
+  // Client-side navigation fetches "/privacy.data", so drop that suffix before reading the slug.
+  const path = new URL(request.url).pathname.replace(/\.data$/, "");
+  const slug = path.split("/").pop() as Slug;
   if (!SLUGS.includes(slug)) throw data(null, { status: 404 });
-  return { page: getPage(slug, localeFromPath(url.pathname)), slug };
+  return { page: getPage(slug, localeFromPath(path)), slug };
 }
 
 export function meta({ loaderData, location }: Route.MetaArgs) {

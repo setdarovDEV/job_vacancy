@@ -10,6 +10,9 @@ export function SiteFooter() {
     { to: "/contacts", key: "footer.contacts" },
     { to: "/privacy", key: "footer.privacy" },
     { to: "/terms", key: "footer.terms" },
+    { to: "/cookie-policy", key: "footer.cookiePolicy" },
+    { to: "/public-offer", key: "footer.publicOffer" },
+    { to: "/content-rules", key: "footer.contentRules" },
   ] as const;
   return (
     <footer className="mt-24 border-t border-line">

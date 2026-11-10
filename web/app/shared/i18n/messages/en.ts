@@ -67,7 +67,16 @@ const en: Messages = {
   },
   footer: {
     about: "About", contacts: "Contact", privacy: "Privacy policy",
-    terms: "Terms of use", rights: "© {{year}} Job Vacancy",
+    terms: "Terms of use", cookiePolicy: "Cookie policy",
+    publicOffer: "Public offer", contentRules: "Content rules",
+    rights: "© {{year}} Job Vacancy",
+  },
+  cookieBanner: {
+    title: "We use cookies",
+    body: "We use cookies and similar technologies to run, secure and improve the site.",
+    policy: "Cookie policy",
+    acceptAll: "Accept all",
+    essentialOnly: "Essential only",
   },
   account: {
     dashboard: "Dashboard", myVacancies: "My jobs", myResumes: "My resumes", settings: "Settings",
