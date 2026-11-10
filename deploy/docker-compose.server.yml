@@ -10,20 +10,25 @@
 
 x-api-image: &api-image ghcr.io/setdarovdev/jobvacancy-api:${IMAGE_TAG:?set IMAGE_TAG}
 
+# Launch hardening (docs/LAUNCH.md), for every container running the backend binaries: migrate
+# validates the production config too, so it needs TOTP_ENC_KEY as well. Empty values keep a
+# feature off.
+x-backend-extra: &backend-extra
+  TOTP_ENC_KEY: ${TOTP_ENC_KEY:?set TOTP_ENC_KEY in nginx/.env}
+  TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+  FEEDBACK_TELEGRAM_CHAT_ID: ${FEEDBACK_TELEGRAM_CHAT_ID:-}
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  SENTRY_RELEASE: ${IMAGE_TAG}
+
 services:
   migrate:
     image: *api-image
     pull_policy: missing
+    environment: *backend-extra
   api:
     image: *api-image
     pull_policy: missing
-    environment: &backend-extra
-      # Launch hardening (docs/LAUNCH.md). Empty values keep a feature off.
-      TOTP_ENC_KEY: ${TOTP_ENC_KEY:?set TOTP_ENC_KEY in nginx/.env}
-      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
-      FEEDBACK_TELEGRAM_CHAT_ID: ${FEEDBACK_TELEGRAM_CHAT_ID:-}
-      SENTRY_DSN: ${SENTRY_DSN:-}
-      SENTRY_RELEASE: ${IMAGE_TAG}
+    environment: *backend-extra
   worker:
     image: *api-image
     pull_policy: missing
