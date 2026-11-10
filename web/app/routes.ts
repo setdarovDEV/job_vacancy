@@ -3,6 +3,7 @@ import { type RouteConfig, index, layout, route } from "@react-router/dev/routes
 // Every page sits under an optional language segment: /…, /uz-cyrl/…, /ru/…, /en/….
 export default [
   route("sitemap.xml", "routes/sitemap.ts"),
+  route("robots.txt", "routes/robots.ts"),
   route(":lang?", "routes/site.tsx", [
     index("routes/home.tsx"),
     layout("routes/auth/layout.tsx", [

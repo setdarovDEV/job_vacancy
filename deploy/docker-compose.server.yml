@@ -23,3 +23,7 @@ services:
   web:
     image: ghcr.io/setdarovdev/jobvacancy-web:${IMAGE_TAG:?set IMAGE_TAG}
     pull_policy: missing
+    environment:
+      # 1 hides the site from search engines (robots.txt, noindex, empty sitemap), e.g. while
+      # it holds demo data. Set in nginx/.env on the server.
+      SITE_NOINDEX: ${SITE_NOINDEX:-}

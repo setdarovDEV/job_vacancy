@@ -7,6 +7,7 @@ import { bootstrapSession } from "./shared/auth/session";
 import { getCatalog } from "./shared/catalog/catalog.server";
 import { createT, I18nProvider } from "./shared/i18n/i18n";
 import { messagesFor } from "./shared/i18n/messages.server";
+import { siteNoindex } from "./shared/seo/indexing.server";
 import { parseTheme } from "./shared/theme/theme";
 import { CookieBanner, readCookieConsent } from "./shared/ui/CookieBanner";
 import { Toaster } from "./shared/ui/Toast";
@@ -23,6 +24,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     // Readable marker set by the client after sign-in: render the signed-in header shell.
     hasSession: /(?:^|;\s*)jv_auth=1/.test(cookie ?? ""),
     messages: messagesFor(locale),
+    noindex: siteNoindex,
   };
 }
 
@@ -41,6 +43,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
         <meta name="theme-color" content="#f5f7fb" media="(prefers-color-scheme: light)" />
         <meta name="theme-color" content="#0d1226" media="(prefers-color-scheme: dark)" />
+        {data?.noindex && <meta name="robots" content="noindex, nofollow" />}
         <Meta />
         <Links />
       </head>

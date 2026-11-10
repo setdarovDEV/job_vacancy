@@ -1,5 +1,6 @@
 import { api } from "~/shared/api/client";
 import { htmlLang, localizedPath, locales } from "~/shared/i18n/config";
+import { siteNoindex } from "~/shared/seo/indexing.server";
 import { SITE } from "~/shared/seo/seo";
 
 // sitemap.xml with every language version as hreflang alternates. Covers the newest
@@ -38,6 +39,7 @@ function entry(path: string, lastmod?: string) {
 }
 
 export async function loader() {
+  if (siteNoindex) return new Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>\n', { headers: { "Content-Type": "application/xml" } });
   const [vacancies, companies] = await Promise.all([vacancySlugs().catch(() => []), companySlugs().catch(() => [])]);
   const paths = ["/", "/vacancies", "/companies", "/employers", "/about", "/contacts", "/privacy", "/terms"];
   const body = [
